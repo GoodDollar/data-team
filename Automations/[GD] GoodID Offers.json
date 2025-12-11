@@ -1,0 +1,253 @@
+{
+  "name": "[GD] GoodID Offers",
+  "nodes": [
+    {
+      "parameters": {
+        "maxItems": 2,
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        48,
+        352
+      ],
+      "id": "de2cde11-44b6-4ebe-af19-bceda825b17c",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        224,
+        352
+      ],
+      "id": "36c8dbd3-56a3-48ad-90ca-826bdd81e1a8",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1H_uXgoEnfGKHCbu59VXh_wQax03J8bfgq87wOR-FZXk",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1725957500,
+          "mode": "list",
+          "cachedResultName": "GoodID Offers",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1H_uXgoEnfGKHCbu59VXh_wQax03J8bfgq87wOR-FZXk/edit#gid=1725957500"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        208,
+        64
+      ],
+      "id": "9740466b-190c-47c5-8d52-e06bbdf4eef1",
+      "name": "Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JIk21yLDI9cUXYw1",
+          "name": "[GD] GSheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        32,
+        64
+      ],
+      "id": "aed42b32-3141-4a1f-b259-7ea94e44d135",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "data",
+          "mode": "name"
+        },
+        "text": "=*.: GoodID Offers Summary :.*\n\n\n*- People -*\n  {{ $json.data[1]['All RT Members'] }} Total RedTent Pool Members ({{ $if($json.data[1]['All RT Members'] >= $json.data[0]['All RT Members'], '+','') }}{{ ((parseInt($json.data[1]['All RT Members']) - parseInt($json.data[0]['All RT Members']))/ parseInt($json.data[0]['All RT Members'])*100).toFixed(1)+'%'}} from last week)\n    {{ $json.data[1]['RT All Claims Last 30'] }} Monthly Active RedTent Pool Members ({{ $if($json.data[1]['RT All Claims Last 30'] >= $json.data[0]['RT All Claims Last 30'], '+','') }}{{ ((parseInt($json.data[1]['RT All Claims Last 30']) - parseInt($json.data[0]['RT All Claims Last 30']))/ parseInt($json.data[0]['RT All Claims Last 30'])*100).toFixed(1)+'%'}} from last week)\n      {{ $json.data[1]['Colombia RT Members'] }} Members in Colombia Pool ({{ $if($json.data[1]['Colombia RT Members'] >= $json.data[0]['Colombia RT Members'], '+','') }}{{ ((parseInt($json.data[1]['Colombia RT Members']) - parseInt($json.data[0]['Colombia RT Members']))/ parseInt($json.data[0]['Colombia RT Members'])*100).toFixed(1)+'%'}} from last week)\n      {{ $json.data[1]['Nigeria RT Members'] }} Members in Nigeria Pool ({{ $if($json.data[1]['Nigeria RT Members'] >= $json.data[0]['Nigeria RT Members'], '+','') }}{{ ((parseInt($json.data[1]['Nigeria RT Members']) - parseInt($json.data[0]['Nigeria RT Members']))/ parseInt($json.data[0]['Nigeria RT Members'])*100).toFixed(1)+'%'}} from last week)\n\n\n*- Claim -*\n\n\t*- All Time*\n\t\t{{ $json.data[1]['RT All Claims AT'] }} RedTent Claims AT ({{ $if($json.data[1]['RT All Claims AT'] >= $json.data[0]['RT All Claims AT'], '+','') }}{{ ((parseInt($json.data[1]['RT All Claims AT']) - parseInt($json.data[0]['RT All Claims AT']))/ parseInt($json.data[0]['RT All Claims AT'])*100).toFixed(1)+'%'}} from last week)\n\t\t  {{ $json.data[1]['RT Colombia Claims AT'] }} Colombia Claims AT ({{ $if($json.data[1]['RT Colombia Claims AT'] >= $json.data[0]['RT Colombia Claims AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Claims AT']) - parseInt($json.data[0]['RT Colombia Claims AT']))/ parseInt($json.data[0]['RT Colombia Claims AT'])*100).toFixed(1)+'%'}} from last week)\n\t\t  {{ $json.data[1]['RT Nigeria Claims AT'] }} Nigeria Claims AT ({{ $if($json.data[1]['RT Nigeria Claims AT'] >= $json.data[0]['RT Nigeria Claims AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Claims AT']) - parseInt($json.data[0]['RT Nigeria Claims AT']))/ parseInt($json.data[0]['RT Nigeria Claims AT'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\n\t*- Last 7 days*  \n\t\t{{ $json.data[1]['RT Avg Claim count per user Last 7'] }} Average Claim count per user this week  ({{ $if($json.data[1]['RT Avg Claim count per user Last 7'] >= $json.data[0]['RT Avg Claim count per user Last 7'], '+','') }}{{ (($json.data[1]['RT Avg Claim count per user Last 7'] - $json.data[0]['RT Avg Claim count per user Last 7'])/$json.data[0]['RT Avg Claim count per user Last 7']*100).toFixed(1)+'%' }} from last week)\n\t  \n\t\t{{ $json.data[1]['RT All Claims Last 7'] }} RedTent Claims Last 7 days  ({{ $if($json.data[1]['RT All Claims Last 7'] >= $json.data[0]['RT All Claims Last 7'], '+','') }}{{ ((parseInt($json.data[1]['RT All Claims Last 7']) - parseInt($json.data[0]['RT All Claims Last 7']))/ parseInt($json.data[0]['RT All Claims Last 7'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\t\t{{ $json.data[1]['RT Colombia Claims Last 7'] }} Colombia Claims Last 7 days ({{ $if($json.data[1]['RT Colombia Claims Last 7'] >= $json.data[0]['RT Colombia Claims Last 7'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Claims Last 7']) - parseInt($json.data[0]['RT Colombia Claims Last 7']))/ parseInt($json.data[0]['RT Colombia Claims Last 7'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\t\t{{ $json.data[1]['RT Nigeria Claims Last 7'] }} Nigeria Claims Last 7 days ({{ $if($json.data[1]['RT Nigeria Claims Last 7'] >= $json.data[0]['RT Nigeria Claims Last 7'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Claims Last 7']) - parseInt($json.data[0]['RT Nigeria Claims Last 7']))/ parseInt($json.data[0]['RT Nigeria Claims Last 7'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\n\n*- Values -*\n\tG$ {{ $json.data[1]['RT Average Claim Value'] }} | USD {{ $json.data[1]['RT Average Claim Value USD'] }} Average Individual RT Claim Value this week ({{ $if($json.data[1]['RT Average Claim Value'] >= $json.data[0]['RT Average Claim Value'], '+','') }}{{ ((parseInt($json.data[1]['RT Average Claim Value']) - parseInt($json.data[0]['RT Average Claim Value']))/ parseInt($json.data[0]['RT Average Claim Value'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\tG$ {{ $json.data[1]['RT All Paid AT'].toLocaleString() }} | USD {{ $json.data[1]['RT All Paid AT USD'] }} Paid by both RedTent Pools AT  ({{ $if($json.data[1]['RT All Paid AT'] >= $json.data[0]['RT All Paid AT'], '+','') }}{{ ((parseInt($json.data[1]['RT All Paid AT']) - parseInt($json.data[0]['RT All Paid AT']))/ parseInt($json.data[0]['RT All Paid AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Colombia Paid AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Colombia Paid AT USD'] }} Paid by RedTent Colombia AT ({{ $if($json.data[1]['RT Colombia Paid AT'] >= $json.data[0]['RT Colombia Paid AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Paid AT']) - parseInt($json.data[0]['RT Colombia Paid AT']))/ parseInt($json.data[0]['RT Colombia Paid AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Nigeria Paid AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Nigeria Paid AT USD'] }} Paid by RedTent Nigeria AT ({{ $if($json.data[1]['RT Nigeria Paid AT'] >= $json.data[0]['RT Nigeria Paid AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Paid AT']) - parseInt($json.data[0]['RT Nigeria Paid AT']))/ parseInt($json.data[0]['RT Nigeria Paid AT'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\t\n\n*- Donations -*\n\t{{ $json.data[1]['RT All Donor Wallets'] }} Total Donor wallets ({{ $if($json.data[1]['RT All Donor Wallets'] >= $json.data[0]['RT All Donor Wallets'], '+','') }}{{ ((parseInt($json.data[1]['RT All Donor Wallets']) - parseInt($json.data[0]['RT All Donor Wallets']))/ parseInt($json.data[0]['RT All Donor Wallets'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\tG$ {{ $json.data[1]['RT All Donated AT'].toLocaleString() }} | USD {{ $json.data[1]['RT All Donated AT USD']}} Total Donated to RedTent AT ({{ $if($json.data[1]['RT All Donated AT'] >= $json.data[0]['RT All Donated AT'], '+','') }}{{ ((parseInt($json.data[1]['RT All Donated AT']) - parseInt($json.data[0]['RT All Donated AT']))/ parseInt($json.data[0]['RT All Donated AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Colombia Donated AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Colombia Donated AT USD'] }} Total Donated to RedTent Colombia AT ({{ $if($json.data[1]['RT Colombia Donated AT'] >= $json.data[0]['RT Colombia Donated AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Donated AT']) - parseInt($json.data[0]['RT Colombia Donated AT']))/ parseInt($json.data[0]['RT Colombia Donated AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Nigeria Donated AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Nigeria Donated AT USD'] }} Total Donated to RedTent Nigeria AT ({{ $if($json.data[1]['RT Nigeria Donated AT'] >= $json.data[0]['RT Nigeria Donated AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Donated AT']) - parseInt($json.data[0]['RT Nigeria Donated AT']))/ parseInt($json.data[0]['RT Nigeria Donated AT'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\n\n*- Balances -*\n\tG$ {{ $json.data[1]['RT All Pool Balance'].toLocaleString() }} | USD {{ $json.data[1]['RT All Pool Balance USD'] }} Combined RT Pools balance ({{ $if($json.data[1]['RT All Pool Balance'] >= $json.data[0]['RT All Pool Balance'], '+','') }}{{ ((parseInt($json.data[1]['RT All Pool Balance']) - parseInt($json.data[0]['RT All Pool Balance']))/ parseInt($json.data[0]['RT All Pool Balance'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Colombia Pool Balance'].toLocaleString() }} | USD {{ $json.data[1]['RT Colombia Pool Balance USD'] }}  RT Colombia Pool Balance ({{ $if($json.data[1]['RT Colombia Pool Balance'] >= $json.data[0]['RT Colombia Pool Balance'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Pool Balance']) - parseInt($json.data[0]['RT Colombia Pool Balance']))/ parseInt($json.data[0]['RT Colombia Pool Balance'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Nigeria Pool Balance'].toLocaleString() }} | USD {{ $json.data[1]['RT Nigeria Pool Balance USD'] }} RT Nigeria Pool Balance ({{ $if($json.data[1]['RT Nigeria Pool Balance'] >= $json.data[0]['RT Nigeria Pool Balance'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Pool Balance']) - parseInt($json.data[0]['RT Nigeria Pool Balance']))/ parseInt($json.data[0]['RT Nigeria Pool Balance'])*100).toFixed(1)+'%'}} from last week)\n\t  ",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        352
+      ],
+      "id": "1e1aae8d-c862-4e1f-a177-efa72e0567e1",
+      "name": "data channel",
+      "webhookId": "ae5b8791-2a10-40aa-9235-be2f76ca114a",
+      "credentials": {
+        "slackApi": {
+          "id": "U1bkaaWWfEcqHzny",
+          "name": "[GD] Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "goodcollective",
+          "mode": "name"
+        },
+        "text": "=*.: GoodID Offers Summary :.*\n\n\n*- People -*\n  {{ $json.data[1]['All RT Members'] }} Total RedTent Pool Members ({{ $if($json.data[1]['All RT Members'] >= $json.data[0]['All RT Members'], '+','') }}{{ ((parseInt($json.data[1]['All RT Members']) - parseInt($json.data[0]['All RT Members']))/ parseInt($json.data[0]['All RT Members'])*100).toFixed(1)+'%'}} from last week)\n    {{ $json.data[1]['RT All Claims Last 30'] }} Monthly Active RedTent Pool Members ({{ $if($json.data[1]['RT All Claims Last 30'] >= $json.data[0]['RT All Claims Last 30'], '+','') }}{{ ((parseInt($json.data[1]['RT All Claims Last 30']) - parseInt($json.data[0]['RT All Claims Last 30']))/ parseInt($json.data[0]['RT All Claims Last 30'])*100).toFixed(1)+'%'}} from last week)\n      {{ $json.data[1]['Colombia RT Members'] }} Members in Colombia Pool ({{ $if($json.data[1]['Colombia RT Members'] >= $json.data[0]['Colombia RT Members'], '+','') }}{{ ((parseInt($json.data[1]['Colombia RT Members']) - parseInt($json.data[0]['Colombia RT Members']))/ parseInt($json.data[0]['Colombia RT Members'])*100).toFixed(1)+'%'}} from last week)\n      {{ $json.data[1]['Nigeria RT Members'] }} Members in Nigeria Pool ({{ $if($json.data[1]['Nigeria RT Members'] >= $json.data[0]['Nigeria RT Members'], '+','') }}{{ ((parseInt($json.data[1]['Nigeria RT Members']) - parseInt($json.data[0]['Nigeria RT Members']))/ parseInt($json.data[0]['Nigeria RT Members'])*100).toFixed(1)+'%'}} from last week)\n\n\n*- Claim -*\n\n\t*- All Time*\n\t\t{{ $json.data[1]['RT All Claims AT'] }} RedTent Claims AT ({{ $if($json.data[1]['RT All Claims AT'] >= $json.data[0]['RT All Claims AT'], '+','') }}{{ ((parseInt($json.data[1]['RT All Claims AT']) - parseInt($json.data[0]['RT All Claims AT']))/ parseInt($json.data[0]['RT All Claims AT'])*100).toFixed(1)+'%'}} from last week)\n\t\t  {{ $json.data[1]['RT Colombia Claims AT'] }} Colombia Claims AT ({{ $if($json.data[1]['RT Colombia Claims AT'] >= $json.data[0]['RT Colombia Claims AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Claims AT']) - parseInt($json.data[0]['RT Colombia Claims AT']))/ parseInt($json.data[0]['RT Colombia Claims AT'])*100).toFixed(1)+'%'}} from last week)\n\t\t  {{ $json.data[1]['RT Nigeria Claims AT'] }} Nigeria Claims AT ({{ $if($json.data[1]['RT Nigeria Claims AT'] >= $json.data[0]['RT Nigeria Claims AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Claims AT']) - parseInt($json.data[0]['RT Nigeria Claims AT']))/ parseInt($json.data[0]['RT Nigeria Claims AT'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\n\t*- Last 7 days*  \n\t\t{{ $json.data[1]['RT Avg Claim count per user Last 7'] }} Average Claim count per user this week  ({{ $if($json.data[1]['RT Avg Claim count per user Last 7'] >= $json.data[0]['RT Avg Claim count per user Last 7'], '+','') }}{{ (($json.data[1]['RT Avg Claim count per user Last 7'] - $json.data[0]['RT Avg Claim count per user Last 7'])/$json.data[0]['RT Avg Claim count per user Last 7']*100).toFixed(1)+'%' }} from last week)\n\t  \n\t\t{{ $json.data[1]['RT All Claims Last 7'] }} RedTent Claims Last 7 days  ({{ $if($json.data[1]['RT All Claims Last 7'] >= $json.data[0]['RT All Claims Last 7'], '+','') }}{{ ((parseInt($json.data[1]['RT All Claims Last 7']) - parseInt($json.data[0]['RT All Claims Last 7']))/ parseInt($json.data[0]['RT All Claims Last 7'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\t\t{{ $json.data[1]['RT Colombia Claims Last 7'] }} Colombia Claims Last 7 days ({{ $if($json.data[1]['RT Colombia Claims Last 7'] >= $json.data[0]['RT Colombia Claims Last 7'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Claims Last 7']) - parseInt($json.data[0]['RT Colombia Claims Last 7']))/ parseInt($json.data[0]['RT Colombia Claims Last 7'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\t\t{{ $json.data[1]['RT Nigeria Claims Last 7'] }} Nigeria Claims Last 7 days ({{ $if($json.data[1]['RT Nigeria Claims Last 7'] >= $json.data[0]['RT Nigeria Claims Last 7'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Claims Last 7']) - parseInt($json.data[0]['RT Nigeria Claims Last 7']))/ parseInt($json.data[0]['RT Nigeria Claims Last 7'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\n\n*- Values -*\n\tG$ {{ $json.data[1]['RT Average Claim Value'] }} | USD {{ $json.data[1]['RT Average Claim Value USD'] }} Average Individual RT Claim Value this week ({{ $if($json.data[1]['RT Average Claim Value'] >= $json.data[0]['RT Average Claim Value'], '+','') }}{{ ((parseInt($json.data[1]['RT Average Claim Value']) - parseInt($json.data[0]['RT Average Claim Value']))/ parseInt($json.data[0]['RT Average Claim Value'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\tG$ {{ $json.data[1]['RT All Paid AT'].toLocaleString() }} | USD {{ $json.data[1]['RT All Paid AT USD'] }} Paid by both RedTent Pools AT  ({{ $if($json.data[1]['RT All Paid AT'] >= $json.data[0]['RT All Paid AT'], '+','') }}{{ ((parseInt($json.data[1]['RT All Paid AT']) - parseInt($json.data[0]['RT All Paid AT']))/ parseInt($json.data[0]['RT All Paid AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Colombia Paid AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Colombia Paid AT USD'] }} Paid by RedTent Colombia AT ({{ $if($json.data[1]['RT Colombia Paid AT'] >= $json.data[0]['RT Colombia Paid AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Paid AT']) - parseInt($json.data[0]['RT Colombia Paid AT']))/ parseInt($json.data[0]['RT Colombia Paid AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Nigeria Paid AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Nigeria Paid AT USD'] }} Paid by RedTent Nigeria AT ({{ $if($json.data[1]['RT Nigeria Paid AT'] >= $json.data[0]['RT Nigeria Paid AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Paid AT']) - parseInt($json.data[0]['RT Nigeria Paid AT']))/ parseInt($json.data[0]['RT Nigeria Paid AT'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\t\n\n*- Donations -*\n\t{{ $json.data[1]['RT All Donor Wallets'] }} Total Donor wallets ({{ $if($json.data[1]['RT All Donor Wallets'] >= $json.data[0]['RT All Donor Wallets'], '+','') }}{{ ((parseInt($json.data[1]['RT All Donor Wallets']) - parseInt($json.data[0]['RT All Donor Wallets']))/ parseInt($json.data[0]['RT All Donor Wallets'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\tG$ {{ $json.data[1]['RT All Donated AT'].toLocaleString() }} | USD {{ $json.data[1]['RT All Donated AT USD']}} Total Donated to RedTent AT ({{ $if($json.data[1]['RT All Donated AT'] >= $json.data[0]['RT All Donated AT'], '+','') }}{{ ((parseInt($json.data[1]['RT All Donated AT']) - parseInt($json.data[0]['RT All Donated AT']))/ parseInt($json.data[0]['RT All Donated AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Colombia Donated AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Colombia Donated AT USD'] }} Total Donated to RedTent Colombia AT ({{ $if($json.data[1]['RT Colombia Donated AT'] >= $json.data[0]['RT Colombia Donated AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Donated AT']) - parseInt($json.data[0]['RT Colombia Donated AT']))/ parseInt($json.data[0]['RT Colombia Donated AT'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Nigeria Donated AT'].toLocaleString() }} | USD {{ $json.data[1]['RT Nigeria Donated AT USD'] }} Total Donated to RedTent Nigeria AT ({{ $if($json.data[1]['RT Nigeria Donated AT'] >= $json.data[0]['RT Nigeria Donated AT'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Donated AT']) - parseInt($json.data[0]['RT Nigeria Donated AT']))/ parseInt($json.data[0]['RT Nigeria Donated AT'])*100).toFixed(1)+'%'}} from last week)\n\t  \n\n\n*- Balances -*\n\tG$ {{ $json.data[1]['RT All Pool Balance'].toLocaleString() }} | USD {{ $json.data[1]['RT All Pool Balance USD'] }} Combined RT Pools balance ({{ $if($json.data[1]['RT All Pool Balance'] >= $json.data[0]['RT All Pool Balance'], '+','') }}{{ ((parseInt($json.data[1]['RT All Pool Balance']) - parseInt($json.data[0]['RT All Pool Balance']))/ parseInt($json.data[0]['RT All Pool Balance'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Colombia Pool Balance'].toLocaleString() }} | USD {{ $json.data[1]['RT Colombia Pool Balance USD'] }}  RT Colombia Pool Balance ({{ $if($json.data[1]['RT Colombia Pool Balance'] >= $json.data[0]['RT Colombia Pool Balance'], '+','') }}{{ ((parseInt($json.data[1]['RT Colombia Pool Balance']) - parseInt($json.data[0]['RT Colombia Pool Balance']))/ parseInt($json.data[0]['RT Colombia Pool Balance'])*100).toFixed(1)+'%'}} from last week)\t  \n\t\tG$ {{ $json.data[1]['RT Nigeria Pool Balance'].toLocaleString() }} | USD {{ $json.data[1]['RT Nigeria Pool Balance USD'] }} RT Nigeria Pool Balance ({{ $if($json.data[1]['RT Nigeria Pool Balance'] >= $json.data[0]['RT Nigeria Pool Balance'], '+','') }}{{ ((parseInt($json.data[1]['RT Nigeria Pool Balance']) - parseInt($json.data[0]['RT Nigeria Pool Balance']))/ parseInt($json.data[0]['RT Nigeria Pool Balance'])*100).toFixed(1)+'%'}} from last week)\n\t  ",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        144
+      ],
+      "id": "d7917553-e418-493c-8094-9f3b43fc3099",
+      "name": "goodcollective",
+      "webhookId": "27352ca2-d027-46a7-8940-18b4b9f5d869",
+      "credentials": {
+        "slackApi": {
+          "id": "U1bkaaWWfEcqHzny",
+          "name": "[GD] Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Get data",
+        "height": 220,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7d78ddce-f418-4d78-b8e8-bfb8cb423ae6",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Make it tidy",
+        "height": 200,
+        "width": 340
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        288
+      ],
+      "id": "24eb0361-8532-4974-b4e4-8a698e79c6bf",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Send messages",
+        "height": 400,
+        "width": 250
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        448,
+        80
+      ],
+      "id": "045c314c-eb40-4070-a777-0ed22aec8fa3",
+      "name": "Sticky Note2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "goodcollective",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "data channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a847db02-a7bf-4d00-ab14-19d1998918fd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "08445b815aea6a21daaff47d04b630f7a180fd2a054d7b796da35f2198aef3a5"
+  },
+  "id": "aMPjUide2ERbfDlZ",
+  "tags": []
+}

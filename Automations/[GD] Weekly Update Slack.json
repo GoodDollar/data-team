@@ -1,0 +1,138 @@
+{
+  "name": "[GD] Weekly Update Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 12,
+              "weekday": "4"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1H_uXgoEnfGKHCbu59VXh_wQax03J8bfgq87wOR-FZXk/edit?gid=2021834854#gid=2021834854",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1164058995,
+          "mode": "list",
+          "cachedResultName": "Weekly Update Daap Looker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1H_uXgoEnfGKHCbu59VXh_wQax03J8bfgq87wOR-FZXk/edit#gid=1164058995"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "24e1a55a-63fc-4454-9c08-32b1cfde9b88",
+      "name": "Google Sheets Trigger",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "rchpnMqo5n5CKHwo",
+          "name": "[GD] GSheets Trigger OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "03dfcb07-b30f-44cb-9d2d-4a1539c16bfc",
+      "name": "Limit",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "data",
+          "mode": "name"
+        },
+        "text": "=.: Growth in the last 7 days :.\n\n  USD values are using CoinMarketCap's price.\n  G$ price on CoinMarketCap: USD {{ $json.Price.toFixed(8\n)}} ({{ $if(($json['Price %'] > 0),\"+\",\"\")}}{{ ($json['Price %']*100).toFixed(1) }}%)\n  Circulating Supply: G$ {{ ($json['Circulating Supply'] / 1e9).toFixed(2) }}B (USD {{ Math.round($json['Circulating Supply'] * $json.Price).toLocaleString() }})\n\n\n\n\n.: All Chains :.\n\n  Monthly Active Users: {{ $json['Celo Monthly Active Users'].toLocaleString() }} ({{ $if($json['Celo Monthly Active Users %']>0,\"+\",\"\")}}{{ ($json['Celo Monthly Active Users %']*100).toFixed(1) }}%)\n  Transaction Count: {{ $json['Transactions Count'].toLocaleString() }} ({{ $if(($json['Transactions Count %'] > 0),\"+\",\"\")}}{{( $json['Transaction Count %']*100).toFixed(1) }}%)\n  Transaction Amount: G$ {{ \n  $json['Transactions Amount'] > 1e9 ? ($json['Transactions Amount'] / 1e9).toFixed(2) + 'B' : \n  $json['Transactions Amount'] > 1e6 ? ($json['Transactions Amount'] / 1e6).toFixed(2) + 'M' : \n  $json['Transactions Amount'].toFixed(2) \n}} (USD {{ Math.round($json['Transactions Amount'] * $json.Price).toLocaleString() }}){{ \n  $json['Transactions Amount %'] !== undefined ? ` (${ $json['Transactions Amount %'] > 0 ? '+' : '' }${ ($json['Transactions Amount %'] * 100).toFixed(1) }%)` : '' \n}}\n  UBI per Claimer: G$ {{ $json['UBI per Claimer '].toFixed(2) }} (USD {{ $json['UBI per Claimer USD'].toFixed(4) }})\n  Total Claims: {{ $json['Weekly Claims '].toLocaleString() }} ({{ $if(($json['Weekly Claims %'] > 0),\"+\",\"\")}}{{ ($json['Weekly Claims %']*100).toFixed(2) }}%)\n  Total UBI Distributed: G$ {{ $json['UBI Distributed '].toLocaleString() }} (USD {{ ($json['UBI Distributed ']*$json.Price).toFixed(2) }})\n\n\n\n.: Celo :.\n\n  Monthly Active Users: {{ $json['Celo Monthly Active Users'].toLocaleString() }} ({{ $if($json['Celo Monthly Active Users %']>0,\"+\",\"\")}}{{ ($json['Celo Monthly Active Users %']*100).toFixed(1) }}%)\n  Transaction Count: {{ $json['Celo Transactions Count'].toLocaleString() }} ({{ $if(($json['Celo Transactions Count %'] > 0),\"+\",\"\")}}{{( $json['Celo Transactions Count %']*100).toFixed(1) }}%)\n  Transaction Amount: G$ {{ \n  $json['Celo Transactions Amount'] > 1e9 ? ($json['Celo Transactions Amount'] / 1e9).toFixed(2) + 'B' : \n  $json['Celo Transactions Amount'] > 1e6 ? ($json['Celo Transactions Amount'] / 1e6).toFixed(2) + 'M' : \n  $json['Celo Transactions Amount'].toFixed(2) \n}} (USD {{ Math.round($json['Celo Transactions Amount'] * $json.Price).toLocaleString() }}){{ \n  $json['Celo Transactions Amount %'] !== undefined ? ` (${ $json['Celo Transactions Amount %'] > 0 ? '+' : '' }${ ($json['Celo Transactions Amount %'] * 100).toFixed(1) }%)` : '' \n}}\n  UBI per Claimer: G$ {{ $json['Celo UBI per User'].toFixed(2) }} (USD {{ $json['Celo UBI per User USD'].toFixed(4) }})\n  Total Claims: {{ $json['Celo Claims'].toLocaleString() }} ({{ $if(($json['Celo Claims %'] > 0),\"+\",\"\")}}{{ ($json['Celo Claims %']*100).toFixed(2) }}%)\n  Total UBI Distributed: G$ {{ \n  $json['Celo UBI Distributed'] > 1e9 ? ($json['Celo UBI Distributed'] / 1e9).toFixed(2) + 'B' : \n  $json['Celo UBI Distributed'] > 1e6 ? ($json['Celo UBI Distributed'] / 1e6).toFixed(2) + 'M' : \n  $json['Celo UBI Distributed'].toFixed(2) \n}} (USD {{ Math.round($json['Celo UBI Distributed'] * $json.Price).toLocaleString() }})\n  UBI day: G$ {{ $json['UBI day CELO'].toLocaleString() }} (USD {{ ($json['UBI day CELO']*$json.Price).toFixed(4) }})\n  UBI week: G$ {{ $json['UBI week CELO'].toLocaleString() }} (USD {{ ($json['UBI week CELO']*$json.Price).toFixed(4) }})\n  UBI month: G$ {{ $json['UBI Month CELO'].toLocaleString() }} (USD {{ ($json['UBI Month CELO']*$json.Price).toFixed(4) }})\n\n\n\n.: Fuse :.\n\n  Monthly Active Users: {{ $json['Fuse Monthly Active Users'].toLocaleString() }} ({{ $if($json['Fuse Monthly Active Users %']>0,\"+\",\"\")}}{{ ($json['Fuse Monthly Active Users %']*100).toFixed(1) }}%)\n  Transaction Count: {{ $json['Fuse Transactions Count'].toLocaleString() }} ({{ $if(($json['Fuse Transactions Count %'] > 0),\"+\",\"\")}}{{( $json['Fuse Transactions Count %']*100).toFixed(1) }}%)\n  Transaction Amount: G$ {{ \n  $json['Fuse Transactions Amount '] > 1e9 ? ($json['Fuse Transactions Amount '] / 1e9).toFixed(2) + 'B' : \n  $json['Fuse Transactions Amount '] > 1e6 ? ($json['Fuse Transactions Amount '] / 1e6).toFixed(2) + 'M' : \n  $json['Fuse Transactions Amount '].toFixed(2) \n}} (USD {{ Math.round($json['Fuse Transactions Amount '] * $json.Price).toLocaleString() }}){{ \n  $json['Fuse Transactions Amount  %'] !== undefined ? ` (${ $json['Fuse Transactions Amount  %'] > 0 ? '+' : '' }${ ($json['Fuse Transactions Amount  %'] * 100).toFixed(1) }%)` : '' \n}}\n  UBI per Claimer: G$ {{ $json['Fuse UBI per User'].toFixed(2) }} (USD {{ ($json['Fuse UBI per User USD'] || 0).toFixed(4) }})  Total Claims: {{ $json['Fuse Claims'].toLocaleString() }} ({{ $if(($json['Fuse Claims %'] > 0),\"+\",\"\")}}{{ ($json['Fuse Claims %']*100).toFixed(2) }}%)\n  Total UBI Distributed: G$ {{ \n  $json['Fuse UBI Distributed'] > 1e9 ? ($json['Fuse UBI Distributed'] / 1e9).toFixed(2) + 'B' : \n  $json['Fuse UBI Distributed'] > 1e6 ? ($json['Fuse UBI Distributed'] / 1e6).toFixed(2) + 'M' : \n  $json['Fuse UBI Distributed'] > 1e3 ? ($json['Fuse UBI Distributed'] / 1e3).toFixed(2) + 'k' : \n  $json['Fuse UBI Distributed'].toFixed(2)\n}} (USD {{ ($json['Fuse UBI Distributed'] * $json.Price).toFixed(2).toLocaleString() }})\n  UBI day: G$ {{ $json['UBI day FUSE'].toFixed(2) }} (USD {{ ($json['UBI day FUSE'] * $json.Price).toFixed(4) }})\n  UBI week: G$ {{ $json['UBI week FUSE'].toFixed(2) }} (USD {{ ($json['UBI week FUSE'] * $json.Price).toFixed(4) }})\n  UBI month: G$ {{ $json['UBI Month FUSE'].toFixed(2) }} (USD {{ ($json['UBI Month FUSE'] * $json.Price).toFixed(4) }})\n\n\n\n.: Bridge :.\n\n  Fuse to Celo: G$ {{ \n  $json['Bridge Fuse to Celo'] > 1e9 ? ($json['Bridge Fuse to Celo'] / 1e9).toFixed(2) + 'B' : \n  $json['Bridge Fuse to Celo'] > 1e6 ? ($json['Bridge Fuse to Celo'] / 1e6).toFixed(2) + 'M' : \n  $json['Bridge Fuse to Celo'] > 1e3 ? ($json['Bridge Fuse to Celo'] / 1e3).toFixed(2) + 'K' : \n  $json['Bridge Fuse to Celo'].toFixed(2)\n}}  |  USD {{ \n  ($json['Bridge Fuse to Celo'] * $json.Price) > 1e9 ? (($json['Bridge Fuse to Celo'] * $json.Price) / 1e9).toFixed(2) + 'B' : \n  ($json['Bridge Fuse to Celo'] * $json.Price) > 1e6 ? (($json['Bridge Fuse to Celo'] * $json.Price) / 1e6).toFixed(2) + 'M' : \n  ($json['Bridge Fuse to Celo'] * $json.Price) > 1e3 ? (($json['Bridge Fuse to Celo'] * $json.Price) / 1e3).toFixed(2) + 'K' : \n  ($json['Bridge Fuse to Celo'] * $json.Price).toFixed(2)\n}} ({{ $if(($json['Bridge Fuse to Celo %']>0),\"+\",\"\") }}{{ ($json['Bridge Fuse to Celo %']*100).toFixed(1) }}%)\n    Fuse to Celo Unique Users: {{ $json['Fuse to Celo Unique Users'] }} ({{ $if(($json['Fuse to Celo Unique Users %']>0),\"+\",\"\") }}{{ ($json['Fuse to Celo Unique Users %']*100).toFixed(1) }}%)\n  Celo to Fuse: G$ {{ \n  $json['Bridge Celo to Fuse'] > 1e9 ? ($json['Bridge Celo to Fuse'] / 1e9).toFixed(2) + 'B' : \n  $json['Bridge Celo to Fuse'] > 1e6 ? ($json['Bridge Celo to Fuse'] / 1e6).toFixed(2) + 'M' : \n  $json['Bridge Celo to Fuse'] > 1e3 ? ($json['Bridge Celo to Fuse'] / 1e3).toFixed(2) + 'K' : \n  $json['Bridge Celo to Fuse'].toFixed(2)\n}}  |  USD {{ \n  ($json['Bridge Celo to Fuse'] * $json.Price) > 1e9 ? (($json['Bridge Celo to Fuse'] * $json.Price) / 1e9).toFixed(2) + 'B' : \n  ($json['Bridge Celo to Fuse'] * $json.Price) > 1e6 ? (($json['Bridge Celo to Fuse'] * $json.Price) / 1e6).toFixed(2) + 'M' : \n  ($json['Bridge Celo to Fuse'] * $json.Price) > 1e3 ? (($json['Bridge Celo to Fuse'] * $json.Price) / 1e3).toFixed(2) + 'K' : \n  ($json['Bridge Celo to Fuse'] * $json.Price).toFixed(2)\n}} ({{ $if(($json['Bridge Celo to Fuse %']>0),\"+\",\"\") }}{{ ($json['Bridge Celo to Fuse %']*100).toFixed(1) }}%)\n    Celo to Fuse Unique Users: {{ $json['Celo to Fuse Unique Users'] }} ({{ $if(($json['Celo to Fuse Unique Users %']>0),\"+\",\"\") }}{{ ($json['Celo to Fuse Unique Users %']*100).toFixed(1) }}%)\n\n\n\n\n.: Supply :.\n\n  Circulating Supply: G$ {{ \n    $json['Circulating Supply'] > 1e9 ? ($json['Circulating Supply'] / 1e9).toFixed(2) + 'B' : \n    $json['Circulating Supply'] > 1e6 ? ($json['Circulating Supply'] / 1e6).toFixed(2) + 'M' : \n    $json['Circulating Supply'] > 1e3 ? ($json['Circulating Supply'] / 1e3).toFixed(2) + 'K' : \n    $json['Circulating Supply'].toFixed(2)\n  }}\n  Fuse Supply: G$ {{ \n    $json['Fuse Supply'] > 1e9 ? ($json['Fuse Supply'] / 1e9).toFixed(2) + 'B' : \n    $json['Fuse Supply'] > 1e6 ? ($json['Fuse Supply'] / 1e6).toFixed(2) + 'M' : \n    $json['Fuse Supply'] > 1e3 ? ($json['Fuse Supply'] / 1e3).toFixed(2) + 'K' : \n    $json['Fuse Supply'].toFixed(2)\n  }} ({{ $json['Fuse Holders'].format() }} holders)\n  Ethereum Supply: G$ {{ \n    $json['Ethereum Supply'] > 1e9 ? ($json['Ethereum Supply'] / 1e9).toFixed(2) + 'B' : \n    $json['Ethereum Supply'] > 1e6 ? ($json['Ethereum Supply'] / 1e6).toFixed(2) + 'M' : \n    $json['Ethereum Supply'] > 1e3 ? ($json['Ethereum Supply'] / 1e3).toFixed(2) + 'K' : \n    $json['Ethereum Supply'].toFixed(2)\n  }} ({{ $json['Ethereum Holders'].format() }} holders)\n  Celo Supply: G$ {{ \n    $json['Celo Supply '] > 1e9 ? ($json['Celo Supply '] / 1e9).toFixed(2) + 'B' : \n    $json['Celo Supply '] > 1e6 ? ($json['Celo Supply '] / 1e6).toFixed(2) + 'M' : \n    $json['Celo Supply '].toFixed(2)\n  }} ({{ $json['Celo Holders'].format() }} holders)\n\n\n\n.: Staking :.\n\n  GOOD staking on Fuse: G$ {{ ($json['Fuse Total Stake'] >= 1e9 ? ($json['Fuse Total Stake'] / 1e9).toFixed(2) + 'B' : ($json['Fuse Total Stake'] >= 1e6 ? ($json['Fuse Total Stake'] / 1e6).toFixed(2) + 'M' : ($json['Fuse Total Stake'] >= 1e3 ? ($json['Fuse Total Stake'] / 1e3).toFixed(2) + 'k' : $json['Fuse Total Stake'].toFixed(2)))) }}  |  {{ $json['Fuse Stakers In Pool'].toLocaleString() }} stakers in the pool ({{ $if(($json['Fuse Stakers In Pool %']>0),\"+\",\"\") }}{{ ($json['Fuse Stakers In Pool %']*100).toFixed(1) }}%)\n  GOOD staking on Ethereum: USD {{ ($json['Eth Total Staked'] >= 1e6 ? ($json['Eth Total Staked'] / 1e6).toFixed(2) + 'M' : ($json['Eth Total Staked'] >= 1e3 ? ($json['Eth Total Staked'] / 1e3).toFixed(2) + 'k' : $json['Eth Total Staked'].toFixed(2))) }}  |  {{ $json['Eth Total In Pool'].toLocaleString() }} stakers in the pool ({{ $if(($json['Eth Total In Pool %']>0),\"+\",\"\") }}{{ ($json['Eth Total In Pool %']*100).toFixed(1) }}%)\n  GOOD staking without eToro: USD {{ ($json['Eth Staked Withouth Etoro'] >= 1e6 ? ($json['Eth Staked Withouth Etoro'] / 1e6).toFixed(2) + 'M' : ($json['Eth Staked Withouth Etoro'] >= 1e3 ? ($json['Eth Staked Withouth Etoro'] / 1e3).toFixed(2) + 'k' : $json['Eth Staked Withouth Etoro'].toFixed(2))) }} ({{ $if(($json['Eth Staked Withouth Etoro %']>0),\"+\",\"\") }}{{ ($json['Eth Staked Withouth Etoro %']*100).toFixed(1) }}%)\n\n\n\n.: Funnels :. \n\n  Signup funnel: {{ ($json['Sign Up Funnel']*100).toFixed(1) }}% ({{ $if(($json['Sign Up Funnel %']>0),\"+\",\"\") }}{{ ($json['Sign Up Funnel %']*100).toFixed(1) }}%)\n  FV funnel: {{ ($json['Fv Funnel']*100).toFixed(1) }}% ({{ $if(($json['Fv Funnel %']>0),\"+\",\"\") }}{{ ($json['Fv Funnel %']*100).toFixed(1) }}%)\n\n\n\n.: Snapshot :.\n\n  Proposal in vote: {{ $json['Proposal in vote'] }}\n  Total voters: {{ $json['Total members'].toLocaleString() }}  ({{ $if(($json['Total members %'] >0),\"+\",\"\") }}{{ ($json['Total members %'] *100).toFixed(1) }}%)\n  Last proposal {{ $json['Last proposal'] }} - {{ $json['Last Active Proposal Votes'] }} votes\n\n\n\n.: Invites :.\n\n  Value of Bounties: G$ {{ $json['Value of Bounties'].toLocaleString() }} (USD {{($json['Value of Bounties']*$json.Price).toFixed(2)}})\n  Amount of Bounties: {{ $json['Amount of Bounties'] }} ({{ $if(($json['Amount of Bounties %'] >0),\"+\",\"\") }}{{ ($json['Amount of Bounties %'] *100).toFixed(1) }}%)\n  New Claimers from invite: {{ $json['New Claimers From Invite'].toLocaleString() }} ({{ $if(($json['New Claimers From Invite %'] >0),\"+\",\"\") }}{{ ($json['New Claimers From Invite %'] *100).toFixed(1) }}%)\n  New Claimers Organic: {{ $json['New Claimers Organic'].toLocaleString() }} ({{ $if(($json['New Claimers Organic %'] >0),\"+\",\"\") }}{{ ($json['New Claimers Organic %'] *100).toFixed(1) }}%)",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ],
+      "id": "d52cec56-c029-4553-96e8-56d2cc8993e6",
+      "name": "Slack",
+      "webhookId": "959407d5-dfdf-4177-a3ca-0b190c69990b",
+      "credentials": {
+        "slackApi": {
+          "id": "U1bkaaWWfEcqHzny",
+          "name": "[GD] Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Esse cara funciona, só que o do make.com ainda tá rodando bonitinho com os emojis, então deixa esse desativado"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        144,
+        -176
+      ],
+      "typeVersion": 1,
+      "id": "0bb2b0f5-1a0b-44ce-bd73-d207b833a438",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "bbec8c28-e879-410c-8d0e-d447ff6e5ecc",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "08445b815aea6a21daaff47d04b630f7a180fd2a054d7b796da35f2198aef3a5"
+  },
+  "id": "7TuBuId8o6DjGlCZ",
+  "tags": []
+}

@@ -1,0 +1,196 @@
+{
+  "name": "[GD] Large TXs on LPs",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        16
+      ],
+      "id": "ac3f0641-694d-4af3-97d5-ae3d2ef9cb8d",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1ILRmYpsiPw-FTRgEotPP_kbx-fUFh7vjA1oPB-UxnMg",
+          "mode": "list",
+          "cachedResultName": "Liquidity Pools TXs volume and count",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ILRmYpsiPw-FTRgEotPP_kbx-fUFh7vjA1oPB-UxnMg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 421636055,
+          "mode": "list",
+          "cachedResultName": "Large Volume Alerts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ILRmYpsiPw-FTRgEotPP_kbx-fUFh7vjA1oPB-UxnMg/edit#gid=421636055"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -416,
+        16
+      ],
+      "id": "c116c126-e460-438c-b438-3824a23542d1",
+      "name": "Read Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JIk21yLDI9cUXYw1",
+          "name": "[GD] GSheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "exclude-header",
+              "leftValue": "={{ $json.__rowNumber }}",
+              "rightValue": "=1",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "has-data",
+              "leftValue": "={{ $json.DEX }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        16
+      ],
+      "id": "1df90234-ff7f-4fb2-9ee4-d65b648f9957",
+      "name": "Filter Rows"
+    },
+    {
+      "parameters": {
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        16
+      ],
+      "id": "9be5af47-7ae3-4fc1-bcee-27a5207b5efe",
+      "name": "Limit: Last 10 Rows"
+    },
+    {
+      "parameters": {
+        "select": "user",
+        "user": {
+          "__rl": true,
+          "value": "drptiago",
+          "mode": "username"
+        },
+        "text": "=*🔔 Large Volume Alert*\\n\\n• *DEX:* {{ $json.DEX }}\\n• *Chain:* {{ $json.Chain }}\\n• *Pair:* {{ $json.Pair }}\\n• *Volume:* ${{ $json['USD Volume'] }}\\n• *Time:* {{ $json.Date }} {{ $json.Timestamp }}\\n\\n_Pool: {{ $json['Pool Address'] }}_",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        192,
+        16
+      ],
+      "id": "6cede695-0e79-436f-9a48-f95213c5a21f",
+      "name": "Send a message",
+      "webhookId": "ba00734a-6c74-4ee7-a418-989665c11b6d",
+      "credentials": {
+        "slackApi": {
+          "id": "U1bkaaWWfEcqHzny",
+          "name": "[GD] Slack"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Filter Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Rows": {
+      "main": [
+        [
+          {
+            "node": "Limit: Last 10 Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit: Last 10 Rows": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a2830f33-f320-4eeb-a362-12c279ac8813",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "08445b815aea6a21daaff47d04b630f7a180fd2a054d7b796da35f2198aef3a5"
+  },
+  "id": "QcWwRu9B37PRs7iv",
+  "tags": []
+}

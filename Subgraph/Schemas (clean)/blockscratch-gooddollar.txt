@@ -1,0 +1,439 @@
+=== Sampling (latest 10): blockscratch-gooddollar | Subgraph: 87MN9gtSCbPjfa3Zv5w79kFizD4pM8eUhA7geyuKBTFu ===
+	Root Query fields (collections) available right now:
+	adminChanged, adminChangeds, beaconUpgraded, beaconUpgradeds, cycleLengthSet, cycleLengthSets, daySet, daySets, initialized, initializeds, shouldWithdrawFromDAOSet, shouldWithdrawFromDAOSets, ubicalculated, ubicalculateds, ubiclaimed, ubiclaimeds, ubicycleCalculated, ubicycleCalculateds, upgraded, upgradeds, withdrawFromDao, withdrawFromDaos, _meta
+	
+=== Collection: adminChangeds  -> Item Type: AdminChanged ===
+	No rows found.
+	
+=== Collection: beaconUpgradeds  -> Item Type: BeaconUpgraded ===
+	No rows found.
+	
+=== Collection: cycleLengthSets  -> Item Type: CycleLengthSet ===
+	No rows found.
+	
+=== Collection: daySets  -> Item Type: DaySet ===
+	Record 1:
+	  id: 0x280dd71fda31c43b5b5ab1334eed0c60f40960a1ec197acbcfa31bf6c2fca77406000000
+	  blockNumber: 44308847
+	  blockTimestamp: 1756209605
+	  newDay: 909
+	  transactionHash: 0x280dd71fda31c43b5b5ab1334eed0c60f40960a1ec197acbcfa31bf6c2fca774
+	
+	Record 2:
+	  id: 0x5672b5e0960371725e193fe644b462eecc9e37c612bacd71059ef23b0fa88f9a20000000
+	  blockNumber: 44222446
+	  blockTimestamp: 1756123204
+	  newDay: 908
+	  transactionHash: 0x5672b5e0960371725e193fe644b462eecc9e37c612bacd71059ef23b0fa88f9a
+	
+	Record 3:
+	  id: 0xfb2e92a56eaa9b5eecf0d2a31d7c2fec7555e56829d12b505f8538e7af1dc06525000000
+	  blockNumber: 44136046
+	  blockTimestamp: 1756036804
+	  newDay: 907
+	  transactionHash: 0xfb2e92a56eaa9b5eecf0d2a31d7c2fec7555e56829d12b505f8538e7af1dc065
+	
+	Record 4:
+	  id: 0xf50bb247d09a821754e2c126859d0712ea030da4a2cf688a2e1df779a90588bd16000000
+	  blockNumber: 44049646
+	  blockTimestamp: 1755950404
+	  newDay: 906
+	  transactionHash: 0xf50bb247d09a821754e2c126859d0712ea030da4a2cf688a2e1df779a90588bd
+	
+	Record 5:
+	  id: 0xacf2773933bf83aa723c6ea84c6396e8f021ea34f7cb52ad4b2cd01fac23783119000000
+	  blockNumber: 43963245
+	  blockTimestamp: 1755864003
+	  newDay: 905
+	  transactionHash: 0xacf2773933bf83aa723c6ea84c6396e8f021ea34f7cb52ad4b2cd01fac237831
+	
+	Record 6:
+	  id: 0xb06d83dacfadb1bf1c452cdab0d805e2a1d7db6058353c09088dfd800675fcd7ef000000
+	  blockNumber: 43876847
+	  blockTimestamp: 1755777605
+	  newDay: 904
+	  transactionHash: 0xb06d83dacfadb1bf1c452cdab0d805e2a1d7db6058353c09088dfd800675fcd7
+	
+	Record 7:
+	  id: 0xecc70d0e6810b06180d42b5d43e710c7d6a61fdea6fac3c223a898b30424b928ff000000
+	  blockNumber: 43790447
+	  blockTimestamp: 1755691205
+	  newDay: 903
+	  transactionHash: 0xecc70d0e6810b06180d42b5d43e710c7d6a61fdea6fac3c223a898b30424b928
+	
+	Record 8:
+	  id: 0xaf448de1f84059198129f2363a5f4ea4c6e826e1f6fb57e6753ad61d968037e92e000000
+	  blockNumber: 43704045
+	  blockTimestamp: 1755604803
+	  newDay: 902
+	  transactionHash: 0xaf448de1f84059198129f2363a5f4ea4c6e826e1f6fb57e6753ad61d968037e9
+	
+	Record 9:
+	  id: 0xedab8747d3b731c4dcb81eb31c00b457ed6ac9c2a511c1ea33bd9c4230294afc14000000
+	  blockNumber: 43617645
+	  blockTimestamp: 1755518403
+	  newDay: 901
+	  transactionHash: 0xedab8747d3b731c4dcb81eb31c00b457ed6ac9c2a511c1ea33bd9c4230294afc
+	
+	Record 10:
+	  id: 0x4fb042ac885535e17602046c15c0ba68204bcdc6fce8cdf3680bed47324fce7d14000000
+	  blockNumber: 43531246
+	  blockTimestamp: 1755432004
+	  newDay: 900
+	  transactionHash: 0x4fb042ac885535e17602046c15c0ba68204bcdc6fce8cdf3680bed47324fce7d
+	
+	
+=== Collection: initializeds  -> Item Type: Initialized ===
+	No rows found.
+	
+=== Collection: shouldWithdrawFromDAOSets  -> Item Type: ShouldWithdrawFromDAOSet ===
+	No rows found.
+	
+=== Collection: ubicalculateds  -> Item Type: UBICalculated ===
+	Record 1:
+	  id: 0x280dd71fda31c43b5b5ab1334eed0c60f40960a1ec197acbcfa31bf6c2fca77407000000
+	  blockNumber: 44308847
+	  blockTimestamp: 1756209605
+	  dailyUbi: 100387403913211125356
+	  day: 909
+	  transactionHash: 0x280dd71fda31c43b5b5ab1334eed0c60f40960a1ec197acbcfa31bf6c2fca774
+	
+	Record 2:
+	  id: 0x5672b5e0960371725e193fe644b462eecc9e37c612bacd71059ef23b0fa88f9a21000000
+	  blockNumber: 44222446
+	  blockTimestamp: 1756123204
+	  dailyUbi: 100387403913211125356
+	  day: 908
+	  transactionHash: 0x5672b5e0960371725e193fe644b462eecc9e37c612bacd71059ef23b0fa88f9a
+	
+	Record 3:
+	  id: 0xfb2e92a56eaa9b5eecf0d2a31d7c2fec7555e56829d12b505f8538e7af1dc06526000000
+	  blockNumber: 44136046
+	  blockTimestamp: 1756036804
+	  dailyUbi: 100387403913211125356
+	  day: 907
+	  transactionHash: 0xfb2e92a56eaa9b5eecf0d2a31d7c2fec7555e56829d12b505f8538e7af1dc065
+	
+	Record 4:
+	  id: 0xf50bb247d09a821754e2c126859d0712ea030da4a2cf688a2e1df779a90588bd17000000
+	  blockNumber: 44049646
+	  blockTimestamp: 1755950404
+	  dailyUbi: 100387403913211125356
+	  day: 906
+	  transactionHash: 0xf50bb247d09a821754e2c126859d0712ea030da4a2cf688a2e1df779a90588bd
+	
+	Record 5:
+	  id: 0xacf2773933bf83aa723c6ea84c6396e8f021ea34f7cb52ad4b2cd01fac2378311a000000
+	  blockNumber: 43963245
+	  blockTimestamp: 1755864003
+	  dailyUbi: 100387403913211125356
+	  day: 905
+	  transactionHash: 0xacf2773933bf83aa723c6ea84c6396e8f021ea34f7cb52ad4b2cd01fac237831
+	
+	Record 6:
+	  id: 0xb06d83dacfadb1bf1c452cdab0d805e2a1d7db6058353c09088dfd800675fcd7f0000000
+	  blockNumber: 43876847
+	  blockTimestamp: 1755777605
+	  dailyUbi: 100387403913211125356
+	  day: 904
+	  transactionHash: 0xb06d83dacfadb1bf1c452cdab0d805e2a1d7db6058353c09088dfd800675fcd7
+	
+	Record 7:
+	  id: 0xecc70d0e6810b06180d42b5d43e710c7d6a61fdea6fac3c223a898b30424b92800010000
+	  blockNumber: 43790447
+	  blockTimestamp: 1755691205
+	  dailyUbi: 100387403913211125356
+	  day: 903
+	  transactionHash: 0xecc70d0e6810b06180d42b5d43e710c7d6a61fdea6fac3c223a898b30424b928
+	
+	Record 8:
+	  id: 0xaf448de1f84059198129f2363a5f4ea4c6e826e1f6fb57e6753ad61d968037e92f000000
+	  blockNumber: 43704045
+	  blockTimestamp: 1755604803
+	  dailyUbi: 100387403913211125356
+	  day: 902
+	  transactionHash: 0xaf448de1f84059198129f2363a5f4ea4c6e826e1f6fb57e6753ad61d968037e9
+	
+	Record 9:
+	  id: 0xedab8747d3b731c4dcb81eb31c00b457ed6ac9c2a511c1ea33bd9c4230294afc15000000
+	  blockNumber: 43617645
+	  blockTimestamp: 1755518403
+	  dailyUbi: 100387403913211125356
+	  day: 901
+	  transactionHash: 0xedab8747d3b731c4dcb81eb31c00b457ed6ac9c2a511c1ea33bd9c4230294afc
+	
+	Record 10:
+	  id: 0x4fb042ac885535e17602046c15c0ba68204bcdc6fce8cdf3680bed47324fce7d15000000
+	  blockNumber: 43531246
+	  blockTimestamp: 1755432004
+	  dailyUbi: 100387403913211125356
+	  day: 900
+	  transactionHash: 0x4fb042ac885535e17602046c15c0ba68204bcdc6fce8cdf3680bed47324fce7d
+	
+	
+=== Collection: ubiclaimeds  -> Item Type: UBIClaimed ===
+	Record 1:
+	  id: 0xc08ad508973440882d73a24d71af658b9e8cd15071d8a3a42f4189dfa38f523f16000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320117
+	  blockTimestamp: 1756220875
+	  claimer: 0xa5f3438b80c47fb7edca26a095f8d3bfffc46695
+	  transactionHash: 0xc08ad508973440882d73a24d71af658b9e8cd15071d8a3a42f4189dfa38f523f
+	
+	Record 2:
+	  id: 0x5256f3ef7f241ad9b90630ad19e253647dc070d21c5043123748ab91f2653e69fb000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320107
+	  blockTimestamp: 1756220865
+	  claimer: 0xbdaa4807e6a88d0f0a26867b5f13af8b20125b8c
+	  transactionHash: 0x5256f3ef7f241ad9b90630ad19e253647dc070d21c5043123748ab91f2653e69
+	
+	Record 3:
+	  id: 0x04a1cdbe80882499dd71968b6816bc83f627d55f39332bb092666d47bc1c7b5f16000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320106
+	  blockTimestamp: 1756220864
+	  claimer: 0x6eee61372dec6e7113f7a1a9d83c7523d4d19859
+	  transactionHash: 0x04a1cdbe80882499dd71968b6816bc83f627d55f39332bb092666d47bc1c7b5f
+	
+	Record 4:
+	  id: 0x1290a5fe638666763cfb93d76fbbb3d2aca05de4b4f889839a6e785b0bcf968311000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320105
+	  blockTimestamp: 1756220863
+	  claimer: 0x487a6a00bc966e7a5f340effbf21a9ba7e8d2fc0
+	  transactionHash: 0x1290a5fe638666763cfb93d76fbbb3d2aca05de4b4f889839a6e785b0bcf9683
+	
+	Record 5:
+	  id: 0x91f0469668103f442df1bffcd95ff324820d912eb57a58c85480f3a37490e1c717000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320099
+	  blockTimestamp: 1756220857
+	  claimer: 0x79be0b56f59910d32bd4686ec02b2fe5d2f0f669
+	  transactionHash: 0x91f0469668103f442df1bffcd95ff324820d912eb57a58c85480f3a37490e1c7
+	
+	Record 6:
+	  id: 0x4fdc3fd1fd527d8e75dbdb747c2ab7cdb5cff827a4c9fa7c35a6a8e1e14df6910f000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320095
+	  blockTimestamp: 1756220853
+	  claimer: 0x73f7dce79316fa9516afae06ed8309cc981e1c58
+	  transactionHash: 0x4fdc3fd1fd527d8e75dbdb747c2ab7cdb5cff827a4c9fa7c35a6a8e1e14df691
+	
+	Record 7:
+	  id: 0xa0cf8df0bdaa9f2b600b015ab81c72082dd9cca0e79b16ca508089f73d8a988d1a000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320092
+	  blockTimestamp: 1756220850
+	  claimer: 0x53f4ddb053ec22d075409e6f2155c4ad55e60d1d
+	  transactionHash: 0xa0cf8df0bdaa9f2b600b015ab81c72082dd9cca0e79b16ca508089f73d8a988d
+	
+	Record 8:
+	  id: 0x3628042e94a499d402df896d34939ff4d5573d3744d8c3fed010fb0ba04a851627000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320088
+	  blockTimestamp: 1756220846
+	  claimer: 0x2817afbd1d1ee428c7708213e2d288cc8baaf0ab
+	  transactionHash: 0x3628042e94a499d402df896d34939ff4d5573d3744d8c3fed010fb0ba04a8516
+	
+	Record 9:
+	  id: 0xad2eb59fc680ca40f04ab25ea0363ec5dc6560caab3d094510c970c58635ca7114010000
+	  amount: 100387403913211125356
+	  blockNumber: 44320084
+	  blockTimestamp: 1756220842
+	  claimer: 0xdb02183d7a623c4d6c431a3b95c1040da8961b48
+	  transactionHash: 0xad2eb59fc680ca40f04ab25ea0363ec5dc6560caab3d094510c970c58635ca71
+	
+	Record 10:
+	  id: 0x93c85d501bab76f96552b754f217c81e341d13d72fec66c05a0e083b4bdf4baf28000000
+	  amount: 100387403913211125356
+	  blockNumber: 44320083
+	  blockTimestamp: 1756220841
+	  claimer: 0x0e4ac32c946088c27446163f2acc8e6c59ad104d
+	  transactionHash: 0x93c85d501bab76f96552b754f217c81e341d13d72fec66c05a0e083b4bdf4baf
+	
+	
+=== Collection: ubicycleCalculateds  -> Item Type: UBICycleCalculated ===
+	Record 1:
+	  id: 0xedbbb5b5c059206c6a52b752482fe0e039e7327cc34ad2ab70d61204c191e40907000000
+	  blockNumber: 43185646
+	  blockTimestamp: 1755086404
+	  cycleLength: 60
+	  dailyUBIPool: 3420198851323103040896820
+	  day: 896
+	  pool: 205211931079386182453809216
+	  transactionHash: 0xedbbb5b5c059206c6a52b752482fe0e039e7327cc34ad2ab70d61204c191e409
+	
+	Record 2:
+	  id: 0x513958b1ee4c2427afb7f7d14f76e6fc8d5a96c5fe58fddfb67fc25446377e8c11000000
+	  blockNumber: 41976046
+	  blockTimestamp: 1753876804
+	  cycleLength: 60
+	  dailyUBIPool: 3222295642958640554889773
+	  day: 882
+	  pool: 193337738577518433293386434
+	  transactionHash: 0x513958b1ee4c2427afb7f7d14f76e6fc8d5a96c5fe58fddfb67fc25446377e8c
+	
+	Record 3:
+	  id: 0xea833d132b5a1b61cd52685e30fa424af94360c69c84f1b9e01c580ded77114414000000
+	  blockNumber: 40766447
+	  blockTimestamp: 1752667205
+	  cycleLength: 60
+	  dailyUBIPool: 3033506133930867744554665
+	  day: 868
+	  pool: 182010368035852064673279957
+	  transactionHash: 0xea833d132b5a1b61cd52685e30fa424af94360c69c84f1b9e01c580ded771144
+	
+	Record 4:
+	  id: 0x8a9a34c9c37a0d87d9af42639a48a7c91dc78ce4c20271eaf924fc0cae53cc060f000000
+	  blockNumber: 39556845
+	  blockTimestamp: 1751457603
+	  cycleLength: 60
+	  dailyUBIPool: 2818659822988433786502133
+	  day: 854
+	  pool: 169119589379306027190128000
+	  transactionHash: 0x8a9a34c9c37a0d87d9af42639a48a7c91dc78ce4c20271eaf924fc0cae53cc06
+	
+	Record 5:
+	  id: 0xf8ffa14648c17081374342056b181f8c0f21b66db41ce74c40a966ff89b4662b09000000
+	  blockNumber: 38347246
+	  blockTimestamp: 1750248004
+	  cycleLength: 60
+	  dailyUBIPool: 2568641415256326328433136
+	  day: 840
+	  pool: 154118484915379579705988219
+	  transactionHash: 0xf8ffa14648c17081374342056b181f8c0f21b66db41ce74c40a966ff89b4662b
+	
+	Record 6:
+	  id: 0x70c38b57544664484b849d16f8a8e6dcd702e99690b7e5276c78b01a549163e247000000
+	  blockNumber: 37742446
+	  blockTimestamp: 1749643204
+	  cycleLength: 60
+	  dailyUBIPool: 2438707009591913070959349
+	  day: 833
+	  pool: 146322420575514784257560995
+	  transactionHash: 0x70c38b57544664484b849d16f8a8e6dcd702e99690b7e5276c78b01a549163e2
+	
+	Record 7:
+	  id: 0x4b1fb197540ba0ad4c1338327d5f7bfd84b1f1c337427e3df0da7f4907e7b0f718000000
+	  blockNumber: 37137646
+	  blockTimestamp: 1749038404
+	  cycleLength: 60
+	  dailyUBIPool: 2302123056625288373631053
+	  day: 826
+	  pool: 138127383397517302417863189
+	  transactionHash: 0x4b1fb197540ba0ad4c1338327d5f7bfd84b1f1c337427e3df0da7f4907e7b0f7
+	
+	Record 8:
+	  id: 0xf55779ee60b8a6323df5e3bc6d74ed40e29a7f769171b4df4e6c084bb84029e427000000
+	  blockNumber: 36532846
+	  blockTimestamp: 1748433604
+	  cycleLength: 60
+	  dailyUBIPool: 2152361247013461022941834
+	  day: 819
+	  pool: 129141674820807661376510051
+	  transactionHash: 0xf55779ee60b8a6323df5e3bc6d74ed40e29a7f769171b4df4e6c084bb84029e4
+	
+	Record 9:
+	  id: 0x3fec656268f8f0ed134dbe7034d2dd1366e5298318a5f8aaebaaf36e922a863a0f000000
+	  blockNumber: 35928045
+	  blockTimestamp: 1747828803
+	  cycleLength: 60
+	  dailyUBIPool: 2005597194481577047456862
+	  day: 812
+	  pool: 120335831668894622847411744
+	  transactionHash: 0x3fec656268f8f0ed134dbe7034d2dd1366e5298318a5f8aaebaaf36e922a863a
+	
+	Record 10:
+	  id: 0xa6ff1df1a7c299e2768860e3e958b0b8778390fa92a078231318f6aa8673b77921000000
+	  blockNumber: 35323247
+	  blockTimestamp: 1747224005
+	  cycleLength: 60
+	  dailyUBIPool: 1854299635611977934653544
+	  day: 805
+	  pool: 111257978136718676079212689
+	  transactionHash: 0xa6ff1df1a7c299e2768860e3e958b0b8778390fa92a078231318f6aa8673b779
+	
+	
+=== Collection: upgradeds  -> Item Type: Upgraded ===
+	No rows found.
+	
+=== Collection: withdrawFromDaos  -> Item Type: WithdrawFromDao ===
+	No rows found.
+	
+=== Singleton: adminChanged  -> Type: AdminChanged ===
+	Error fetching adminChanged: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: beaconUpgraded  -> Type: BeaconUpgraded ===
+	Error fetching beaconUpgraded: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: cycleLengthSet  -> Type: CycleLengthSet ===
+	Error fetching cycleLengthSet: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: daySet  -> Type: DaySet ===
+	Error fetching daySet: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: initialized  -> Type: Initialized ===
+	Error fetching initialized: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: shouldWithdrawFromDAOSet  -> Type: ShouldWithdrawFromDAOSet ===
+	Error fetching shouldWithdrawFromDAOSet: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: ubicalculated  -> Type: UBICalculated ===
+	Error fetching ubicalculated: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: ubiclaimed  -> Type: UBIClaimed ===
+	Error fetching ubiclaimed: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: ubicycleCalculated  -> Type: UBICycleCalculated ===
+	Error fetching ubicycleCalculated: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: upgraded  -> Type: Upgraded ===
+	Error fetching upgraded: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: withdrawFromDao  -> Type: WithdrawFromDao ===
+	Error fetching withdrawFromDao: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]

@@ -1,0 +1,174 @@
+{
+  "name": "[GD] eToro Report",
+  "nodes": [
+    {
+      "parameters": {
+        "maxItems": 2,
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        192,
+        0
+      ],
+      "id": "4dffe91f-10fd-4126-9021-ff6e113a5d85",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "etorolabs",
+          "mode": "name"
+        },
+        "text": "=*.: Migration Summary :.*\n\n{{ $json.data[1]['Total Unique Claimers'].toLocaleString() }} total unique claimers ({{ $json.data[1]['v2 New WAU'].toLocaleString() }} new claimers in the last week)\n  {{ $json.data[1]['v2 MAU'].toLocaleString() }} monthly unique claimers ({{ $if($json.data[1]['v2 MAU'] >= $json.data[0]['v2 MAU'], '+','') }}{{ ((parseInt($json.data[1]['v2 MAU']) - parseInt($json.data[0]['v2 MAU']))/ parseInt($json.data[0]['v2 MAU'])*100).toFixed(1)+'%'}} from last week)\n    {{ $json.data[1]['v2 WAU last week'].toLocaleString() }} weekly active claimers ({{ $if($json.data[1]['v2 WAU'] >= $json.data[0]['v2 WAU'], '+','') }}{{((parseInt($json.data[1]['v2 WAU']) - parseInt($json.data[0]['v2 WAU']))/ parseInt($json.data[0]['v2 WAU'])*100).toFixed(1)+'%'}} from last week)\n\t\t{{ $json.data[1]['v2 WAU Invite'].toLocaleString() }} Migrated Users ({{ (($json.data[1]['v2 WAU Invite'] /$json.data[1]['v2 WAU'])* 100).toFixed(1) + '%'}})\n\t\t{{ $json.data[1]['v2 WAU Delta'].toLocaleString() }} Delta Users ({{ (($json.data[1]['v2 WAU Delta'] /$json.data[1]['v2 WAU'])* 100).toFixed(1) + '%'}})\n",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        0
+      ],
+      "id": "19f94ade-49e5-4466-aea6-9b4a6f443ea4",
+      "name": "Slack",
+      "webhookId": "f6b213af-227c-439d-88e8-f4155aead42b",
+      "credentials": {
+        "slackApi": {
+          "id": "U1bkaaWWfEcqHzny",
+          "name": "[GD] Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        384,
+        0
+      ],
+      "id": "dc030a37-78bb-47b1-bbd0-d6d56c7b5c70",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        0
+      ],
+      "id": "94248a77-9af4-456b-b211-9e60a3e2ff07",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1gN-OlGIKLXUUlkxCmrCQb8WbvNRW9dHIqXO5MB-gTBw/edit?gid=722036727#gid=722036727",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1140624430,
+          "mode": "list",
+          "cachedResultName": "Weekly Update",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gN-OlGIKLXUUlkxCmrCQb8WbvNRW9dHIqXO5MB-gTBw/edit#gid=1140624430"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "e0f69ebc-b0f1-41ed-b6fd-f7036440d9c4",
+      "name": "Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JIk21yLDI9cUXYw1",
+          "name": "[GD] GSheets OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b0c08a3e-722a-464f-8a06-2438d3a86580",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "08445b815aea6a21daaff47d04b630f7a180fd2a054d7b796da35f2198aef3a5"
+  },
+  "id": "T5ffrXqDojJHRUj5",
+  "tags": []
+}
