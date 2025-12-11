@@ -1,0 +1,14 @@
+- 12 to 24-Jun-2024: CLAIM_SUCCESS 1st drop
+- 08-22-Jul: CLAIM_SUCCESS 2nd and 3rd drop
+- 01-Aug: Started India migration with invites
+- 20-24-Aug: CLAIM_SUCCESS 4th drop (virtually didn’t affect US nor India)
+- 18-Sep: Changed migration invitation modal, no more migration rewards
+- **14-Oct: Change on FV to mitigate bots**
+- 28-Oct: Zero claims from shared IPs on v1 (-13k DAU)
+- 11-Nov: India v2 forcefully migrated
+- 10-Dec: US v2 forcefully migrated
+- 12-Dec: GoodID launch
+- 06-Feb: Wave 2 migration
+- 21 Feb: Celo outage
+- 12-May: Wave 3 migration
+- 13-Nov: Launch on XDC

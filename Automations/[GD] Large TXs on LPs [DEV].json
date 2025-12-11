@@ -1,0 +1,2977 @@
+{
+  "name": "[GD] Large TXs on LPs [DEV]",
+  "nodes": [
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C070959B2NQ",
+          "mode": "list",
+          "cachedResultName": "testing"
+        },
+        "text": "=*.: Large volume in Liquidity Pools :.*\n\nUSD {{ $json['USD Volume'] }} total transaction volume on {{ $json.DEX }} {{ $json.Pair }} Liquidity Pool in the last 6 hours",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        -496,
+        112
+      ],
+      "id": "4efb8523-5ba2-433f-819b-90299aaa000a",
+      "name": "Slack",
+      "webhookId": "450e97f4-470b-4651-a88d-8c3b4f9ba28b",
+      "credentials": {
+        "slackApi": {
+          "id": "UN836fxJkCJKl7F3",
+          "name": "Meerkat BOT Intern"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ILRmYpsiPw-FTRgEotPP_kbx-fUFh7vjA1oPB-UxnMg/edit?gid=0&pli=1",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 421636055,
+          "mode": "list",
+          "cachedResultName": "Large Volume Alerts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ILRmYpsiPw-FTRgEotPP_kbx-fUFh7vjA1oPB-UxnMg/edit#gid=421636055"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1136,
+        112
+      ],
+      "id": "9c96c592-2c22-41cf-981f-50f87f2702c2",
+      "name": "Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JIk21yLDI9cUXYw1",
+          "name": "[GD] GSheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 01 00 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1456,
+        112
+      ],
+      "id": "91c83cde-8855-4898-97a2-fb523bd55a53",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "content": "## Roda a Automação\n1 vez ao dia as 00:01",
+        "height": 280,
+        "width": 260,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1536,
+        0
+      ],
+      "id": "6ba34c76-96f2-4014-a5b3-51daf9f8b5ea",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Lê os items da tabela\nSeleciona todos registros do dia anterior",
+        "height": 280,
+        "width": 300
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1248,
+        0
+      ],
+      "id": "4feaa901-44e6-4572-ad02-957f7e9eae89",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Com base na data \nSeleciona quais registros postará hoje",
+        "height": 280,
+        "width": 300
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -896,
+        0
+      ],
+      "id": "c796f3a5-d8a8-488c-bd74-c4eb56a8a989",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Envia para o Slack",
+        "height": 280,
+        "width": 260,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        0
+      ],
+      "id": "da468790-33ae-49a2-a801-00d61e30bdc4",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1) pega a hora “agora” convertida para SP\nconst nowSP = new Date(\n  new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })\n);\n\n// 2) subtrai um dia (para virar “ontem”)\nnowSP.setDate(nowSP.getDate() - 1);\n\n// 3) monta a string “YYYY-MM-DD”\nconst yyyy = nowSP.getFullYear();\nconst mm   = String(nowSP.getMonth() + 1).padStart(2, '0');\nconst dd   = String(nowSP.getDate()).padStart(2, '0');\nconst yesterday = `${yyyy}-${mm}-${dd}`;\n\n// 4) filtra apenas os items cuja Date === yesterday\nconst itemsYesterday = items.filter(item => item.json.Date === yesterday);\n\n// 5) devolve no formato que o n8n espera\nreturn itemsYesterday.map(item => ({ json: item.json }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        112
+      ],
+      "id": "e98c6402-23d8-4539-92c0-dafb1805e618",
+      "name": "Code"
+    }
+  ],
+  "pinData": {
+    "Google Sheets": [
+      {
+        "json": {
+          "row_number": 2,
+          "Date": "2024-12-02",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 93.04
+        }
+      },
+      {
+        "json": {
+          "row_number": 3,
+          "Date": "2024-12-03",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 571.65
+        }
+      },
+      {
+        "json": {
+          "row_number": 4,
+          "Date": "2024-12-03",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 327.92
+        }
+      },
+      {
+        "json": {
+          "row_number": 5,
+          "Date": "2024-12-04",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 526.47
+        }
+      },
+      {
+        "json": {
+          "row_number": 6,
+          "Date": "2024-12-04",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 484.48
+        }
+      },
+      {
+        "json": {
+          "row_number": 7,
+          "Date": "2024-12-04",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 271.54
+        }
+      },
+      {
+        "json": {
+          "row_number": 8,
+          "Date": "2024-12-04",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 155.17
+        }
+      },
+      {
+        "json": {
+          "row_number": 9,
+          "Date": "2024-12-04",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 415.15
+        }
+      },
+      {
+        "json": {
+          "row_number": 10,
+          "Date": "2024-12-04",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 104.18
+        }
+      },
+      {
+        "json": {
+          "row_number": 11,
+          "Date": "2024-12-04",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 219.37
+        }
+      },
+      {
+        "json": {
+          "row_number": 12,
+          "Date": "2024-12-04",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 236.61
+        }
+      },
+      {
+        "json": {
+          "row_number": 13,
+          "Date": "2024-12-05",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 222.94
+        }
+      },
+      {
+        "json": {
+          "row_number": 14,
+          "Date": "2024-12-05",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 103.69
+        }
+      },
+      {
+        "json": {
+          "row_number": 15,
+          "Date": "2024-12-05",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 231.33
+        }
+      },
+      {
+        "json": {
+          "row_number": 16,
+          "Date": "2024-12-05",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 241.67
+        }
+      },
+      {
+        "json": {
+          "row_number": 17,
+          "Date": "2024-12-05",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 189.44
+        }
+      },
+      {
+        "json": {
+          "row_number": 18,
+          "Date": "2024-12-05",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 112.16
+        }
+      },
+      {
+        "json": {
+          "row_number": 19,
+          "Date": "2024-12-05",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 165.02
+        }
+      },
+      {
+        "json": {
+          "row_number": 20,
+          "Date": "2024-12-05",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 213.69
+        }
+      },
+      {
+        "json": {
+          "row_number": 21,
+          "Date": "2024-12-05",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 152.45
+        }
+      },
+      {
+        "json": {
+          "row_number": 22,
+          "Date": "2024-12-05",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 179.73
+        }
+      },
+      {
+        "json": {
+          "row_number": 23,
+          "Date": "2024-12-06",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 120.33
+        }
+      },
+      {
+        "json": {
+          "row_number": 24,
+          "Date": "2024-12-06",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 109.24
+        }
+      },
+      {
+        "json": {
+          "row_number": 25,
+          "Date": "2024-12-06",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 175.87
+        }
+      },
+      {
+        "json": {
+          "row_number": 26,
+          "Date": "2024-12-07",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 139.13
+        }
+      },
+      {
+        "json": {
+          "row_number": 27,
+          "Date": "2024-12-07",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 115.02
+        }
+      },
+      {
+        "json": {
+          "row_number": 28,
+          "Date": "2024-12-07",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 175.85
+        }
+      },
+      {
+        "json": {
+          "row_number": 29,
+          "Date": "2024-12-07",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 129.22
+        }
+      },
+      {
+        "json": {
+          "row_number": 30,
+          "Date": "2024-12-07",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 117.45
+        }
+      },
+      {
+        "json": {
+          "row_number": 31,
+          "Date": "2024-12-07",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 160.38
+        }
+      },
+      {
+        "json": {
+          "row_number": 32,
+          "Date": "2024-12-07",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 124.44
+        }
+      },
+      {
+        "json": {
+          "row_number": 33,
+          "Date": "2024-12-07",
+          "DEX": "UbeSwap",
+          "Chain": "",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 116.02
+        }
+      },
+      {
+        "json": {
+          "row_number": 34,
+          "Date": "2024-12-07",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 159.56
+        }
+      },
+      {
+        "json": {
+          "row_number": 35,
+          "Date": "2024-12-09",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 345.01
+        }
+      },
+      {
+        "json": {
+          "row_number": 36,
+          "Date": "2024-12-09",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 158.82
+        }
+      },
+      {
+        "json": {
+          "row_number": 37,
+          "Date": "2024-12-09",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 917.06
+        }
+      },
+      {
+        "json": {
+          "row_number": 38,
+          "Date": "2024-12-09",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 151.14
+        }
+      },
+      {
+        "json": {
+          "row_number": 39,
+          "Date": "2024-12-10",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1669.61
+        }
+      },
+      {
+        "json": {
+          "row_number": 40,
+          "Date": "2024-12-10",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 182.6
+        }
+      },
+      {
+        "json": {
+          "row_number": 41,
+          "Date": "2024-12-10",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1670.17
+        }
+      },
+      {
+        "json": {
+          "row_number": 42,
+          "Date": "2024-12-10",
+          "DEX": "Voltage",
+          "Chain": "",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 204.4
+        }
+      },
+      {
+        "json": {
+          "row_number": 43,
+          "Date": "2024-12-10",
+          "DEX": "UniSwap",
+          "Chain": "",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1354.38
+        }
+      },
+      {
+        "json": {
+          "row_number": 44,
+          "Date": "2024-12-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1501.88
+        }
+      },
+      {
+        "json": {
+          "row_number": 45,
+          "Date": "2024-12-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 976.64
+        }
+      },
+      {
+        "json": {
+          "row_number": 46,
+          "Date": "2024-12-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 442.27
+        }
+      },
+      {
+        "json": {
+          "row_number": 47,
+          "Date": "2024-12-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 439.88
+        }
+      },
+      {
+        "json": {
+          "row_number": 48,
+          "Date": "2024-12-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 140.82
+        }
+      },
+      {
+        "json": {
+          "row_number": 49,
+          "Date": "2024-12-12",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 349.36
+        }
+      },
+      {
+        "json": {
+          "row_number": 50,
+          "Date": "2024-12-13",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 279.66
+        }
+      },
+      {
+        "json": {
+          "row_number": 51,
+          "Date": "2024-12-18",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 205.58
+        }
+      },
+      {
+        "json": {
+          "row_number": 52,
+          "Date": "2024-12-18",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 131.99
+        }
+      },
+      {
+        "json": {
+          "row_number": 53,
+          "Date": "2024-12-19",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1040.86
+        }
+      },
+      {
+        "json": {
+          "row_number": 54,
+          "Date": "2024-12-19",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 403.77
+        }
+      },
+      {
+        "json": {
+          "row_number": 55,
+          "Date": "2024-12-20",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 111.93
+        }
+      },
+      {
+        "json": {
+          "row_number": 56,
+          "Date": "2024-12-20",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 127.3
+        }
+      },
+      {
+        "json": {
+          "row_number": 57,
+          "Date": "2024-12-20",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 453.53
+        }
+      },
+      {
+        "json": {
+          "row_number": 58,
+          "Date": "2024-12-26",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 102.97
+        }
+      },
+      {
+        "json": {
+          "row_number": 59,
+          "Date": "2025-01-06",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 261.82
+        }
+      },
+      {
+        "json": {
+          "row_number": 60,
+          "Date": "2025-01-06",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 100.24
+        }
+      },
+      {
+        "json": {
+          "row_number": 61,
+          "Date": "2025-01-09",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 103.41
+        }
+      },
+      {
+        "json": {
+          "row_number": 62,
+          "Date": "2025-01-15",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 284.24
+        }
+      },
+      {
+        "json": {
+          "row_number": 63,
+          "Date": "2025-01-21",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 349.17
+        }
+      },
+      {
+        "json": {
+          "row_number": 64,
+          "Date": "2025-01-28",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 575.05
+        }
+      },
+      {
+        "json": {
+          "row_number": 65,
+          "Date": "2025-02-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 530.07
+        }
+      },
+      {
+        "json": {
+          "row_number": 66,
+          "Date": "2025-02-12",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 309.92
+        }
+      },
+      {
+        "json": {
+          "row_number": 67,
+          "Date": "2025-02-16",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 111.57
+        }
+      },
+      {
+        "json": {
+          "row_number": 68,
+          "Date": "2025-02-19",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 301.46
+        }
+      },
+      {
+        "json": {
+          "row_number": 69,
+          "Date": "2025-02-19",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 114.28
+        }
+      },
+      {
+        "json": {
+          "row_number": 70,
+          "Date": "2025-02-20",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 101.19
+        }
+      },
+      {
+        "json": {
+          "row_number": 71,
+          "Date": "2025-02-20",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 212.7
+        }
+      },
+      {
+        "json": {
+          "row_number": 72,
+          "Date": "2025-02-20",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 104.87
+        }
+      },
+      {
+        "json": {
+          "row_number": 73,
+          "Date": "2025-02-26",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 117.19
+        }
+      },
+      {
+        "json": {
+          "row_number": 74,
+          "Date": "2025-02-26",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 485.67
+        }
+      },
+      {
+        "json": {
+          "row_number": 75,
+          "Date": "2025-02-26",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 316.2
+        }
+      },
+      {
+        "json": {
+          "row_number": 76,
+          "Date": "2025-02-28",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 124.54
+        }
+      },
+      {
+        "json": {
+          "row_number": 77,
+          "Date": "2025-02-28",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 196.77
+        }
+      },
+      {
+        "json": {
+          "row_number": 78,
+          "Date": "2025-03-01",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 107.78
+        }
+      },
+      {
+        "json": {
+          "row_number": 79,
+          "Date": "2025-03-01",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 525.57
+        }
+      },
+      {
+        "json": {
+          "row_number": 80,
+          "Date": "2025-03-02",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 137.15
+        }
+      },
+      {
+        "json": {
+          "row_number": 81,
+          "Date": "2025-03-04",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 606.93
+        }
+      },
+      {
+        "json": {
+          "row_number": 82,
+          "Date": "2025-03-04",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 974.49
+        }
+      },
+      {
+        "json": {
+          "row_number": 83,
+          "Date": "2025-03-04",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 129.78
+        }
+      },
+      {
+        "json": {
+          "row_number": 84,
+          "Date": "2025-03-05",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 114.08
+        }
+      },
+      {
+        "json": {
+          "row_number": 85,
+          "Date": "2025-03-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 117.63
+        }
+      },
+      {
+        "json": {
+          "row_number": 86,
+          "Date": "2025-03-12",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 170.4
+        }
+      },
+      {
+        "json": {
+          "row_number": 87,
+          "Date": "2025-03-14",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x991f1aa7e0901f9ab3d583846bf5be0ebace1d7f",
+          "USD Volume": 150.97
+        }
+      },
+      {
+        "json": {
+          "row_number": 88,
+          "Date": "2025-03-15",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 667.34
+        }
+      },
+      {
+        "json": {
+          "row_number": 89,
+          "Date": "2025-03-15",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 343.23
+        }
+      },
+      {
+        "json": {
+          "row_number": 90,
+          "Date": "2025-03-15",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x991f1aa7e0901f9ab3d583846bf5be0ebace1d7f",
+          "USD Volume": 257.79
+        }
+      },
+      {
+        "json": {
+          "row_number": 91,
+          "Date": "2025-03-15",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 103.81
+        }
+      },
+      {
+        "json": {
+          "row_number": 92,
+          "Date": "2025-03-15",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x991f1aa7e0901f9ab3d583846bf5be0ebace1d7f",
+          "USD Volume": 219.27
+        }
+      },
+      {
+        "json": {
+          "row_number": 93,
+          "Date": "2025-03-15",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 212.79
+        }
+      },
+      {
+        "json": {
+          "row_number": 94,
+          "Date": "2025-03-15",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 132.44
+        }
+      },
+      {
+        "json": {
+          "row_number": 95,
+          "Date": "2025-03-16",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 152.63
+        }
+      },
+      {
+        "json": {
+          "row_number": 96,
+          "Date": "2025-03-16",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 118.05
+        }
+      },
+      {
+        "json": {
+          "row_number": 97,
+          "Date": "2025-03-19",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 241.49
+        }
+      },
+      {
+        "json": {
+          "row_number": 98,
+          "Date": "2025-03-19",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 304.9
+        }
+      },
+      {
+        "json": {
+          "row_number": 99,
+          "Date": "2025-03-22",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 145.59
+        }
+      },
+      {
+        "json": {
+          "row_number": 100,
+          "Date": "2025-03-25",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 489.07
+        }
+      },
+      {
+        "json": {
+          "row_number": 101,
+          "Date": "2025-03-25",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 376.65
+        }
+      },
+      {
+        "json": {
+          "row_number": 102,
+          "Date": "2025-03-25",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 191.98
+        }
+      },
+      {
+        "json": {
+          "row_number": 103,
+          "Date": "2025-03-25",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 185.43
+        }
+      },
+      {
+        "json": {
+          "row_number": 104,
+          "Date": "2025-03-25",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 246.17
+        }
+      },
+      {
+        "json": {
+          "row_number": 105,
+          "Date": "2025-03-30",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 232.34
+        }
+      },
+      {
+        "json": {
+          "row_number": 106,
+          "Date": "2025-03-30",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 577.08
+        }
+      },
+      {
+        "json": {
+          "row_number": 107,
+          "Date": "2025-03-31",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 214.24
+        }
+      },
+      {
+        "json": {
+          "row_number": 108,
+          "Date": "2025-03-31",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 198.26
+        }
+      },
+      {
+        "json": {
+          "row_number": 109,
+          "Date": "2025-04-02",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1872.74
+        }
+      },
+      {
+        "json": {
+          "row_number": 110,
+          "Date": "2025-04-02",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 218.54
+        }
+      },
+      {
+        "json": {
+          "row_number": 111,
+          "Date": "2025-04-02",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 165.35
+        }
+      },
+      {
+        "json": {
+          "row_number": 112,
+          "Date": "2025-04-02",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 228.2
+        }
+      },
+      {
+        "json": {
+          "row_number": 113,
+          "Date": "2025-04-02",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1212.32
+        }
+      },
+      {
+        "json": {
+          "row_number": 114,
+          "Date": "2025-04-03",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 441.67
+        }
+      },
+      {
+        "json": {
+          "row_number": 115,
+          "Date": "2025-04-03",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 322.98
+        }
+      },
+      {
+        "json": {
+          "row_number": 116,
+          "Date": "2025-04-03",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 467.2
+        }
+      },
+      {
+        "json": {
+          "row_number": 117,
+          "Date": "2025-04-04",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 369.4
+        }
+      },
+      {
+        "json": {
+          "row_number": 118,
+          "Date": "2025-04-05",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 131.2
+        }
+      },
+      {
+        "json": {
+          "row_number": 119,
+          "Date": "2025-04-07",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 165.03
+        }
+      },
+      {
+        "json": {
+          "row_number": 120,
+          "Date": "2025-04-12",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 236.9
+        }
+      },
+      {
+        "json": {
+          "row_number": 121,
+          "Date": "2025-04-14",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 654.77
+        }
+      },
+      {
+        "json": {
+          "row_number": 122,
+          "Date": "2025-04-14",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 109.22
+        }
+      },
+      {
+        "json": {
+          "row_number": 123,
+          "Date": "2025-04-16",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 599.94
+        }
+      },
+      {
+        "json": {
+          "row_number": 124,
+          "Date": "2025-04-16",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 213.35
+        }
+      },
+      {
+        "json": {
+          "row_number": 125,
+          "Date": "2025-04-16",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1128.85
+        }
+      },
+      {
+        "json": {
+          "row_number": 126,
+          "Date": "2025-04-17",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 883.18
+        }
+      },
+      {
+        "json": {
+          "row_number": 127,
+          "Date": "2025-04-17",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 645.6
+        }
+      },
+      {
+        "json": {
+          "row_number": 128,
+          "Date": "2025-04-17",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 353.16
+        }
+      },
+      {
+        "json": {
+          "row_number": 129,
+          "Date": "2025-04-18",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 199.04
+        }
+      },
+      {
+        "json": {
+          "row_number": 130,
+          "Date": "2025-04-18",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1144.11
+        }
+      },
+      {
+        "json": {
+          "row_number": 131,
+          "Date": "2025-04-19",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 176.04
+        }
+      },
+      {
+        "json": {
+          "row_number": 132,
+          "Date": "2025-04-21",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 258.35
+        }
+      },
+      {
+        "json": {
+          "row_number": 133,
+          "Date": "2025-04-22",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 100.59
+        }
+      },
+      {
+        "json": {
+          "row_number": 134,
+          "Date": "2025-04-22",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 225.37
+        }
+      },
+      {
+        "json": {
+          "row_number": 135,
+          "Date": "2025-04-22",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 167.92
+        }
+      },
+      {
+        "json": {
+          "row_number": 136,
+          "Date": "2025-04-22",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 611.54
+        }
+      },
+      {
+        "json": {
+          "row_number": 137,
+          "Date": "2025-04-23",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 487.12
+        }
+      },
+      {
+        "json": {
+          "row_number": 138,
+          "Date": "2025-04-23",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 462.28
+        }
+      },
+      {
+        "json": {
+          "row_number": 139,
+          "Date": "2025-04-23",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 193.05
+        }
+      },
+      {
+        "json": {
+          "row_number": 140,
+          "Date": "2025-04-23",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 386.38
+        }
+      },
+      {
+        "json": {
+          "row_number": 141,
+          "Date": "2025-04-24",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 922.53
+        }
+      },
+      {
+        "json": {
+          "row_number": 142,
+          "Date": "2025-04-24",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 183.37
+        }
+      },
+      {
+        "json": {
+          "row_number": 143,
+          "Date": "2025-04-24",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 153.42
+        }
+      },
+      {
+        "json": {
+          "row_number": 144,
+          "Date": "2025-04-24",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1439.5
+        }
+      },
+      {
+        "json": {
+          "row_number": 145,
+          "Date": "2025-04-25",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 421.24
+        }
+      },
+      {
+        "json": {
+          "row_number": 146,
+          "Date": "2025-04-25",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 345.2
+        }
+      },
+      {
+        "json": {
+          "row_number": 147,
+          "Date": "2025-04-25",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 382.19
+        }
+      },
+      {
+        "json": {
+          "row_number": 148,
+          "Date": "2025-04-25",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 388.76
+        }
+      },
+      {
+        "json": {
+          "row_number": 149,
+          "Date": "2025-04-26",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 386.03
+        }
+      },
+      {
+        "json": {
+          "row_number": 150,
+          "Date": "2025-04-26",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 377.81
+        }
+      },
+      {
+        "json": {
+          "row_number": 151,
+          "Date": "2025-04-26",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 324.46
+        }
+      },
+      {
+        "json": {
+          "row_number": 152,
+          "Date": "2025-04-26",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 269.91
+        }
+      },
+      {
+        "json": {
+          "row_number": 153,
+          "Date": "2025-04-27",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 530.85
+        }
+      },
+      {
+        "json": {
+          "row_number": 154,
+          "Date": "2025-04-27",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 297.18
+        }
+      },
+      {
+        "json": {
+          "row_number": 155,
+          "Date": "2025-04-28",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 198.07
+        }
+      },
+      {
+        "json": {
+          "row_number": 156,
+          "Date": "2025-04-28",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 283.11
+        }
+      },
+      {
+        "json": {
+          "row_number": 157,
+          "Date": "2025-04-28",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 676.13
+        }
+      },
+      {
+        "json": {
+          "row_number": 158,
+          "Date": "2025-04-29",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 855.64
+        }
+      },
+      {
+        "json": {
+          "row_number": 159,
+          "Date": "2025-04-29",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 159.46
+        }
+      },
+      {
+        "json": {
+          "row_number": 160,
+          "Date": "2025-04-30",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 298.25
+        }
+      },
+      {
+        "json": {
+          "row_number": 161,
+          "Date": "2025-05-01",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 101.04
+        }
+      },
+      {
+        "json": {
+          "row_number": 162,
+          "Date": "2025-05-01",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 110.88
+        }
+      },
+      {
+        "json": {
+          "row_number": 163,
+          "Date": "2025-05-01",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 228.01
+        }
+      },
+      {
+        "json": {
+          "row_number": 164,
+          "Date": "2025-05-01",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 139.32
+        }
+      },
+      {
+        "json": {
+          "row_number": 165,
+          "Date": "2025-05-02",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 102.05
+        }
+      },
+      {
+        "json": {
+          "row_number": 166,
+          "Date": "2025-05-04",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0xa02ed9fe9e3351fe2cd1f588b23973c1542dcbcc",
+          "USD Volume": 129.71
+        }
+      },
+      {
+        "json": {
+          "row_number": 167,
+          "Date": "2025-05-04",
+          "DEX": "Voltage",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441c2ff54c015a1be22ad88e5d42efbec6c7ef",
+          "USD Volume": 113.41
+        }
+      },
+      {
+        "json": {
+          "row_number": 168,
+          "Date": "2025-05-06",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1591.83
+        }
+      },
+      {
+        "json": {
+          "row_number": 169,
+          "Date": "2025-05-06",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 174.13
+        }
+      },
+      {
+        "json": {
+          "row_number": 170,
+          "Date": "2025-05-07",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 304.74
+        }
+      },
+      {
+        "json": {
+          "row_number": 171,
+          "Date": "2025-05-07",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 220.6
+        }
+      },
+      {
+        "json": {
+          "row_number": 172,
+          "Date": "2025-05-07",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 719.92
+        }
+      },
+      {
+        "json": {
+          "row_number": 173,
+          "Date": "2025-05-08",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 2349.97
+        }
+      },
+      {
+        "json": {
+          "row_number": 174,
+          "Date": "2025-05-08",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 139.17
+        }
+      },
+      {
+        "json": {
+          "row_number": 175,
+          "Date": "2025-05-08",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 154.93
+        }
+      },
+      {
+        "json": {
+          "row_number": 176,
+          "Date": "2025-05-08",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 227.57
+        }
+      },
+      {
+        "json": {
+          "row_number": 177,
+          "Date": "2025-05-08",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 167.28
+        }
+      },
+      {
+        "json": {
+          "row_number": 178,
+          "Date": "2025-05-09",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 139.27
+        }
+      },
+      {
+        "json": {
+          "row_number": 179,
+          "Date": "2025-05-09",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 164.13
+        }
+      },
+      {
+        "json": {
+          "row_number": 180,
+          "Date": "2025-05-09",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 4960.92
+        }
+      },
+      {
+        "json": {
+          "row_number": 181,
+          "Date": "2025-05-09",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 737.93
+        }
+      },
+      {
+        "json": {
+          "row_number": 182,
+          "Date": "2025-05-09",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 194.06
+        }
+      },
+      {
+        "json": {
+          "row_number": 183,
+          "Date": "2025-05-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 6748.25
+        }
+      },
+      {
+        "json": {
+          "row_number": 184,
+          "Date": "2025-05-10",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 877.63
+        }
+      },
+      {
+        "json": {
+          "row_number": 185,
+          "Date": "2025-05-10",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 1202.27
+        }
+      },
+      {
+        "json": {
+          "row_number": 186,
+          "Date": "2025-05-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 107.1
+        }
+      },
+      {
+        "json": {
+          "row_number": 187,
+          "Date": "2025-05-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1275.36
+        }
+      },
+      {
+        "json": {
+          "row_number": 188,
+          "Date": "2025-05-10",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 430.12
+        }
+      },
+      {
+        "json": {
+          "row_number": 189,
+          "Date": "2025-05-10",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 215.36
+        }
+      },
+      {
+        "json": {
+          "row_number": 190,
+          "Date": "2025-05-10",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 716.96
+        }
+      },
+      {
+        "json": {
+          "row_number": 191,
+          "Date": "2025-05-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 5357.86
+        }
+      },
+      {
+        "json": {
+          "row_number": 192,
+          "Date": "2025-05-11",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 230.4
+        }
+      },
+      {
+        "json": {
+          "row_number": 193,
+          "Date": "2025-05-11",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/CELO",
+          "Pool Address": "0x25878951ae130014e827e6f54fd3b4cca057a7e8",
+          "USD Volume": 388.35
+        }
+      },
+      {
+        "json": {
+          "row_number": 194,
+          "Date": "2025-05-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 492
+        }
+      },
+      {
+        "json": {
+          "row_number": 195,
+          "Date": "2025-05-11",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 511.95
+        }
+      },
+      {
+        "json": {
+          "row_number": 196,
+          "Date": "2025-05-11",
+          "DEX": "UbeSwap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f",
+          "USD Volume": 443.02
+        }
+      },
+      {
+        "json": {
+          "row_number": 197,
+          "Date": "2025-05-12",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 724.52
+        }
+      },
+      {
+        "json": {
+          "row_number": 198,
+          "Date": "2025-05-12",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 510.78
+        }
+      },
+      {
+        "json": {
+          "row_number": 199,
+          "Date": "2025-05-12",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 597.44
+        }
+      },
+      {
+        "json": {
+          "row_number": 200,
+          "Date": "2025-05-13",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 247.01
+        }
+      },
+      {
+        "json": {
+          "row_number": 201,
+          "Date": "2025-05-14",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 378.69
+        }
+      },
+      {
+        "json": {
+          "row_number": 202,
+          "Date": "2025-05-14",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 516.73
+        }
+      },
+      {
+        "json": {
+          "row_number": 203,
+          "Date": "2025-05-15",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 2130.86
+        }
+      },
+      {
+        "json": {
+          "row_number": 204,
+          "Date": "2025-05-15",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 2224.96
+        }
+      },
+      {
+        "json": {
+          "row_number": 205,
+          "Date": "2025-05-16",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 230.12
+        }
+      },
+      {
+        "json": {
+          "row_number": 206,
+          "Date": "2025-05-16",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 3079.35
+        }
+      },
+      {
+        "json": {
+          "row_number": 207,
+          "Date": "2025-05-19",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 513.11
+        }
+      },
+      {
+        "json": {
+          "row_number": 208,
+          "Date": "2025-05-19",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 403.73
+        }
+      },
+      {
+        "json": {
+          "row_number": 209,
+          "Date": "2025-05-20",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 120.25
+        }
+      },
+      {
+        "json": {
+          "row_number": 210,
+          "Date": "2025-05-20",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 182.39
+        }
+      },
+      {
+        "json": {
+          "row_number": 211,
+          "Date": "2025-05-20",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 231.31
+        }
+      },
+      {
+        "json": {
+          "row_number": 212,
+          "Date": "2025-05-21",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 188.92
+        }
+      },
+      {
+        "json": {
+          "row_number": 213,
+          "Date": "2025-05-21",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 247.61
+        }
+      },
+      {
+        "json": {
+          "row_number": 214,
+          "Date": "2025-05-21",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 201.55
+        }
+      },
+      {
+        "json": {
+          "row_number": 215,
+          "Date": "2025-05-22",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 144.14
+        }
+      },
+      {
+        "json": {
+          "row_number": 216,
+          "Date": "2025-05-23",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 1520.87
+        }
+      },
+      {
+        "json": {
+          "row_number": 217,
+          "Date": "2025-05-23",
+          "DEX": "UniSwap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0dbb0769b00d01d241ba4f7b2891fb5c2a975d51",
+          "USD Volume": 122.15
+        }
+      },
+      {
+        "json": {
+          "row_number": 218,
+          "Date": "2025-05-23",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 6741.77
+        }
+      },
+      {
+        "json": {
+          "row_number": 219,
+          "Date": "2025-05-23",
+          "DEX": "ubeswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x3D9e27C04076288eBfdC4815b4f6d81b0ED1b341",
+          "USD Volume": 2078.54
+        }
+      },
+      {
+        "json": {
+          "row_number": 220,
+          "Date": "2025-05-23",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687AB75726423B55AC2d87D1cDa2c3F",
+          "USD Volume": 541.83
+        }
+      },
+      {
+        "json": {
+          "row_number": 221,
+          "Date": "2025-05-25",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 149.99
+        }
+      },
+      {
+        "json": {
+          "row_number": 222,
+          "Date": "2025-05-25",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 120.74
+        }
+      },
+      {
+        "json": {
+          "row_number": 223,
+          "Date": "2025-05-25",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687AB75726423B55AC2d87D1cDa2c3F",
+          "USD Volume": 207.2
+        }
+      },
+      {
+        "json": {
+          "row_number": 224,
+          "Date": "2025-05-26",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 6952.34
+        }
+      },
+      {
+        "json": {
+          "row_number": 225,
+          "Date": "2025-05-26",
+          "DEX": "ubeswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x3D9e27C04076288eBfdC4815b4f6d81b0ED1b341",
+          "USD Volume": 172.79
+        }
+      },
+      {
+        "json": {
+          "row_number": 226,
+          "Date": "2025-05-28",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 301.13
+        }
+      },
+      {
+        "json": {
+          "row_number": 227,
+          "Date": "2025-05-28",
+          "DEX": "uniswap",
+          "Chain": "ethereum",
+          "Pair": "G$/WETH",
+          "Pool Address": "0x68b064891Efb77B87Fe1E872205E795f75a72a6D",
+          "USD Volume": 111.67
+        }
+      },
+      {
+        "json": {
+          "row_number": 228,
+          "Date": "2025-05-29",
+          "DEX": "uniswap",
+          "Chain": "ethereum",
+          "Pair": "G$/WETH",
+          "Pool Address": "0x68b064891Efb77B87Fe1E872205E795f75a72a6D",
+          "USD Volume": 108.42
+        }
+      },
+      {
+        "json": {
+          "row_number": 229,
+          "Date": "2025-05-29",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 165.85
+        }
+      },
+      {
+        "json": {
+          "row_number": 230,
+          "Date": "2025-05-30",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 182.95
+        }
+      },
+      {
+        "json": {
+          "row_number": 231,
+          "Date": "2025-05-31",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 107.82
+        }
+      },
+      {
+        "json": {
+          "row_number": 232,
+          "Date": "2025-05-31",
+          "DEX": "voltagefinance",
+          "Chain": "fuse",
+          "Pair": "G$/WFUSE",
+          "Pool Address": "0x8d441C2Ff54C015A1BE22ad88e5D42EFBEC6C7EF",
+          "USD Volume": 225.18
+        }
+      },
+      {
+        "json": {
+          "row_number": 233,
+          "Date": "2025-06-01",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 100.27
+        }
+      },
+      {
+        "json": {
+          "row_number": 234,
+          "Date": "2025-06-01",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 149.98
+        }
+      },
+      {
+        "json": {
+          "row_number": 235,
+          "Date": "2025-06-01",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 404.32
+        }
+      },
+      {
+        "json": {
+          "row_number": 236,
+          "Date": "2025-06-02",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 280.13
+        }
+      },
+      {
+        "json": {
+          "row_number": 237,
+          "Date": "2025-06-02",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 149.21
+        }
+      },
+      {
+        "json": {
+          "row_number": 238,
+          "Date": "2025-06-02",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 114.08
+        }
+      },
+      {
+        "json": {
+          "row_number": 239,
+          "Date": "2025-06-02",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 486.57
+        }
+      },
+      {
+        "json": {
+          "row_number": 240,
+          "Date": "2025-06-03",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 653.25
+        }
+      },
+      {
+        "json": {
+          "row_number": 241,
+          "Date": "2025-06-03",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 118.49
+        }
+      },
+      {
+        "json": {
+          "row_number": 242,
+          "Date": "2025-06-04",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 179.86
+        }
+      },
+      {
+        "json": {
+          "row_number": 243,
+          "Date": "2025-06-04",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 286.67
+        }
+      },
+      {
+        "json": {
+          "row_number": 244,
+          "Date": "2025-06-04",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 580.35
+        }
+      },
+      {
+        "json": {
+          "row_number": 245,
+          "Date": "2025-06-05",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 147.81
+        }
+      },
+      {
+        "json": {
+          "row_number": 246,
+          "Date": "2025-06-05",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 365.43
+        }
+      },
+      {
+        "json": {
+          "row_number": 247,
+          "Date": "2025-06-05",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 414.74
+        }
+      },
+      {
+        "json": {
+          "row_number": 248,
+          "Date": "2025-06-06",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 325.99
+        }
+      },
+      {
+        "json": {
+          "row_number": 249,
+          "Date": "2025-06-07",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/cUSD",
+          "Pool Address": "0x9491d57c5687AB75726423B55AC2d87D1cDa2c3F",
+          "USD Volume": 167.55
+        }
+      },
+      {
+        "json": {
+          "row_number": 250,
+          "Date": "2025-06-17",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 303.26
+        }
+      },
+      {
+        "json": {
+          "row_number": 251,
+          "Date": "2025-06-17",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 190.9
+        }
+      },
+      {
+        "json": {
+          "row_number": 252,
+          "Date": "2025-06-17",
+          "DEX": "uniswap",
+          "Chain": "celo",
+          "Pair": "G$/USDGLO",
+          "Pool Address": "0x0DBb0769B00d01d241BA4F7B2891fB5C2A975D51",
+          "USD Volume": 1966.59
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Slack": {
+      "main": [
+        []
+      ]
+    },
+    "Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6e871fb0-e8b0-44f9-a59b-34f378fd5226",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "08445b815aea6a21daaff47d04b630f7a180fd2a054d7b796da35f2198aef3a5"
+  },
+  "id": "tVS4Ew5p3QNtMiy1",
+  "tags": []
+}

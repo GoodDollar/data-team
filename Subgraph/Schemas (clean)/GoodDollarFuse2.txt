@@ -1,0 +1,352 @@
+=== Sampling (latest 10): GoodDollarFuse2 | Subgraph: 676L2344cS6gSYf2uWhiCVeaH7YiNbUVHuro8B6DvhTA ===
+	Root Query fields (collections) available right now:
+	minter, minters, mintBurnStats, mintBurnStats_collection, invitesStats, invitesStats_collection, user, users, goodBalance, goodBalances, stateProof, stateProofs, stateHash, stateHashes, _meta
+	
+=== Collection: minters  -> Item Type: Minter ===
+	No rows found.
+	
+=== Collection: mintBurnStats_collection  -> Item Type: MintBurnStats ===
+	No rows found.
+	
+=== Collection: invitesStats_collection  -> Item Type: InvitesStats ===
+	Record 1:
+	  id: stats
+	  totalApprovedInvites: 312080
+	  totalInvited: 572496
+	  totalInvitersBounties: 10190015000
+	  totalPending: 572496
+	
+	
+=== Collection: users  -> Item Type: User ===
+	Record 1:
+	  id: 0xfffffa54878dd33ba6c9d8cb2467f42dc3f6f904
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1674950825
+	  level: 0
+	  levelStarted: 1674950825
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 2:
+	  id: 0xfffff9e814994da5f2429a20e00ad492c0b66ca4
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1616822680
+	  level: 0
+	  levelStarted: 1616822680
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 3:
+	  id: 0xffffe8ebd263bb2372f45587befc120ca01748c1
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1651059655
+	  level: 0
+	  levelStarted: 1651059655
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 4:
+	  id: 0xffffd75330537a26e605eda742aff19cdc30752d
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1615494975
+	  level: 0
+	  levelStarted: 1615494975
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 5:
+	  id: 0xffffc548640c30ea9577d75dbcb284172b02b165
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1726593405
+	  level: 0
+	  levelStarted: 1726593405
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 1
+	  totalPending: 1
+	
+	Record 6:
+	  id: 0xffffbbedb0f288a791f0130bae562423e976975e
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1613530115
+	  level: 0
+	  levelStarted: 1613530115
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 7:
+	  id: 0xffffb1de902908984034f8cd97e7b7f79273a853
+	  bountyPaid: true
+	  earnedAsInvitee: 50000
+	  joinedAt: 1650195755
+	  level: 0
+	  levelStarted: 1650195755
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 8:
+	  id: 0xffff64452dfb4961939e44035e3a8a056ce9f46d
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1650045650
+	  level: 0
+	  levelStarted: 1650045650
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 2
+	  totalPending: 2
+	
+	Record 9:
+	  id: 0xffff458140149b0fd62ad7f7f00f0841ed14070a
+	  bountyPaid: true
+	  earnedAsInvitee: 5000
+	  joinedAt: 1671551120
+	  level: 0
+	  levelStarted: 1671551120
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	Record 10:
+	  id: 0xffff38bea5baf53de4281edfe4ed1c18b0b5ce78
+	  bountyPaid: false
+	  earnedAsInvitee: 0
+	  joinedAt: 1702120405
+	  level: 0
+	  levelStarted: 1702120405
+	  totalApprovedInvites: 0
+	  totalEarnedAsInviter: 0
+	  totalInvited: 0
+	  totalPending: 0
+	
+	
+=== Collection: goodBalances  -> Item Type: GoodBalance ===
+	Record 1:
+	  id: 0xffff458140149b0fd62ad7f7f00f0841ed14070a
+	  activeVotes: 824301069953699847420
+	  blockchainsBalance: 0
+	  coreBalance: 824301069953699847420
+	  lastUpdate: 1693674100
+	  memberSince: 1671952735
+	  totalVotes: 824301069953699847420
+	
+	Record 2:
+	  id: 0xffff38bea5baf53de4281edfe4ed1c18b0b5ce78
+	  activeVotes: 103695784571312427509
+	  blockchainsBalance: 0
+	  coreBalance: 103695784571312427509
+	  lastUpdate: 1705578645
+	  memberSince: 1702997540
+	  totalVotes: 103695784571312427509
+	
+	Record 3:
+	  id: 0xffff06df3d469c481d33419fb79be641cc312e43
+	  activeVotes: 1003090273498800843861
+	  blockchainsBalance: 0
+	  coreBalance: 1003090273498800843861
+	  lastUpdate: 1739273305
+	  memberSince: 1648636545
+	  totalVotes: 1003090273498800843861
+	
+	Record 4:
+	  id: 0xfffe99605c8ad45096b847f3393f790d09135ffe
+	  activeVotes: 1862045644133507748540
+	  blockchainsBalance: 0
+	  coreBalance: 1862045644133507748540
+	  lastUpdate: 1682251980
+	  memberSince: 1648555725
+	  totalVotes: 1862045644133507748540
+	
+	Record 5:
+	  id: 0xfffe7fe2b16453355e6d2dbf6a589e16e130c525
+	  activeVotes: 225091847020892089402
+	  blockchainsBalance: 0
+	  coreBalance: 225091847020892089402
+	  lastUpdate: 1662045655
+	  memberSince: 1653772780
+	  totalVotes: 225091847020892089402
+	
+	Record 6:
+	  id: 0xfffe28e8b100726a9db48d3d8d2f7fc0741d0da6
+	  activeVotes: 8840749257553867000
+	  blockchainsBalance: 0
+	  coreBalance: 8840749257553867000
+	  lastUpdate: 1650985655
+	  memberSince: 1650985655
+	  totalVotes: 8840749257553867000
+	
+	Record 7:
+	  id: 0xfffddc973bdbb7fe88351ca20f8d06312d3a1214
+	  activeVotes: 3371220230018356294
+	  blockchainsBalance: 0
+	  coreBalance: 3371220230018356294
+	  lastUpdate: 1650077800
+	  memberSince: 1650077800
+	  totalVotes: 3371220230018356294
+	
+	Record 8:
+	  id: 0xfffd9c07d298bb2f44a75a7015cc672088c3d2a3
+	  activeVotes: 12416701394628379767
+	  blockchainsBalance: 0
+	  coreBalance: 12416701394628379767
+	  lastUpdate: 1651168340
+	  memberSince: 1651168340
+	  totalVotes: 12416701394628379767
+	
+	Record 9:
+	  id: 0xfffd55572b03091fc73a45d81ed6dfa1cf0a2b00
+	  activeVotes: 16224136444987502344
+	  blockchainsBalance: 0
+	  coreBalance: 16224136444987502344
+	  lastUpdate: 1693851545
+	  memberSince: 1693851545
+	  totalVotes: 16224136444987502344
+	
+	Record 10:
+	  id: 0xfffcc7e537c21cb346dd763796cb45f55945484f
+	  activeVotes: 1696206758941963463947
+	  blockchainsBalance: 0
+	  coreBalance: 1696206758941963463947
+	  lastUpdate: 1727311265
+	  memberSince: 1648575390
+	  totalVotes: 1696206758941963463947
+	
+	
+=== Collection: stateProofs  -> Item Type: StateProof ===
+	Record 1:
+	  id: 0x42d2649c9d1c22444e9b0df926a6195400a9e2f3_rootState
+	  balance: 65451580317392304603
+	  blockchain: rootState
+	  timestamp: 1756190360
+	
+	Record 2:
+	  id: 0xf1c9b33c45bf91eef97b7825558e17a6bc6035a5_rootState
+	  balance: 1098611964892418800
+	  blockchain: rootState
+	  timestamp: 1756018430
+	
+	Record 3:
+	  id: 0xb1460eaeecce2b52d0b837d44617944253e702b9_rootState
+	  balance: 577444534419352300000
+	  blockchain: rootState
+	  timestamp: 1755798085
+	
+	Record 4:
+	  id: 0xc6ee5af61b84fb9f07a54fc5b2de43111fb7e58a_rootState
+	  balance: 122928387487946807386
+	  blockchain: rootState
+	  timestamp: 1755518265
+	
+	Record 5:
+	  id: 0x561e4f5c63b76a9520861b3d08cee27200c27644_rootState
+	  balance: 37443464471891700000
+	  blockchain: rootState
+	  timestamp: 1754890320
+	
+	Record 6:
+	  id: 0x9db5b698e1144bd752b6e4a1c5f77da58c62b178_rootState
+	  balance: 17560180909059484000
+	  blockchain: rootState
+	  timestamp: 1754599795
+	
+	Record 7:
+	  id: 0xb09bf4ce6ab84f8ebec97a2b4e091a03c29c14f7_rootState
+	  balance: 9891104320445310000
+	  blockchain: rootState
+	  timestamp: 1754558830
+	
+	Record 8:
+	  id: 0xb29d32c90da8369cc89e99e5c1e8c5fd9d6a835c_rootState
+	  balance: 215162581803355087323
+	  blockchain: rootState
+	  timestamp: 1753860910
+	
+	Record 9:
+	  id: 0xe06703ae37e39c0a5a4075fd54b506d33825ce84_rootState
+	  balance: 383155181490315800000
+	  blockchain: rootState
+	  timestamp: 1753632955
+	
+	Record 10:
+	  id: 0x3b946849f7b109d5ad729b265adc9af5f2eb6035_rootState
+	  balance: 16592464255955968000
+	  blockchain: rootState
+	  timestamp: 1753488935
+	
+	
+=== Collection: stateHashes  -> Item Type: StateHash ===
+	Record 1:
+	  id: 0x9d46a2d95b60695be880776592f89b08906baddd6375e2afdc7122a2c05dae19-7
+	  blockchain: rootState
+	  merkleRoot: 0x20fff2ba627e4337c2bd82aff0cb20cdce809bd9675f149edc32598a85e464e4
+	  timestamp: 1646839860
+	  totalSupply: 120199342791464470366059218
+	
+	
+=== Singleton: minter  -> Type: Minter ===
+	Error fetching minter: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: mintBurnStats  -> Type: MintBurnStats ===
+	Error fetching mintBurnStats: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: invitesStats  -> Type: InvitesStats ===
+	Error fetching invitesStats: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: user  -> Type: User ===
+	Error fetching user: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: goodBalance  -> Type: GoodBalance ===
+	Error fetching goodBalance: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: stateProof  -> Type: StateProof ===
+	Error fetching stateProof: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: stateHash  -> Type: StateHash ===
+	Error fetching stateHash: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]

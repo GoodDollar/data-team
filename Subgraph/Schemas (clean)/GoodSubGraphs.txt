@@ -1,0 +1,652 @@
+=== Sampling (latest 10): GoodSubGraphs | Subgraph: 6comJDLpVWXaZY24tM8ZakmHUDJVkuwu3nBEobUWuMB6 ===
+	Root Query fields (collections) available right now:
+	reserveHistory, reserveHistories, stakeHistory, stakeHistories, contractStakeHistory, contractStakeHistories, supporter, supporters, stakeStatistic, stakeStatistics, minter, minters, mintBurnStats, mintBurnStats_collection, invitesStats, invitesStats_collection, user, users, goodBalance, goodBalances, stateProof, stateProofs, stateHash, stateHashes, _meta
+	
+=== Collection: reserveHistories  -> Item Type: ReserveHistory ===
+	Record 1:
+	  id: 1702771200
+	  block: 18802436
+	  blockTimestamp: 1702775939
+	  closePriceCDAI: 0.02237131
+	  closePriceDAI: 0.000505663289378105
+	  interestReceivedCDAI: 0
+	  interestReceivedDAI: 0
+	  marketCap: 10592133.8839589822314274559
+	  openPriceCDAI: 0.02237131
+	  openPriceDAI: 0.000505661320499934
+	  reserveRatio: 0.532064
+	  reserveValueInDAI: 5498217.10408870957803763478242029
+	  totalSupply: 2094700981158
+	  ubiMintedFromExpansion: 0
+	  ubiMintedFromInterest: 0
+	  volumeDAI: 110.858661598568241173
+	  volumeGD: 21457990598.51
+	
+	Record 2:
+	  id: 1702684800
+	  block: 18802015
+	  blockTimestamp: 1702770839
+	  closePriceCDAI: 0.02237628
+	  closePriceDAI: 0.000505771859229872
+	  interestReceivedCDAI: 243249452.34406758
+	  interestReceivedDAI: 5498176.094002549803431861
+	  marketCap: 10597018.58858341642796831776
+	  openPriceCDAI: 0.02237628
+	  openPriceDAI: 0.000505771859229872
+	  reserveRatio: 0.532064
+	  reserveValueInDAI: 5500786.343232838471485739451371536
+	  totalSupply: 2095217121158
+	  ubiMintedFromExpansion: 190523880.52
+	  ubiMintedFromInterest: 3658153052.66
+	  volumeDAI: 109290398.102389551480588496
+	  volumeGD: 265803030514.78
+	
+	Record 3:
+	  id: 1702252800
+	  block: 18761039
+	  blockTimestamp: 1702274459
+	  closePriceCDAI: 0.00816084
+	  closePriceDAI: 0.000184335624106957
+	  interestReceivedCDAI: 9746.17450608
+	  interestReceivedDAI: 220.139725145447292719
+	  marketCap: 1270090.88995440598895258155
+	  openPriceCDAI: 0.00817924
+	  openPriceDAI: 0.000184746912173118
+	  reserveRatio: 0.533488
+	  reserveValueInDAI: 627328.4712260342309192190062019438
+	  totalSupply: 689010003415
+	  ubiMintedFromExpansion: 2856456.87
+	  ubiMintedFromInterest: 1191766.91
+	  volumeDAI: 3148.143767756597310805
+	  volumeGD: 528568189.33
+	
+	Record 4:
+	  id: 1702166400
+	  block: 18752101
+	  blockTimestamp: 1702166447
+	  closePriceCDAI: 0.00817792
+	  closePriceDAI: 0.000184695723382943
+	  interestReceivedCDAI: 33735.41735916
+	  interestReceivedDAI: 761.903676335250919621
+	  marketCap: 1275072.63837740629376578211
+	  openPriceCDAI: 0.00817792
+	  openPriceDAI: 0.000184695723382943
+	  reserveRatio: 0.533726
+	  reserveValueInDAI: 630168.7808919418914725762164135168
+	  totalSupply: 690363921277
+	  ubiMintedFromExpansion: 19902393.14
+	  ubiMintedFromInterest: 4127504.77
+	  volumeDAI: 0
+	  volumeGD: 0
+	
+	Record 5:
+	  id: 1702080000
+	  block: 18750858
+	  blockTimestamp: 1702151435
+	  closePriceCDAI: 0.00817332
+	  closePriceDAI: 0.000184588304405814
+	  interestReceivedCDAI: 0
+	  interestReceivedDAI: 0
+	  marketCap: 1269772.1247305252652209361
+	  openPriceCDAI: 0.00817332
+	  openPriceDAI: 0.000184588304405814
+	  reserveRatio: 0.535449
+	  reserveValueInDAI: 629394.8428073224119678958123059967
+	  totalSupply: 687894137615
+	  ubiMintedFromExpansion: 0
+	  ubiMintedFromInterest: 0
+	  volumeDAI: 0.061740954147261942
+	  volumeGD: 6367960589.22
+	
+	Record 6:
+	  id: 1701993600
+	  block: 18741465
+	  blockTimestamp: 1702037591
+	  closePriceCDAI: 0.00826807
+	  closePriceDAI: 0.000186697888188061
+	  interestReceivedCDAI: 0
+	  interestReceivedDAI: 0
+	  marketCap: 1301297.02018975054941227661
+	  openPriceCDAI: 0.00826807
+	  openPriceDAI: 0.000186697888188061
+	  reserveRatio: 0.535449
+	  reserveValueInDAI: 645697.586088128911762003747604615
+	  totalSupply: 697006823601
+	  ubiMintedFromExpansion: 0
+	  ubiMintedFromInterest: 0
+	  volumeDAI: 0.002327285537797526
+	  volumeGD: 6459087449.08
+	
+	Record 7:
+	  id: 1701561600
+	  block: 18704164
+	  blockTimestamp: 1701585875
+	  closePriceCDAI: 0.00827164
+	  closePriceDAI: 0.000186679801564298
+	  interestReceivedCDAI: 30837.25950004
+	  interestReceivedDAI: 695.936733840873076597
+	  marketCap: 1301812.29839350489901306912
+	  openPriceCDAI: 0.00828734
+	  openPriceDAI: 0.000187029081874844
+	  reserveRatio: 0.535449
+	  reserveValueInDAI: 645978.344588066271075467383837799
+	  totalSupply: 697350376144
+	  ubiMintedFromExpansion: 20166109.02
+	  ubiMintedFromInterest: 3722849.93
+	  volumeDAI: 2740.46227238252403006
+	  volumeGD: 526100987.47
+	
+	Record 8:
+	  id: 1700956800
+	  block: 18655179
+	  blockTimestamp: 1700993603
+	  closePriceCDAI: 0.00828324
+	  closePriceDAI: 0.00018681481348681
+	  interestReceivedCDAI: 30768.13142848
+	  interestReceivedDAI: 693.895278912678104655
+	  marketCap: 1300993.5565755568205398846
+	  openPriceCDAI: 0.00828318
+	  openPriceDAI: 0.000186805607930538
+	  reserveRatio: 0.537175
+	  reserveValueInDAI: 647583.3598176180850161679944504846
+	  totalSupply: 696408133966
+	  ubiMintedFromExpansion: 20083549.31
+	  ubiMintedFromInterest: 3716366.34
+	  volumeDAI: 0.001256623062339786
+	  volumeGD: 510925069.13
+	
+	Record 9:
+	  id: 1700352000
+	  block: 18602147
+	  blockTimestamp: 1700352035
+	  closePriceCDAI: 0.00827909
+	  closePriceDAI: 0.000186585852785916
+	  interestReceivedCDAI: 35389.05209885
+	  interestReceivedDAI: 797.563073375110055485
+	  marketCap: 1294885.3416004531465987212
+	  openPriceCDAI: 0.00827909
+	  openPriceDAI: 0.000186585852785916
+	  reserveRatio: 0.53888
+	  reserveValueInDAI: 646410.0689440804852021540974143287
+	  totalSupply: 693989025570
+	  ubiMintedFromExpansion: 20018412.95
+	  ubiMintedFromInterest: 4276932.72
+	  volumeDAI: 0
+	  volumeGD: 0
+	
+	Record 10:
+	  id: 1700265600
+	  block: 18597897
+	  blockTimestamp: 1700300435
+	  closePriceCDAI: 0.0082744
+	  closePriceDAI: 0.000186465815444543
+	  interestReceivedCDAI: 0
+	  interestReceivedDAI: 0
+	  marketCap: 1289470.95124791173595455615
+	  openPriceCDAI: 0.0082744
+	  openPriceDAI: 0.000186465815444543
+	  reserveRatio: 0.540586
+	  reserveValueInDAI: 645562.8635082476917819554587545504
+	  totalSupply: 691532090305
+	  ubiMintedFromExpansion: 0
+	  ubiMintedFromInterest: 0
+	  volumeDAI: 0.003871231703776997
+	  volumeGD: 6404340116.12
+	
+	
+=== Collection: stakeHistories  -> Item Type: StakeHistory ===
+	Record 1:
+	  id: 1743120000
+	  totalUSDStaked: 23141.692553771603389544
+	
+	Record 2:
+	  id: 1743033600
+	  totalUSDStaked: 23141.492553771603389544
+	
+	Record 3:
+	  id: 1741996800
+	  totalUSDStaked: 23140.892553771603389544
+	
+	Record 4:
+	  id: 1741392000
+	  totalUSDStaked: 23130.545099030732848554
+	
+	Record 5:
+	  id: 1740614400
+	  totalUSDStaked: 23130.345099030732848554
+	
+	Record 6:
+	  id: 1739145600
+	  totalUSDStaked: 23115.345099030732848554
+	
+	Record 7:
+	  id: 1726272000
+	  totalUSDStaked: 23164.767448200732848554
+	
+	Record 8:
+	  id: 1725494400
+	  totalUSDStaked: 23164.567448200732848554
+	
+	Record 9:
+	  id: 1721347200
+	  totalUSDStaked: 23115.145099030732848554
+	
+	Record 10:
+	  id: 1702771200
+	  totalUSDStaked: 23044.153102266750658001
+	
+	
+=== Collection: contractStakeHistories  -> Item Type: ContractStakeHistory ===
+	Record 1:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1646352000
+	  day: 1646352000
+	  opValues: -3781.421293
+	  totalTokenStaked: 0
+	  totalUSDStaked: 0
+	
+	Record 2:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1646265600
+	  day: 1646265600
+	  opValues: -1584.033559
+	  totalTokenStaked: 3781.421293
+	  totalUSDStaked: 3781.421293
+	
+	Record 3:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1646006400
+	  day: 1646006400
+	  opValues: -3395.617653,-2450,-84.0144
+	  totalTokenStaked: 5365.454852
+	  totalUSDStaked: 5365.454852
+	
+	Record 4:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1645660800
+	  day: 1645660800
+	  opValues: 3781.421293
+	  totalTokenStaked: 11295.086905
+	  totalUSDStaked: 11295.086905
+	
+	Record 5:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1645315200
+	  day: 1645315200
+	  opValues: 84.0144
+	  totalTokenStaked: 7513.665612
+	  totalUSDStaked: 7513.665612
+	
+	Record 6:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1644624000
+	  day: 1644624000
+	  opValues: 2450
+	  totalTokenStaked: 7429.651212
+	  totalUSDStaked: 7429.651212
+	
+	Record 7:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1644537600
+	  day: 1644537600
+	  opValues: 3395.617653
+	  totalTokenStaked: 4979.651212
+	  totalUSDStaked: 4979.651212
+	
+	Record 8:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010_1643846400
+	  day: 1643846400
+	  opValues: 1584.033559
+	  totalTokenStaked: 1584.033559
+	  totalUSDStaked: 1584.033559
+	
+	Record 9:
+	  id: 0xea12bb3917cf6ae2fde97ce4756177703426d41f_1644364800
+	  day: 1644364800
+	  opValues: -151.576
+	  totalTokenStaked: 0
+	  totalUSDStaked: 0
+	
+	Record 10:
+	  id: 0xea12bb3917cf6ae2fde97ce4756177703426d41f_1644278400
+	  day: 1644278400
+	  opValues: -20
+	  totalTokenStaked: 151.576
+	  totalUSDStaked: 151.576
+	
+	
+=== Collection: supporters  -> Item Type: Supporter ===
+	Record 1:
+	  id: 0xfd8c3270bb87cbe622d0bca73ecaa38d4bf543a8
+	  totalUSDStaked: 0.2
+	
+	Record 2:
+	  id: 0xfbbd07c61a0036271a26aa5191f115d2754d9044
+	  totalUSDStaked: 0
+	
+	Record 3:
+	  id: 0xfa1f75b3963945af352054041ccc82734198da37
+	  totalUSDStaked: 0
+	
+	Record 4:
+	  id: 0xf79b804bae955ae4cd8e8b0331c4bc437104804f
+	  totalUSDStaked: 0
+	
+	Record 5:
+	  id: 0xf3cc74504e8c56bab024f31ca6b42af853f97dd3
+	  totalUSDStaked: 0
+	
+	Record 6:
+	  id: 0xf2d11b31904370fca59b7243002933d61e21a013
+	  totalUSDStaked: 0
+	
+	Record 7:
+	  id: 0xf0f17b61f2f66cfeea93f6ac7f3f229b31adc335
+	  totalUSDStaked: 0
+	
+	Record 8:
+	  id: 0xf0652a820dd39ec956659e0018da022132f2f40a
+	  totalUSDStaked: -1584.033559
+	
+	Record 9:
+	  id: 0xe6d790e27aa721373fb1c445a9454d2dd1d267da
+	  totalUSDStaked: 0
+	
+	Record 10:
+	  id: 0xdf67d976307886ec39573eb979b1af790aea6787
+	  totalUSDStaked: 15
+	
+	
+=== Collection: stakeStatistics  -> Item Type: StakeStatistic ===
+	Record 1:
+	  id: global
+	  totalTokenStaked: 23141.692553771603389544
+	  totalUSDStaked: 23141.692553771603389544
+	
+	Record 2:
+	  id: 0xf4c34bed7dd779485692bb1857acf9c561b45010
+	  totalTokenStaked: 0
+	  totalUSDStaked: 0
+	
+	Record 3:
+	  id: 0xea12bb3917cf6ae2fde97ce4756177703426d41f
+	  totalTokenStaked: 0
+	  totalUSDStaked: 0
+	
+	Record 4:
+	  id: 0xd33ba17c8a644c585089145e86e282fada6f3bfd
+	  totalTokenStaked: 900
+	  totalUSDStaked: 900
+	
+	Record 5:
+	  id: 0x7b7246c78e2f900d17646ff0cb2ec47d6ba10754
+	  totalTokenStaked: 21135.045546791603389544
+	  totalUSDStaked: 21135.045546791603389544
+	
+	Record 6:
+	  id: 0x589ceb6ca1112f7acca19930b47871c5a259b0fc
+	  totalTokenStaked: 0
+	  totalUSDStaked: 0
+	
+	Record 7:
+	  id: 0x3ff2d8eb2573819a9ef7167d2ba6fd6d31b17f4f
+	  totalTokenStaked: 134.3144
+	  totalUSDStaked: 134.3144
+	
+	Record 8:
+	  id: 0x02416eb83cff1f19163f21010149c3867f3261e1
+	  totalTokenStaked: 972.33260698
+	  totalUSDStaked: 972.33260698
+	
+	
+=== Collection: minters  -> Item Type: Minter ===
+	No rows found.
+	
+=== Collection: mintBurnStats_collection  -> Item Type: MintBurnStats ===
+	No rows found.
+	
+=== Collection: invitesStats_collection  -> Item Type: InvitesStats ===
+	No rows found.
+	
+=== Collection: users  -> Item Type: User ===
+	No rows found.
+	
+=== Collection: goodBalances  -> Item Type: GoodBalance ===
+	Record 1:
+	  id: 0xfcfc07037f4e0c02aec236dcd5e0ae28ec66a463
+	  activeVotes: 0
+	  blockchainsBalance: 1432859009641893644109
+	  coreBalance: 0
+	  lastUpdate: 1664716643
+	  memberSince: 1664716643
+	  totalVotes: 1432859009641893644109
+	
+	Record 2:
+	  id: 0xfbbd07c61a0036271a26aa5191f115d2754d9044
+	  activeVotes: 411052378831166268717831
+	  blockchainsBalance: 0
+	  coreBalance: 411052378831166268717831
+	  lastUpdate: 1670250035
+	  memberSince: 1646830365
+	  totalVotes: 411052378831166268717831
+	
+	Record 3:
+	  id: 0xfa1f75b3963945af352054041ccc82734198da37
+	  activeVotes: 7199651850330261252
+	  blockchainsBalance: 0
+	  coreBalance: 7199651850330261252
+	  lastUpdate: 1668916811
+	  memberSince: 1668916811
+	  totalVotes: 7199651850330261252
+	
+	Record 4:
+	  id: 0xf3cc74504e8c56bab024f31ca6b42af853f97dd3
+	  activeVotes: 16562691703411459439292
+	  blockchainsBalance: 1637212600830056014412809
+	  coreBalance: 16562691703411459439292
+	  lastUpdate: 1646907101
+	  memberSince: 1646830365
+	  totalVotes: 1653775292533467473852101
+	
+	Record 5:
+	  id: 0xf2d11b31904370fca59b7243002933d61e21a013
+	  activeVotes: 12000934390131921226048
+	  blockchainsBalance: 0
+	  coreBalance: 12000934390131921226048
+	  lastUpdate: 1686685979
+	  memberSince: 1686685979
+	  totalVotes: 12000934390131921226048
+	
+	Record 6:
+	  id: 0xf0f17b61f2f66cfeea93f6ac7f3f229b31adc335
+	  activeVotes: 761076741324368144363484
+	  blockchainsBalance: 12781339295828454187757
+	  coreBalance: 761076741324368144363484
+	  lastUpdate: 1675523507
+	  memberSince: 1646728282
+	  totalVotes: 773858080620196598551241
+	
+	Record 7:
+	  id: 0xf0652a820dd39ec956659e0018da022132f2f40a
+	  activeVotes: 136030429826446968348020
+	  blockchainsBalance: 0
+	  coreBalance: 136030429826446968348020
+	  lastUpdate: 1659262494
+	  memberSince: 1646830365
+	  totalVotes: 136030429826446968348020
+	
+	Record 8:
+	  id: 0xefb5c357a125e1d7d9ba361489331a3cb451aec9
+	  activeVotes: 0
+	  blockchainsBalance: 1384320807755215090678
+	  coreBalance: 0
+	  lastUpdate: 1665024431
+	  memberSince: 1665024431
+	  totalVotes: 1384320807755215090678
+	
+	Record 9:
+	  id: 0xe773f2dfa2e427b9c78f9a01d43588d49e09c42b
+	  activeVotes: 0
+	  blockchainsBalance: 17749402559499907000000
+	  coreBalance: 0
+	  lastUpdate: 1660697269
+	  memberSince: 1660697269
+	  totalVotes: 17749402559499907000000
+	
+	Record 10:
+	  id: 0xe6d790e27aa721373fb1c445a9454d2dd1d267da
+	  activeVotes: 344834174951151681090
+	  blockchainsBalance: 0
+	  coreBalance: 344834174951151681090
+	  lastUpdate: 1664129543
+	  memberSince: 1663993007
+	  totalVotes: 344834174951151681090
+	
+	
+=== Collection: stateProofs  -> Item Type: StateProof ===
+	Record 1:
+	  id: 0x3b42af6a54abf1868776c3889491b12a6cb4fd9a_fuse
+	  balance: 1500228305936712816307
+	  blockchain: fuse
+	  timestamp: 1676857067
+	
+	Record 2:
+	  id: 0x508547ea0f501dbf679eda3ea4535380dec6eec2_fuse
+	  balance: 985528912815977636667
+	  blockchain: fuse
+	  timestamp: 1669973975
+	
+	Record 3:
+	  id: 0xb5e2b4d28a281495d534837583362923d6ca363d_fuse
+	  balance: 321212908075588400000
+	  blockchain: fuse
+	  timestamp: 1669659887
+	
+	Record 4:
+	  id: 0x6de1d6060967c0a889f0880da0d79c5c957bb409_fuse
+	  balance: 748360783946342022445
+	  blockchain: fuse
+	  timestamp: 1668777023
+	
+	Record 5:
+	  id: 0x587fac671c7252d9ee4229c28ba65d33ae6afee5_fuse
+	  balance: 1058127313864178766670
+	  blockchain: fuse
+	  timestamp: 1668166055
+	
+	Record 6:
+	  id: 0x86c3163790b4aaeba111d66ae86d428f13386418_fuse
+	  balance: 1301276862353497733654
+	  blockchain: fuse
+	  timestamp: 1665482339
+	
+	Record 7:
+	  id: 0x5df6fca669b0f98eeea489772937a6bf0297db64_fuse
+	  balance: 1405882751681485374541
+	  blockchain: fuse
+	  timestamp: 1665025019
+	
+	Record 8:
+	  id: 0xefb5c357a125e1d7d9ba361489331a3cb451aec9_fuse
+	  balance: 1384320807755215090678
+	  blockchain: fuse
+	  timestamp: 1665024431
+	
+	Record 9:
+	  id: 0xd7fb0b98e44bc2b9a316a8b0cc33729f0efc656c_fuse
+	  balance: 132393062621055106164
+	  blockchain: fuse
+	  timestamp: 1665001799
+	
+	Record 10:
+	  id: 0xfcfc07037f4e0c02aec236dcd5e0ae28ec66a463_fuse
+	  balance: 1432859009641893644109
+	  blockchain: fuse
+	  timestamp: 1664716643
+	
+	
+=== Collection: stateHashes  -> Item Type: StateHash ===
+	Record 1:
+	  id: 0x19b952be9db8fba0555b0d00cbd81400e97479ef790a10f81cf5f07a97968f02-178
+	  blockchain: fuse
+	  merkleRoot: 0x20fff2ba627e4337c2bd82aff0cb20cdce809bd9675f149edc32598a85e464e4
+	  timestamp: 1646830365
+	  totalSupply: 120199342791464470366059218
+	
+	
+=== Singleton: reserveHistory  -> Type: ReserveHistory ===
+	Error fetching reserveHistory: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: stakeHistory  -> Type: StakeHistory ===
+	Error fetching stakeHistory: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: contractStakeHistory  -> Type: ContractStakeHistory ===
+	Error fetching contractStakeHistory: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: supporter  -> Type: Supporter ===
+	Error fetching supporter: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: stakeStatistic  -> Type: StakeStatistic ===
+	Error fetching stakeStatistic: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: minter  -> Type: Minter ===
+	Error fetching minter: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: mintBurnStats  -> Type: MintBurnStats ===
+	Error fetching mintBurnStats: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: invitesStats  -> Type: InvitesStats ===
+	Error fetching invitesStats: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: user  -> Type: User ===
+	Error fetching user: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: goodBalance  -> Type: GoodBalance ===
+	Error fetching goodBalance: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: stateProof  -> Type: StateProof ===
+	Error fetching stateProof: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
+	
+=== Singleton: stateHash  -> Type: StateHash ===
+	Error fetching stateHash: [
+  {
+    "message": "No value provided for required argument: `id`"
+  }
+]
