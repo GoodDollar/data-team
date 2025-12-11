@@ -1,0 +1,670 @@
+=== Sampling: GoodDollarFuse | Subgraph: 5cAhhzm7LSqGiFibV1odbbgZWiRmZsYjYrmaoj87UxFd ===
+Root Query fields (collections) available right now:
+dailyUBI, dailyUBIs, walletStat, walletStats, transactionStat, transactionStats, globalStatistics, globalStatistics_collection, ubicollected, ubicollecteds, ubihistory, ubihistories, _meta
+
+=== Entity: DailyUBI ===
+Record 1:
+  id: 1234
+  pool: null
+  quota: null
+  activeUsers: null
+  totalUBIDistributed: null
+  totalClaims: null
+  newClaimers: 61
+  timestamp: null
+  ubiSchemeAddress: null
+  balance: null
+  cycleLength: null
+  dayInCycle: null
+
+Record 2:
+  id: 0
+  pool: null
+  quota: null
+  activeUsers: null
+  totalUBIDistributed: null
+  totalClaims: null
+  newClaimers: 2
+  timestamp: null
+  ubiSchemeAddress: null
+  balance: null
+  cycleLength: null
+  dayInCycle: null
+
+Record 3:
+  id: -1
+  pool: null
+  quota: null
+  activeUsers: null
+  totalUBIDistributed: null
+  totalClaims: null
+  newClaimers: 13
+  timestamp: null
+  ubiSchemeAddress: null
+  balance: null
+  cycleLength: null
+  dayInCycle: null
+
+Record 4:
+  id: 1854
+  pool: 10777908
+  quota: 348
+  activeUsers: 30971
+  totalUBIDistributed: 1374948
+  totalClaims: 3951
+  newClaimers: 123
+  timestamp: 1756382405
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 587318638
+  cycleLength: 60
+  dayInCycle: 35
+
+Record 5:
+  id: 1853
+  pool: 10793300
+  quota: 350
+  activeUsers: 30838
+  totalUBIDistributed: 3268650
+  totalClaims: 9339
+  newClaimers: 407
+  timestamp: 1756296005
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 589098453
+  cycleLength: 60
+  dayInCycle: 34
+
+Record 6:
+  id: 1852
+  pool: 10775349
+  quota: 351
+  activeUsers: 30699
+  totalUBIDistributed: 3287817
+  totalClaims: 9367
+  newClaimers: 409
+  timestamp: 1756209605
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 590897700
+  cycleLength: 60
+  dayInCycle: 33
+
+Record 7:
+  id: 1851
+  pool: 10771552
+  quota: 352
+  activeUsers: 30601
+  totalUBIDistributed: 3246496
+  totalClaims: 9223
+  newClaimers: 372
+  timestamp: 1756123205
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 592657640
+  cycleLength: 60
+  dayInCycle: 32
+
+Record 8:
+  id: 1850
+  pool: 10766500
+  quota: 353
+  activeUsers: 30500
+  totalUBIDistributed: 3263838
+  totalClaims: 9246
+  newClaimers: 333
+  timestamp: 1756036805
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 594443485
+  cycleLength: 60
+  dayInCycle: 31
+
+Record 9:
+  id: 1849
+  pool: 10789160
+  quota: 355
+  activeUsers: 30392
+  totalUBIDistributed: 3201035
+  totalClaims: 9017
+  newClaimers: 384
+  timestamp: 1755950405
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 596159706
+  cycleLength: 60
+  dayInCycle: 30
+
+Record 10:
+  id: 1848
+  pool: 10791428
+  quota: 356
+  activeUsers: 30313
+  totalUBIDistributed: 3220376
+  totalClaims: 9046
+  newClaimers: 304
+  timestamp: 1755864005
+  ubiSchemeAddress: 0xd253a5203817225e9768c05e5996d642fb96ba86
+  balance: 597904649
+  cycleLength: 60
+  dayInCycle: 29
+
+
+=== Entity: WalletStat ===
+Record 1:
+  id: 0xa001405a199bf51867c353520287df570c20fd01
+  dateAppeared: 1756399305
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756399305
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 2:
+  id: 0x4528b64deba82e318666f5e542e41e370f2c111b
+  dateAppeared: 1756399270
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756399270
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 3:
+  id: 0xc92e986858bcd306f1e4881816270b4ac1a9b9af
+  dateAppeared: 1756398730
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756398730
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 4:
+  id: 0x98197c4aa87166849467cb0a03296cada0e1260d
+  dateAppeared: 1756398720
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756398720
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 5:
+  id: 0xcbc065741b5fce3486105723847bc519464c4bc4
+  dateAppeared: 1756398695
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756398695
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 6:
+  id: 0x19f2413f90362b04d9eecf673a320723f50f04ae
+  dateAppeared: 1756398255
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756398255
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 7:
+  id: 0xdf667ef4d6c18c07829a3b76f1c687e0d593b43d
+  dateAppeared: 1756397980
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756397980
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 8:
+  id: 0xe5c28d00025775ce68cd37fd9c21ce99bcde0992
+  dateAppeared: 1756397620
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756397620
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 9:
+  id: 0x7c1e34a501f1b4ea5f3e98d754a36d669f6be3fc
+  dateAppeared: 1756397515
+  balance: null
+  inTransactionsCount: null
+  inTransactionsCountClean: null
+  inTransactionsValue: null
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: null
+  totalTransactionsCountClean: null
+  totalTransactionsValue: null
+  totalTransactionsValueClean: null
+  lastClaimed: null
+  totalClaimedCount: null
+  totalClaimedValue: null
+  claimStreak: 0
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: null
+  dateJoined: 1756397515
+  lastTransactionFrom: null
+  lastTransactionTo: null
+
+Record 10:
+  id: 0x6b4be49309d15fc5f6faef06ebb64824f7077ac2
+  dateAppeared: 1756397430
+  balance: 348
+  inTransactionsCount: 1
+  inTransactionsCountClean: null
+  inTransactionsValue: 348
+  inTransactionsValueClean: null
+  outTransactionsCount: null
+  outTransactionsCountClean: null
+  outTransactionsValue: null
+  outTransactionsValueClean: null
+  totalTransactionsCount: 1
+  totalTransactionsCountClean: null
+  totalTransactionsValue: 348
+  totalTransactionsValueClean: null
+  lastClaimed: 1756397505
+  totalClaimedCount: 1
+  totalClaimedValue: 348
+  claimStreak: 1
+  longestClaimStreak: null
+  isWhitelisted: true
+  isActiveUser: true
+  dateJoined: 1756397430
+  lastTransactionFrom: null
+  lastTransactionTo: 1756397505
+
+
+=== Entity: TransactionStat ===
+Record 1:
+  id: aggregated
+  dayStartBlockNumber: null
+  transactionsCount: 54975520
+  transactionsCountClean: 1400713
+  transactionsValue: 7212009209548
+  transactionsValueClean: 4169150847912
+  totalInCirculation: 412887484848
+
+Record 2:
+  id: 1756339200
+  dayStartBlockNumber: 37551862
+  transactionsCount: 7067
+  transactionsCountClean: 172
+  transactionsValue: 73928074
+  transactionsValueClean: 42090262
+  totalInCirculation: 0
+
+Record 3:
+  id: 1756252800
+  dayStartBlockNumber: 37534587
+  transactionsCount: 9337
+  transactionsCountClean: 94
+  transactionsValue: 23384195
+  transactionsValueClean: 15677843
+  totalInCirculation: 0
+
+Record 4:
+  id: 1756166400
+  dayStartBlockNumber: 37517307
+  transactionsCount: 9464
+  transactionsCountClean: 117
+  transactionsValue: 32173270
+  transactionsValueClean: 24421904
+  totalInCirculation: 0
+
+Record 5:
+  id: 1756080000
+  dayStartBlockNumber: 37500023
+  transactionsCount: 9407
+  transactionsCountClean: 71
+  transactionsValue: 17132941
+  transactionsValueClean: 8389927
+  totalInCirculation: 0
+
+Record 6:
+  id: 1755993600
+  dayStartBlockNumber: 37482748
+  transactionsCount: 9318
+  transactionsCountClean: 141
+  transactionsValue: 40904683
+  transactionsValueClean: 33218239
+  totalInCirculation: 0
+
+Record 7:
+  id: 1755907200
+  dayStartBlockNumber: 37465467
+  transactionsCount: 9061
+  transactionsCountClean: 103
+  transactionsValue: 21439745
+  transactionsValueClean: 6465509
+  totalInCirculation: 0
+
+Record 8:
+  id: 1755820800
+  dayStartBlockNumber: 37448183
+  transactionsCount: 9172
+  transactionsCountClean: 113
+  transactionsValue: 72724982
+  transactionsValueClean: 65039436
+  totalInCirculation: 0
+
+Record 9:
+  id: 1755734400
+  dayStartBlockNumber: 37430906
+  transactionsCount: 9211
+  transactionsCountClean: 108
+  transactionsValue: 21561180
+  transactionsValueClean: 13901250
+  totalInCirculation: 0
+
+Record 10:
+  id: 1755648000
+  dayStartBlockNumber: 37413625
+  transactionsCount: 9150
+  transactionsCountClean: 113
+  transactionsValue: 54392563
+  transactionsValueClean: 46724681
+  totalInCirculation: 0
+
+
+=== Entity: GlobalStatistics ===
+Record 1:
+  id: statistics
+  totalUBIDistributed: 281376904599
+  uniqueClaimers: 942064
+  totalClaims: 51573673
+
+
+=== Entity: UBICollected ===
+Record 1:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0xf5940433b7a3d426bbf420dacbdcb18e7d6451106184c896f9d04fc5c8cfc117
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37560505
+  blockTimestamp: 1756382420
+  ubi: 14902.71
+  communityPool: 7451.24
+
+Record 2:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0xf2c83988d664f8a387b13f80be1eda5a8aeeae423dc2df464242ddd7b8180d95
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37543226
+  blockTimestamp: 1756296020
+  ubi: 14895.17
+  communityPool: 7447.46
+
+Record 3:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0x492510c49a2c545a744f5766ee6475f53b005027c273f1547c78d85fb94681ac
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37525946
+  blockTimestamp: 1756209620
+  ubi: 14885.63
+  communityPool: 7442.7
+
+Record 4:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0x07ff3b48f76f58e1051fbd8827188392e802006287355cc06fb91c4e82bcf100
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37508666
+  blockTimestamp: 1756123220
+  ubi: 14861.97
+  communityPool: 7430.87
+
+Record 5:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0xa5702934f2ab847ab00bbd402a8b91b7458dc7da6e3b0aec7c6471e6f6cc3af3
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37491386
+  blockTimestamp: 1756036820
+  ubi: 14797.5
+  communityPool: 7398.63
+
+Record 6:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0xc842456d106236b8a624649dfc456345ca7a26e851fa6b9ca946e2b446a7786f
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37474107
+  blockTimestamp: 1755950420
+  ubi: 14834.43
+  communityPool: 7417.09
+
+Record 7:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0x25ed5c9055b9589e5a90562cdebaccb3f95f61bb14fa71263faa7013266f9bb8
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37456827
+  blockTimestamp: 1755864020
+  ubi: 14732.91
+  communityPool: 7366.33
+
+Record 8:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0xcd982aa134f4bb892550e7a6f86017e264cecb4b148545cd59e5903525d0eba9
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37439549
+  blockTimestamp: 1755777620
+  ubi: 14691.89
+  communityPool: 7345.82
+
+Record 9:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0xe76a54f50609def4884d34ec0394354cb3143ee21b4bb53f1c62f7a7b6409f54
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37422270
+  blockTimestamp: 1755691225
+  ubi: 14761.31
+  communityPool: 7380.54
+
+Record 10:
+  id: 0xa199f0c353e25adf022378b0c208d600f39a6505_0x7eaccc968de0e8c2b9b2cef42110e02957a31b36c7db56691f880f68e4884eeb
+  contract: 0xa199f0c353e25adf022378b0c208d600f39a6505
+  block: 37404989
+  blockTimestamp: 1755604820
+  ubi: 15325.66
+  communityPool: 7662.71
+
+
+=== Entity: UBIHistory ===
+Record 1:
+  id: 1756339200
+  block: 37560505
+  blockTimestamp: 1756382420
+  totalDailyUBI: 14902.71
+  totalDailyCommunityPool: 7451.24
+
+Record 2:
+  id: 1756252800
+  block: 37543226
+  blockTimestamp: 1756296020
+  totalDailyUBI: 14895.17
+  totalDailyCommunityPool: 7447.46
+
+Record 3:
+  id: 1756166400
+  block: 37525946
+  blockTimestamp: 1756209620
+  totalDailyUBI: 14885.63
+  totalDailyCommunityPool: 7442.7
+
+Record 4:
+  id: 1756080000
+  block: 37508666
+  blockTimestamp: 1756123220
+  totalDailyUBI: 14861.97
+  totalDailyCommunityPool: 7430.87
+
+Record 5:
+  id: 1755993600
+  block: 37491386
+  blockTimestamp: 1756036820
+  totalDailyUBI: 14797.5
+  totalDailyCommunityPool: 7398.63
+
+Record 6:
+  id: 1755907200
+  block: 37474107
+  blockTimestamp: 1755950420
+  totalDailyUBI: 14834.43
+  totalDailyCommunityPool: 7417.09
+
+Record 7:
+  id: 1755820800
+  block: 37456827
+  blockTimestamp: 1755864020
+  totalDailyUBI: 14732.91
+  totalDailyCommunityPool: 7366.33
+
+Record 8:
+  id: 1755734400
+  block: 37439549
+  blockTimestamp: 1755777620
+  totalDailyUBI: 14691.89
+  totalDailyCommunityPool: 7345.82
+
+Record 9:
+  id: 1755648000
+  block: 37422270
+  blockTimestamp: 1755691225
+  totalDailyUBI: 14761.31
+  totalDailyCommunityPool: 7380.54
+
+Record 10:
+  id: 1755561600
+  block: 37404989
+  blockTimestamp: 1755604820
+  totalDailyUBI: 15325.66
+  totalDailyCommunityPool: 7662.71
