@@ -1,6 +1,6 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v4.0.1
- * Updated: Goldsky subgraph integration for XDC
+ * GOODDOLLAR DASHBOARD v4.0.2
+ * Updated: Goldsky + XDC P2P transfer metrics
  * ========================================= *****/
 
 /***** =========================================
@@ -13,14 +13,11 @@ const CONFIG = {
   SHEET_HEALTH: 'Health Runs',
   TIMEZONE: Session.getScriptTimeZone() || 'America/Sao_Paulo',
   VERBOSE: true,
-  
-  // XDC genesis date (claiming started Nov 13, 2025)
   XDC_GENESIS: '2025-11-12',
 };
 
 const CHAINS = { CELO: true, XDC: true };
 
-// NEW: Goldsky subgraph URL (replaces OnFinality)
 const XDC_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/gd_xdc/1.2/gn';
 
 const DUNE_IDS = {
@@ -32,503 +29,386 @@ const DUNE_IDS = {
   PARTNERS:        '5608955',
 };
 
-const PARTNERS_ID = {
-PARTNERS:        '5608955',
-};
-
-/***** =========================================
- * METRICS REGISTRY
- * Updated field mappings for Goldsky schema:
- *   OnFinality             -> Goldsky
- *   dailyUniqueClaimers    -> activeUsers
- *   newUsers               -> newClaimers
- *   amountSum              -> totalUBIDistributed
- *   dailyUbi               -> quota
- *   totalUniqueUsers       -> uniqueClaimers (GlobalStatistics)
- *   totalClaims            -> totalClaims (GlobalStatistics)
- *   totalDistributed       -> totalUBIDistributed (GlobalStatistics)
- * ========================================= *****/
-
-const METRICS = {  
+const METRICS = {
+  gd_usd_price: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: false,
+    decimals: 8,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 1 },
+  },
   celo_dau: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.ACTIVE_CLAIMERS,
-      dateCol: 0,
-      valueCol: 1,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.ACTIVE_CLAIMERS, dateCol: 0, valueCol: 1 },
   },
   xdc_dau: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 0,
-    xdc: {
-      type: 'daily_field',
-      field: 'activeUsers',  // Changed from dailyUniqueClaimers
-    },
+    xdc: { type: 'daily_field', field: 'activeUsers' },
   },
   celo_wau: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.ACTIVE_CLAIMERS,
-      dateCol: 0,
-      valueCol: 2,
-    },
-  },  
+    dune: { type: 'timeseries', queryId: DUNE_IDS.ACTIVE_CLAIMERS, dateCol: 0, valueCol: 2 },
+  },
   celo_mau: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.ACTIVE_CLAIMERS,
-      dateCol: 0,
-      valueCol: 3,
-    },
-  },  
+    dune: { type: 'timeseries', queryId: DUNE_IDS.ACTIVE_CLAIMERS, dateCol: 0, valueCol: 3 },
+  },
   celo_yau: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.LIFETIMES,
-      dateCol: 0,
-      valueCol: 9,
-    },
-  },  
+    dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 9 },
+  },
   celo_new_claimers: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.NEW_VS_RETURN,
-      dateCol: 0,
-      valueCol: 2,
-    },
-  },  
+    dune: { type: 'timeseries', queryId: DUNE_IDS.NEW_VS_RETURN, dateCol: 0, valueCol: 2 },
+  },
   xdc_new_claimers: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 0,
-    xdc: {
-      type: 'daily_field',
-      field: 'newClaimers',  // Changed from newUsers
-    },
-  },  
+    xdc: { type: 'daily_field', field: 'newClaimers' },
+  },
   celo_returning_claimers: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.NEW_VS_RETURN,
-      dateCol: 0,
-      valueCol: 3,
-    },
-  },  
+    dune: { type: 'timeseries', queryId: DUNE_IDS.NEW_VS_RETURN, dateCol: 0, valueCol: 3 },
+  },
   xdc_returning_claimers: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 0,
-    xdc: {
-      type: 'computed',
-      // Computed as: xdc_dau - xdc_new_claimers
-    },
-  },  
+    xdc: { type: 'computed' },
+  },
   celo_p2p_tx_count: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 2,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 2 },
+  },
+  xdc_p2p_tx_count: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 0,
+    xdc: { type: 'transaction_daily', field: 'transactionsCountClean' },
   },
   celo_p2p_gd_amount: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 3,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 3 },
+  },
+  xdc_p2p_gd_amount: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    xdc: { type: 'transaction_daily', field: 'transactionsValueClean', divisor: 1e18 },
   },
   celo_p2p_usd_amount: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: true,
+    aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 4,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 4 },
   },
   celo_p2p_senders: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: true,
+    aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 5,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 11 },
   },
   celo_p2p_receivers: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: true,
+    aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 6,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 12 },
   },
   celo_p2p_users: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: true,
+    aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 7,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 13 },
   },
   celo_p2p_lifetime_tx_count: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.LIFETIMES,
-      dateCol: 0,
-      valueCol: 1,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 1 },
+  },
+  xdc_p2p_lifetime_tx_count: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 0,
+    xdc: { type: 'transaction_lifetime', field: 'transactionsCountClean' },
   },
   celo_p2p_lifetime_gd_amount: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.LIFETIMES,
-      dateCol: 0,
-      valueCol: 2,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 2 },
+  },
+  xdc_p2p_lifetime_gd_amount: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    xdc: { type: 'transaction_lifetime', field: 'transactionsValueClean', divisor: 1e18 },
   },
   celo_p2p_lifetime_unique_users: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.LIFETIMES,
-      dateCol: 0,
-      valueCol: 5,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 5 },
   },
   celo_lifetime_unique_claimers: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.LIFETIMES,
-      dateCol: 0,
-      valueCol: 6,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 6 },
   },
   xdc_lifetime_unique_claimers: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 0,
-    xdc: {
-      type: 'global_total',
-      field: 'uniqueClaimers',  // Changed from totalUniqueUsers
-    },
+    xdc: { type: 'global_total', field: 'uniqueClaimers' },
   },
-  celo_lifetime_unique_claim_TXs: {
+  celo_lifetime_claim_TXs: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 0,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.LIFETIMES,
-      dateCol: 0,
-      valueCol: 7,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 7 },
   },
-  xdc_lifetime_claim_txs: {
+  xdc_lifetime_claim_TXs: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 0,
-    xdc: {
-      type: 'global_total',
-      field: 'totalClaims',  // Same name in Goldsky
-    },
+    xdc: { type: 'global_total', field: 'totalClaims' },
   },
   celo_lifetime_claimed_gd_amount: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 1,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 1 },
   },
   xdc_lifetime_claimed_gd_amount: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 2,
-    xdc: {
-      type: 'global_total',
-      field: 'totalUBIDistributed',  // Changed from totalDistributed
-      divisor: 1e18,
-    },
+    xdc: { type: 'global_total', field: 'totalUBIDistributed', divisor: 1e18 },
   },
   celo_lifetime_claimed_usd_amount: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 2,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 2 },
   },
   celo_gd_claimed_30d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 3,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 3 },
   },
   xdc_gd_claimed_30d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 2,
-    xdc: {
-      type: 'rolling_sum',
-      field: 'totalUBIDistributed',  // Changed from amountSum
-      windowDays: 30,
-      divisor: 1e18,
-    },
+    xdc: { type: 'rolling_sum', field: 'totalUBIDistributed', windowDays: 30, divisor: 1e18 },
   },
   celo_usd_claimed_30d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 4,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 4 },
   },
   celo_gd_claimed_7d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 6,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 6 },
   },
   xdc_gd_claimed_7d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 2,
-    xdc: {
-      type: 'rolling_sum',
-      field: 'totalUBIDistributed',  // Changed from amountSum
-      windowDays: 7,
-      divisor: 1e18,
-    },
+    xdc: { type: 'rolling_sum', field: 'totalUBIDistributed', windowDays: 7, divisor: 1e18 },
   },
   celo_usd_claimed_7d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 7,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 7 },
   },
   celo_gd_claimed_1d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 9,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 9 },
   },
   celo_usd_claimed_1d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 10,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 10 },
   },
   xdc_gd_claimed_1d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 2,
-    xdc: {
-      type: 'daily_field',
-      field: 'totalUBIDistributed',  // Changed from amountSum
-      divisor: 1e18,
-    },
+    xdc: { type: 'daily_field', field: 'totalUBIDistributed', divisor: 1e18 },
   },
   celo_gd_per_user_30d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 5,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 5 },
   },
   xdc_gd_per_user_30d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 2,
-    xdc: {
-      type: 'rolling_sum',
-      field: 'quota',  // Changed from dailyUbi
-      windowDays: 30,
-      divisor: 1e18,
-    },
+    xdc: { type: 'rolling_sum', field: 'quota', windowDays: 30, divisor: 1e18 },
   },
   celo_gd_per_user_7d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 8,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 8 },
   },
   xdc_gd_per_user_7d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 2,
-    xdc: {
-      type: 'rolling_sum',
-      field: 'quota',  // Changed from dailyUbi
-      windowDays: 7,
-      divisor: 1e18,
-    },
+    xdc: { type: 'rolling_sum', field: 'quota', windowDays: 7, divisor: 1e18 },
   },
   celo_gd_per_user_1d: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: false,
     decimals: 2,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.UBI_SUMMARIES,
-      dateCol: 0,
-      valueCol: 11,
-    },
+    dune: { type: 'timeseries', queryId: DUNE_IDS.UBI_SUMMARIES, dateCol: 0, valueCol: 11 },
   },
   xdc_gd_per_user_1d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: false,
     decimals: 2,
-    xdc: {
-      type: 'daily_field',
-      field: 'quota',  // Changed from dailyUbi
-      divisor: 1e18,
-    },
+    xdc: { type: 'daily_field', field: 'quota', divisor: 1e18 },
   },
-  gd_usd_price: {
+  celo_p2p_tx_count_7d: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: false,
-    decimals: 8,
-    dune: {
-      type: 'timeseries',
-      queryId: DUNE_IDS.P2P_TRANSFERS,
-      dateCol: 0,
-      valueCol: 1,
-    },
+    aggregate: true,
+    decimals: 0,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 5 },
   },
+  xdc_p2p_tx_count_7d: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 0,
+    xdc: { type: 'transaction_rolling', field: 'transactionsCountClean', windowDays: 7 },
+  },
+  celo_p2p_tx_count_30d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 0,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 8 },
+  },
+  xdc_p2p_tx_count_30d: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 0,
+    xdc: { type: 'transaction_rolling', field: 'transactionsCountClean', windowDays: 30 },
+  },
+  celo_p2p_gd_amount_7d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 2,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 6 },
+  },
+  xdc_p2p_gd_amount_7d: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    xdc: { type: 'transaction_rolling', field: 'transactionsValueClean', windowDays: 7, divisor: 1e18 },
+  },
+  celo_p2p_gd_amount_30d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 2,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 9 },
+  },
+  xdc_p2p_gd_amount_30d: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    xdc: { type: 'transaction_rolling', field: 'transactionsValueClean', windowDays: 30, divisor: 1e18 },
+  },
+  xdc_gd_in_circulation: {
+    adapter: 'Subgraph',
+    chains: ['XDC'],
+    aggregate: false,
+    decimals: 2,
+    xdc: { type: 'transaction_lifetime', field: 'totalInCirculation', divisor: 1e18 },
+  },
+
 };
 
 /***** =========================================
@@ -538,18 +418,19 @@ const METRICS = {
 function nowIso() {
   return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm:ss");
 }
+
 function generateRunId() {
   return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyyMMdd_HHmmss");
 }
+
 function formatYMD(d) {
-  // Format a Date object to YYYY-MM-DD string
   if (d instanceof Date) {
     return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
   }
   return String(d).slice(0, 10);
 }
+
 function parseYMD(value) {
-  // Parse YYYY-MM-DD string or Date to midnight Date object
   if (value instanceof Date) {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate());
   }
@@ -563,46 +444,44 @@ function parseYMD(value) {
   }
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
+
 function parseDateLoose(v) {
-  // Flexible date parser for various formats
   if (v instanceof Date) return v;
   const s = String(v || '').trim();
   if (!s) return null;
   
-  // Try direct ISO parse first
   const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (isoMatch) {
     return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
   }
   
-  // Try Google Sheets / Date number
   if (/^\d+(\.\d+)?$/.test(s)) {
     const num = Number(s);
     if (num > 40000 && num < 60000) {
-      // Excel date serial
       return new Date((num - 25569) * 86400 * 1000);
     }
-    // Unix timestamp check
     if (num > 1e12) return new Date(num);
     if (num > 1e9) return new Date(num * 1000);
   }
   
-  // Fallback to native Date
   const d = new Date(s);
   if (!isNaN(d.getTime())) return d;
   
   return null;
 }
+
 function getYesterdayYMD() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
   return formatYMD(d);
 }
+
 function addDays(ymd, n) {
   const d = parseYMD(ymd);
   d.setDate(d.getDate() + n);
   return formatYMD(d);
 }
+
 function dateDiffDays(a, b) {
   const d1 = parseYMD(a);
   const d2 = parseYMD(b);
@@ -616,7 +495,6 @@ function dateDiffDays(a, b) {
 function ensureSheets() {
   const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
   
-  // Daily Facts sheet
   let facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
   if (!facts) {
     facts = ss.insertSheet(CONFIG.SHEET_FACTS);
@@ -626,7 +504,6 @@ function ensureSheets() {
     facts.setFrozenRows(1);
   }
   
-  // Health sheet
   let health = ss.getSheetByName(CONFIG.SHEET_HEALTH);
   if (!health) {
     health = ss.insertSheet(CONFIG.SHEET_HEALTH);
@@ -638,6 +515,7 @@ function ensureSheets() {
   
   return { facts, health };
 }
+
 function getExistingFactsIndex() {
   const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
   const facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
@@ -667,10 +545,10 @@ function getExistingFactsIndex() {
     
     if (!ymd || !chain || !metricKey) continue;
     
-    const key = `${ymd}|${chain}|${metricKey}`;
+    const key = ymd + '|' + chain + '|' + metricKey;
     index[key] = true;
     
-    const chainMetricKey = `${chain}|${metricKey}`;
+    const chainMetricKey = chain + '|' + metricKey;
     if (!maxDates[chainMetricKey] || ymd > maxDates[chainMetricKey]) {
       maxDates[chainMetricKey] = ymd;
     }
@@ -689,6 +567,7 @@ function duneApiKey() {
   if (!key) throw new Error('Missing DUNE_API_KEY in Script Properties');
   return key;
 }
+
 function duneFetchTable(queryId, limit) {
   limit = limit || 10000;
   const url = 'https://api.dune.com/api/v1/query/' + encodeURIComponent(String(queryId)) + '/results?limit=' + limit;
@@ -708,9 +587,19 @@ function duneFetchTable(queryId, limit) {
   
   const json = JSON.parse(text);
   const result = json.result || {};
-  const rows = result.rows || [];
+  const rowsObj = result.rows || [];
   const meta = result.metadata || {};
   const cols = meta.column_names || [];
+  
+  // Convert objects to arrays in columnNames order (required for numeric index access)
+  var rows = [];
+  for (var i = 0; i < rowsObj.length; i++) {
+    var row = [];
+    for (var j = 0; j < cols.length; j++) {
+      row.push(rowsObj[i][cols[j]]);
+    }
+    rows.push(row);
+  }
   
   if (!rows.length) {
     Logger.log('Dune query ' + queryId + ': 0 rows returned');
@@ -718,8 +607,9 @@ function duneFetchTable(queryId, limit) {
     Logger.log('Dune query ' + queryId + ': fetched ' + rows.length + ' rows');
   }
   
-  return { rows, cols, columnNames: cols };
+  return { rows: rows, cols: cols, columnNames: cols };
 }
+
 function duneExecuteQuery(queryId) {
   const url = 'https://api.dune.com/api/v1/query/' + encodeURIComponent(String(queryId)) + '/execute';
   
@@ -741,59 +631,49 @@ function duneExecuteQuery(queryId) {
   const json = JSON.parse(text);
   return json.execution_id || null;
 }
+
 function prewarmFromRegistry() {
   Logger.log('Prewarming Dune queries...');
   
   const queryIds = new Set();
   
-  Object.keys(METRICS).forEach((metricKey) => {
+  Object.keys(METRICS).forEach(function(metricKey) {
     const spec = METRICS[metricKey];
     if (spec.adapter !== 'Dune') return;
-    
-    const duneSpec = spec.dune;
-    if (!duneSpec) return;
-    
-    if (duneSpec.queryId) {
-      queryIds.add(duneSpec.queryId);
+    if (spec.dune && spec.dune.queryId) {
+      queryIds.add(spec.dune.queryId);
     }
   });
   
-  // Also add Partners query
   if (DUNE_IDS.PARTNERS) {
     queryIds.add(DUNE_IDS.PARTNERS);
   }
   
   Logger.log('Found ' + queryIds.size + ' unique Dune queries to prewarm');
   
-  // Trigger execution for each query
-  queryIds.forEach((queryId) => {
+  queryIds.forEach(function(queryId) {
     try {
       Logger.log('  Triggering execution for query ' + queryId + '...');
       const executionId = duneExecuteQuery(queryId);
-      Logger.log('  ✓ Query ' + queryId + ' executing (execution_id: ' + executionId + ')');
+      Logger.log('  Query ' + queryId + ' executing (execution_id: ' + executionId + ')');
     } catch (e) {
-      Logger.log('  ✗ Query ' + queryId + ' failed: ' + e.message);
+      Logger.log('  Query ' + queryId + ' failed: ' + e.message);
     }
   });
   
-  Logger.log('Prewarm complete! Queries are now executing on Dune.');
-  Logger.log('Results will be ready in ~5-15 minutes.');
+  Logger.log('Prewarm complete!');
 }
 
 /***** =========================================
  * 4) XDC SUBGRAPH HELPERS (GOLDSKY)
  * ========================================= *****/
 
-// Convert YYYY-MM-DD to dayISO (days since Unix epoch)
-// Goldsky uses standard Unix epoch (Jan 1, 1970), same dayISO format as before
 function xdcYmdToDayISO(ymd) {
   const d = new Date(ymd + 'T00:00:00Z');
   const seconds = Math.floor(d.getTime() / 1000);
-  // Goldsky uses days since epoch, matching the id field format
   return String(Math.floor(seconds / 86400));
 }
 
-// Convert dayISO back to YYYY-MM-DD
 function xdcDayISOToYmd(dayISO) {
   const dayNum = Number(dayISO);
   const seconds = dayNum * 86400;
@@ -802,10 +682,7 @@ function xdcDayISOToYmd(dayISO) {
 }
 
 function xdcGqlRequest(queryStr) {
-  const payload = JSON.stringify({
-    query: queryStr,
-    variables: {}
-  });
+  const payload = JSON.stringify({ query: queryStr, variables: {} });
   
   const options = {
     method: 'post',
@@ -832,25 +709,10 @@ function xdcGqlRequest(queryStr) {
   return json.data;
 }
 
-// Fetch daily field from Goldsky's dailyUBIs entity
 function xdcFetchDailyField(spec, sinceDayISO, untilDayISO) {
   const fieldName = spec.field;
   
-  // Goldsky uses different query syntax than OnFinality/SubQuery
-  const query = `query {
-    dailyUBIs(
-      first: 365,
-      orderBy: id,
-      orderDirection: asc,
-      where: {
-        id_gte: "${sinceDayISO}",
-        id_lte: "${untilDayISO}"
-      }
-    ) {
-      id
-      ${fieldName}
-    }
-  }`;
+  const query = 'query { dailyUBIs(first: 365, orderBy: id, orderDirection: asc, where: { id_gte: "' + sinceDayISO + '", id_lte: "' + untilDayISO + '" }) { id ' + fieldName + ' } }';
   
   const data = xdcGqlRequest(query);
   
@@ -861,34 +723,25 @@ function xdcFetchDailyField(spec, sinceDayISO, untilDayISO) {
   const nodes = data.dailyUBIs || [];
   const out = [];
   
-  for (const n of nodes) {
+  for (var i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
     const ymd = xdcDayISOToYmd(n.id);
-    let val = Number(String(n[fieldName] || 0).replace(/,/g, ''));
+    var val = Number(String(n[fieldName] || 0).replace(/,/g, ''));
     
     if (spec.divisor) {
       val = val / spec.divisor;
     }
     
-    out.push({
-      date: ymd,
-      value: val,
-      source: 'XDC_SUBGRAPH'
-    });
+    out.push({ date: ymd, value: val, source: 'XDC_SUBGRAPH' });
   }
   
   return out;
 }
 
-// Fetch global totals from Goldsky's globalStatistics_collection
 function xdcFetchGlobalTotal(spec, untilDate) {
   const fieldName = spec.field;
   
-  const query = `query { 
-    globalStatistics_collection(first: 1) { 
-      id
-      ${fieldName} 
-    } 
-  }`;
+  const query = 'query { globalStatistics_collection(first: 1) { id ' + fieldName + ' } }';
   
   const data = xdcGqlRequest(query);
   
@@ -897,30 +750,23 @@ function xdcFetchGlobalTotal(spec, untilDate) {
   }
   
   const g = data.globalStatistics_collection[0];
-  let val = Number(String(g[fieldName] || 0).replace(/,/g, ''));
+  var val = Number(String(g[fieldName] || 0).replace(/,/g, ''));
   
   if (spec.divisor) {
     val = val / spec.divisor;
   }
   
-  return [{
-    date: untilDate,
-    value: val,
-    source: 'XDC_SUBGRAPH'
-  }];
+  return [{ date: untilDate, value: val, source: 'XDC_SUBGRAPH' }];
 }
 
-// Fetch rolling sum (7d, 30d) by fetching daily values and computing
 function xdcFetchRollingSum(spec, sinceDayISO, untilDayISO) {
   const windowDays = spec.windowDays || 7;
   
-  // Extend backwards to compute first full window
   const sinceNum = Number(sinceDayISO);
-  let extendedSinceNum = sinceNum - (windowDays - 1);
+  var extendedSinceNum = sinceNum - (windowDays - 1);
   if (extendedSinceNum < 0) extendedSinceNum = 0;
   const extendedSinceISO = String(extendedSinceNum);
   
-  // Fetch daily values for the extended range
   const dailyRows = xdcFetchDailyField(
     { type: 'daily_field', field: spec.field, divisor: spec.divisor },
     extendedSinceISO,
@@ -931,9 +777,9 @@ function xdcFetchRollingSum(spec, sinceDayISO, untilDayISO) {
     return [];
   }
   
-  // Map dayISO -> value
   const dayToValue = {};
-  for (const row of dailyRows) {
+  for (var i = 0; i < dailyRows.length; i++) {
+    const row = dailyRows[i];
     const dayISO = xdcYmdToDayISO(row.date);
     dayToValue[dayISO] = row.value;
   }
@@ -941,18 +787,109 @@ function xdcFetchRollingSum(spec, sinceDayISO, untilDayISO) {
   const untilNum = Number(untilDayISO);
   const out = [];
   
-  // Build rolling sums for [sinceDayISO .. untilDayISO]
-  for (let dayNum = sinceNum; dayNum <= untilNum; dayNum++) {
-    let sum = 0;
-    for (let lookback = 0; lookback < windowDays; lookback++) {
+  for (var dayNum = sinceNum; dayNum <= untilNum; dayNum++) {
+    var sum = 0;
+    for (var lookback = 0; lookback < windowDays; lookback++) {
       sum += dayToValue[String(dayNum - lookback)] || 0;
     }
     
-    out.push({
-      date: xdcDayISOToYmd(String(dayNum)),
-      value: sum,
-      source: 'XDC_SUBGRAPH'
-    });
+    out.push({ date: xdcDayISOToYmd(String(dayNum)), value: sum, source: 'XDC_SUBGRAPH' });
+  }
+  
+  return out;
+}
+
+function xdcFetchTransactionDaily(spec, sinceDayISO, untilDayISO) {
+  const fieldName = spec.field;
+  
+  const sinceTs = Number(sinceDayISO) * 86400;
+  const untilTs = (Number(untilDayISO) + 1) * 86400;
+  
+  const query = 'query { transactionStats(first: 365, orderBy: id, orderDirection: asc, where: { id_not: "aggregated", id_gte: "' + sinceTs + '", id_lt: "' + untilTs + '" }) { id ' + fieldName + ' } }';
+  
+  const data = xdcGqlRequest(query);
+  
+  if (!data || !data.transactionStats) {
+    return [];
+  }
+  
+  const nodes = data.transactionStats || [];
+  const out = [];
+  
+  for (var i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const ts = Number(n.id);
+    const d = new Date(ts * 1000);
+    const ymd = d.toISOString().slice(0, 10);
+    
+    var val = Number(String(n[fieldName] || 0).replace(/,/g, ''));
+    
+    if (spec.divisor) {
+      val = val / spec.divisor;
+    }
+    
+    out.push({ date: ymd, value: val, source: 'XDC_SUBGRAPH' });
+  }
+  
+  return out;
+}
+
+function xdcFetchTransactionLifetime(spec, untilDate) {
+  const fieldName = spec.field;
+  
+  const query = 'query { transactionStats(where: { id: "aggregated" }) { id ' + fieldName + ' } }';
+  
+  const data = xdcGqlRequest(query);
+  
+  if (!data || !data.transactionStats || !data.transactionStats.length) {
+    return [];
+  }
+  
+  const g = data.transactionStats[0];
+  var val = Number(String(g[fieldName] || 0).replace(/,/g, ''));
+  
+  if (spec.divisor) {
+    val = val / spec.divisor;
+  }
+  
+  return [{ date: untilDate, value: val, source: 'XDC_SUBGRAPH' }];
+}
+
+function xdcFetchTransactionRolling(spec, sinceDayISO, untilDayISO) {
+  const windowDays = spec.windowDays || 7;
+  
+  const sinceNum = Number(sinceDayISO);
+  var extendedSinceNum = sinceNum - (windowDays - 1);
+  if (extendedSinceNum < 0) extendedSinceNum = 0;
+  const extendedSinceISO = String(extendedSinceNum);
+  
+  const dailyRows = xdcFetchTransactionDaily(
+    { type: 'transaction_daily', field: spec.field, divisor: spec.divisor },
+    extendedSinceISO,
+    untilDayISO
+  );
+  
+  if (!dailyRows || !dailyRows.length) {
+    return [];
+  }
+  
+  const dayToValue = {};
+  for (var i = 0; i < dailyRows.length; i++) {
+    const row = dailyRows[i];
+    const dayISO = xdcYmdToDayISO(row.date);
+    dayToValue[dayISO] = row.value;
+  }
+  
+  const untilNum = Number(untilDayISO);
+  const out = [];
+  
+  for (var dayNum = sinceNum; dayNum <= untilNum; dayNum++) {
+    var sum = 0;
+    for (var lookback = 0; lookback < windowDays; lookback++) {
+      sum += dayToValue[String(dayNum - lookback)] || 0;
+    }
+    
+    out.push({ date: xdcDayISOToYmd(String(dayNum)), value: sum, source: 'XDC_SUBGRAPH' });
   }
   
   return out;
@@ -963,16 +900,16 @@ function xdcFetchRollingSum(spec, sinceDayISO, untilDayISO) {
  * ========================================= *****/
 
 const Adapters = {
-   //Dune Adapter - fetches timeseries data from Dune Analytics
   Dune: {
-    fetch(metricKey, chain, sinceYMD, untilYMD, spec) {
+    fetch: function(metricKey, chain, sinceYMD, untilYMD, spec) {
       if (!spec) throw new Error('Missing dune spec for ' + metricKey);
       
       if (spec.type !== 'timeseries') {
         throw new Error('Unknown Dune spec type for ' + metricKey + ': ' + spec.type);
       }
       
-      const { rows } = duneFetchTable(spec.queryId, 10000);
+      const result = duneFetchTable(spec.queryId, 10000);
+      const rows = result.rows;
       if (!rows || !rows.length) return [];
       
       const dateIdx = spec.dateCol;
@@ -982,7 +919,8 @@ const Adapters = {
       const tMax = parseYMD(untilYMD).getTime();
       
       const out = [];
-      for (const row of rows) {
+      for (var i = 0; i < rows.length; i++) {
+        const row = rows[i];
         const dStr = String(row[dateIdx] || '').slice(0, 10);
         if (dStr.length !== 10) continue;
         
@@ -997,12 +935,13 @@ const Adapters = {
       return out;
     },
     
-    // Build a date->value map for efficient lookups (used by single-pass)
-    buildDateMap(spec) {
-      const { rows } = duneFetchTable(spec.queryId, 10000);
+    buildDateMap: function(spec) {
+      const result = duneFetchTable(spec.queryId, 10000);
+      const rows = result.rows;
       const map = {};
       
-      for (const row of rows) {
+      for (var i = 0; i < rows.length; i++) {
+        const row = rows[i];
         const dStr = String(row[spec.dateCol] || '').slice(0, 10);
         if (dStr.length !== 10) continue;
         
@@ -1015,12 +954,10 @@ const Adapters = {
     }
   },
   
-  // Subgraph Adapter - fetches data from XDC Goldsky subgraph
   Subgraph: {
-    fetch(metricKey, chain, sinceYMD, untilYMD, spec) {
+    fetch: function(metricKey, chain, sinceYMD, untilYMD, spec) {
       if (!spec) throw new Error('Missing xdc spec for ' + metricKey);
       
-      // Enforce XDC genesis date
       if (sinceYMD < CONFIG.XDC_GENESIS) {
         sinceYMD = CONFIG.XDC_GENESIS;
       }
@@ -1031,28 +968,28 @@ const Adapters = {
       switch (spec.type) {
         case 'daily_field':
           return xdcFetchDailyField(spec, sinceDayISO, untilDayISO);
-          
         case 'global_total':
           return xdcFetchGlobalTotal(spec, untilYMD);
-          
         case 'rolling_sum':
           return xdcFetchRollingSum(spec, sinceDayISO, untilDayISO);
-          
+        case 'transaction_daily':
+          return xdcFetchTransactionDaily(spec, sinceDayISO, untilDayISO);
+        case 'transaction_lifetime':
+          return xdcFetchTransactionLifetime(spec, untilYMD);
+        case 'transaction_rolling':
+          return xdcFetchTransactionRolling(spec, sinceDayISO, untilDayISO);
         case 'computed':
-          // Computed metrics are handled separately
           return [];
-          
         default:
           throw new Error('Unknown XDC spec type for ' + metricKey + ': ' + spec.type);
       }
     },
     
-    // Build a date->value map for XDC metrics
-    buildDateMap(spec, sinceYMD, untilYMD) {
+    buildDateMap: function(spec, sinceYMD, untilYMD) {
       const results = this.fetch(null, 'XDC', sinceYMD, untilYMD, spec);
       const map = {};
-      for (const r of results) {
-        map[r.date] = r.value;
+      for (var i = 0; i < results.length; i++) {
+        map[results[i].date] = results[i].value;
       }
       return map;
     }
@@ -1064,10 +1001,8 @@ const Adapters = {
  * ========================================= *****/
 
 function buildRows(sinceYMD, untilYMD, existingIndex) {
-  const tz = CONFIG.TIMEZONE;
   existingIndex = existingIndex || {};
   
-  // Default to yesterday
   if (!sinceYMD || !untilYMD) {
     const ymd = getYesterdayYMD();
     sinceYMD = sinceYMD || ymd;
@@ -1084,11 +1019,11 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
     health.push({
       run_id: runIdStr,
       started_at: startedAt,
-      subsystem,
+      subsystem: subsystem,
       metric_key: metricKey,
-      chain,
-      status,
-      records,
+      chain: chain,
+      status: status,
+      records: records,
       duration_ms: durationMs,
       error: error || ''
     });
@@ -1096,45 +1031,53 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
   
   Logger.log('Run ' + runIdStr + ' — window ' + sinceYMD + '..' + untilYMD);
   
-  // Group metrics by adapter for efficient fetching
   const duneMetrics = [];
   const subgraphMetrics = [];
   
-  for (const [metricKey, spec] of Object.entries(METRICS)) {
-    const chains = (spec.chains || []).filter(c => CHAINS[c]);
+  const metricKeys = Object.keys(METRICS);
+  for (var m = 0; m < metricKeys.length; m++) {
+    const metricKey = metricKeys[m];
+    const spec = METRICS[metricKey];
+    const chains = (spec.chains || []).filter(function(c) { return CHAINS[c]; });
     if (!chains.length) continue;
     
-    for (const chain of chains) {
+    for (var c = 0; c < chains.length; c++) {
+      const chain = chains[c];
       if (spec.adapter === 'Dune' && spec.dune) {
-        duneMetrics.push({ metricKey, spec, chain });
+        duneMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
       } else if (spec.adapter === 'Subgraph' && spec.xdc) {
-        subgraphMetrics.push({ metricKey, spec, chain });
+        subgraphMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
       }
     }
   }
   
-  // ===== PROCESS DUNE METRICS =====
-  // Pre-fetch all Dune data to minimize API calls
+  // Process Dune metrics
   const duneDataCache = {};
-  const duneQueryIds = new Set();
+  const duneQueryIds = [];
   
-  for (const { spec } of duneMetrics) {
-    duneQueryIds.add(spec.dune.queryId);
+  for (var i = 0; i < duneMetrics.length; i++) {
+    const qid = duneMetrics[i].spec.dune.queryId;
+    if (duneQueryIds.indexOf(qid) === -1) {
+      duneQueryIds.push(qid);
+    }
   }
   
-  // Fetch each unique query once
-  for (const queryId of duneQueryIds) {
+  for (var i = 0; i < duneQueryIds.length; i++) {
+    const queryId = duneQueryIds[i];
     try {
-      const { rows: rawRows } = duneFetchTable(queryId, 10000);
-      duneDataCache[queryId] = rawRows;
+      const result = duneFetchTable(queryId, 10000);
+      duneDataCache[queryId] = result.rows;
     } catch (e) {
       Logger.log('Dune query ' + queryId + ' error: ' + e.message);
       duneDataCache[queryId] = [];
     }
   }
   
-  // Process each Dune metric
-  for (const { metricKey, spec, chain } of duneMetrics) {
+  for (var i = 0; i < duneMetrics.length; i++) {
+    const item = duneMetrics[i];
+    const metricKey = item.metricKey;
+    const spec = item.spec;
+    const chain = item.chain;
     const t0 = Date.now();
     
     try {
@@ -1145,15 +1088,15 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
       const tMin = parseYMD(sinceYMD).getTime();
       const tMax = parseYMD(untilYMD).getTime();
       
-      let count = 0;
-      for (const row of rawRows) {
+      var count = 0;
+      for (var j = 0; j < rawRows.length; j++) {
+        const row = rawRows[j];
         const dStr = String(row[dateIdx] || '').slice(0, 10);
         if (dStr.length !== 10) continue;
         
         const t = parseYMD(dStr).getTime();
         if (t < tMin || t > tMax) continue;
         
-        // Skip if already exists
         const factKey = dStr + '|' + chain + '|' + metricKey;
         if (existingIndex[factKey]) continue;
         
@@ -1162,7 +1105,7 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
         
         rows.push({
           date: dStr,
-          chain,
+          chain: chain,
           metric_key: metricKey,
           value: val,
           source: 'DUNE',
@@ -1183,27 +1126,27 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
     }
   }
   
-  // ===== PROCESS SUBGRAPH METRICS =====
-  // Track DAU and new users for computing returning claimers
+  // Process Subgraph metrics
   const xdcDauData = {};
   const xdcNewData = {};
   
-  for (const { metricKey, spec, chain } of subgraphMetrics) {
+  for (var i = 0; i < subgraphMetrics.length; i++) {
+    const item = subgraphMetrics[i];
+    const metricKey = item.metricKey;
+    const spec = item.spec;
+    const chain = item.chain;
     const t0 = Date.now();
     
-    // Skip computed metrics for now
     if (spec.xdc.type === 'computed') {
       continue;
     }
     
     try {
-      // Enforce XDC genesis
-      let effectiveSince = sinceYMD;
+      var effectiveSince = sinceYMD;
       if (effectiveSince < CONFIG.XDC_GENESIS) {
         effectiveSince = CONFIG.XDC_GENESIS;
       }
       
-      // Skip if entire range is before genesis
       if (untilYMD < CONFIG.XDC_GENESIS) {
         addHealth('XDC_SUBGRAPH', metricKey, chain, 'skipped', 0, Date.now() - t0, 'before XDC genesis');
         continue;
@@ -1211,15 +1154,15 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
       
       const results = Adapters.Subgraph.fetch(metricKey, chain, effectiveSince, untilYMD, spec.xdc);
       
-      let count = 0;
-      for (const r of results) {
-        // Skip if already exists
+      var count = 0;
+      for (var j = 0; j < results.length; j++) {
+        const r = results[j];
         const factKey = r.date + '|' + chain + '|' + metricKey;
         if (existingIndex[factKey]) continue;
         
         rows.push({
           date: r.date,
-          chain,
+          chain: chain,
           metric_key: metricKey,
           value: r.value,
           source: r.source,
@@ -1228,7 +1171,6 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
         });
         count++;
         
-        // Track for returning claimers calculation
         if (metricKey === 'xdc_dau') {
           xdcDauData[r.date] = r.value;
         } else if (metricKey === 'xdc_new_claimers') {
@@ -1247,10 +1189,11 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
     }
   }
   
-  // ===== COMPUTE RETURNING CLAIMERS =====
-  // xdc_returning_claimers = xdc_dau - xdc_new_claimers
-  if (METRICS.xdc_returning_claimers && Object.keys(xdcDauData).length) {
-    for (const date of Object.keys(xdcDauData)) {
+  // Compute returning claimers
+  if (METRICS.xdc_returning_claimers) {
+    const dauDates = Object.keys(xdcDauData);
+    for (var i = 0; i < dauDates.length; i++) {
+      const date = dauDates[i];
       const factKey = date + '|XDC|xdc_returning_claimers';
       if (existingIndex[factKey]) continue;
       
@@ -1259,7 +1202,7 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
       const returning = Math.max(0, dau - newUsers);
       
       rows.push({
-        date,
+        date: date,
         chain: 'XDC',
         metric_key: 'xdc_returning_claimers',
         value: returning,
@@ -1269,11 +1212,12 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
       });
     }
     
-    addHealth('XDC_SUBGRAPH', 'xdc_returning_claimers', 'XDC', 'ok', 
-              Object.keys(xdcDauData).length, 0, 'computed');
+    if (dauDates.length > 0) {
+      addHealth('XDC_SUBGRAPH', 'xdc_returning_claimers', 'XDC', 'ok', dauDates.length, 0, 'computed');
+    }
   }
   
-  return { rows, health, runId: runIdStr };
+  return { rows: rows, health: health, runId: runIdStr };
 }
 
 /***** =========================================
@@ -1296,11 +1240,13 @@ function writeFactsAndHealth(buildResult) {
   const facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
   const health = ss.getSheetByName(CONFIG.SHEET_HEALTH);
   
-  // 1) Normalize rows with per-metric decimals
-  let rows = (buildResult.rows || []).map(r => {
+  var rows = [];
+  const inputRows = buildResult.rows || [];
+  for (var i = 0; i < inputRows.length; i++) {
+    const r = inputRows[i];
     const spec = METRICS[r.metric_key] || {};
     const dp = (typeof spec.decimals === 'number') ? spec.decimals : 2;
-    return {
+    rows.push({
       date: r.date,
       chain: r.chain,
       metric_key: r.metric_key,
@@ -1309,66 +1255,78 @@ function writeFactsAndHealth(buildResult) {
       source: r.source || '',
       run_id: buildResult.runId || '',
       updated_at: nowIso()
-    };
-  });
+    });
+  }
   
-  // 2) Generate aggregate rows for metrics with aggregate:true
+  // Generate aggregate rows
   const aggSums = {};
   
-  rows.forEach(r => {
+  for (var i = 0; i < rows.length; i++) {
+    const r = rows[i];
     const spec = METRICS[r.metric_key];
-    if (!spec || spec.aggregate !== true) return;
-    if (r.chain === 'TOTAL' || r.chain === 'AGG') return;
+    if (!spec || spec.aggregate !== true) continue;
+    if (r.chain === 'TOTAL' || r.chain === 'AGG') continue;
     
-    let baseMetric = r.metric_key;
-    if (baseMetric.startsWith('celo_')) baseMetric = baseMetric.slice(5);
-    else if (baseMetric.startsWith('xdc_')) baseMetric = baseMetric.slice(4);
+    var baseMetric = r.metric_key;
+    if (baseMetric.indexOf('celo_') === 0) baseMetric = baseMetric.slice(5);
+    else if (baseMetric.indexOf('xdc_') === 0) baseMetric = baseMetric.slice(4);
     
     const k = r.date + '|' + baseMetric;
     if (!aggSums[k]) {
       const dp = (typeof spec.decimals === 'number') ? spec.decimals : 2;
-      aggSums[k] = { sum: 0, dp, sources: new Set() };
+      aggSums[k] = { sum: 0, dp: dp, sources: [] };
     }
     aggSums[k].sum += Number(r.value) || 0;
-    aggSums[k].sources.add(r.source);
-  });
+    if (aggSums[k].sources.indexOf(r.source) === -1) {
+      aggSums[k].sources.push(r.source);
+    }
+  }
   
-  Object.entries(aggSums).forEach(([k, agg]) => {
-    const [date, baseMetric] = k.split('|');
+  const aggKeys = Object.keys(aggSums);
+  for (var i = 0; i < aggKeys.length; i++) {
+    const k = aggKeys[i];
+    const parts = k.split('|');
+    const date = parts[0];
+    const baseMetric = parts[1];
+    const agg = aggSums[k];
+    
     rows.push({
-      date,
+      date: date,
       chain: 'AGG',
       metric_key: 'agg_' + baseMetric,
       value: roundDp(agg.sum, agg.dp),
       decimals: agg.dp,
-      source: Array.from(agg.sources).join('+'),
+      source: agg.sources.join('+'),
       run_id: buildResult.runId || '',
       updated_at: nowIso()
     });
-  });
+  }
   
-  // 3) Index existing facts
+  // Index existing facts
   const lastRow = facts.getLastRow();
   const existingIndex = {};
   
   if (lastRow > 1) {
     const existing = facts.getRange(2, 1, lastRow - 1, 3).getValues();
-    for (let i = 0; i < existing.length; i++) {
-      const [d, chain, metric] = existing[i];
-      const dateStr = (d instanceof Date)
-        ? formatYMD(d)
-        : String(d).slice(0, 10);
+    for (var i = 0; i < existing.length; i++) {
+      const d = existing[i][0];
+      const chain = existing[i][1];
+      const metric = existing[i][2];
+      const dateStr = (d instanceof Date) ? formatYMD(d) : String(d).slice(0, 10);
       existingIndex[dateStr + '|' + chain + '|' + metric] = 2 + i;
     }
   }
   
-  // 4) Partition updates vs appends
+  // Partition updates vs appends
   const updates = [];
   const appends = [];
   
-  const toRow = r => [r.date, r.chain, r.metric_key, r.value, r.source, r.updated_at];
+  function toRow(r) {
+    return [r.date, r.chain, r.metric_key, r.value, r.source, r.updated_at];
+  }
   
-  rows.forEach(r => {
+  for (var i = 0; i < rows.length; i++) {
+    const r = rows[i];
     const key = r.date + '|' + r.chain + '|' + r.metric_key;
     const rowNum = existingIndex[key];
     
@@ -1377,33 +1335,38 @@ function writeFactsAndHealth(buildResult) {
     } else {
       appends.push({ values: toRow(r), dp: r.decimals });
     }
-  });
+  }
   
-  // 5) Apply updates
-  updates.sort((a, b) => a.row - b.row);
-  for (const u of updates) {
+  // Apply updates
+  updates.sort(function(a, b) { return a.row - b.row; });
+  for (var i = 0; i < updates.length; i++) {
+    const u = updates[i];
     facts.getRange(u.row, 1, 1, u.values.length).setValues([u.values]);
     facts.getRange(u.row, 4).setNumberFormat(numberFormatFor(u.dp));
   }
   
-  // 6) Append new rows
+  // Append new rows
   if (appends.length) {
     facts.insertRowsAfter(1, appends.length);
-    const values = appends.map(a => a.values);
+    const values = [];
+    for (var i = 0; i < appends.length; i++) {
+      values.push(appends[i].values);
+    }
     facts.getRange(2, 1, values.length, values[0].length).setValues(values);
     
-    for (let i = 0; i < appends.length; i++) {
+    for (var i = 0; i < appends.length; i++) {
       facts.getRange(2 + i, 4).setNumberFormat(numberFormatFor(appends[i].dp));
     }
   }
   
-  // 7) Write health records
-  const hv = (buildResult.health || []).map(h => [
-    h.run_id, h.started_at, h.subsystem, h.metric_key, h.chain,
-    h.status, h.records, h.duration_ms, h.error
-  ]);
-  
-  if (hv.length) {
+  // Write health records
+  const healthData = buildResult.health || [];
+  if (healthData.length) {
+    const hv = [];
+    for (var i = 0; i < healthData.length; i++) {
+      const h = healthData[i];
+      hv.push([h.run_id, h.started_at, h.subsystem, h.metric_key, h.chain, h.status, h.records, h.duration_ms, h.error]);
+    }
     health.insertRowsAfter(1, hv.length);
     health.getRange(2, 1, hv.length, hv[0].length).setValues(hv);
   }
@@ -1419,9 +1382,9 @@ function runOneDaySinglePass(dateStr) {
   const ymd = dateStr || getYesterdayYMD();
   
   ensureSheets();
-  const { index } = getExistingFactsIndex();
+  const indexResult = getExistingFactsIndex();
   
-  const result = buildRows(ymd, ymd, index);
+  const result = buildRows(ymd, ymd, indexResult.index);
   writeFactsAndHealth(result);
   
   Logger.log('Daily run complete for ' + ymd);
@@ -1431,21 +1394,27 @@ function smartBackfill() {
   ensureSheets();
   
   const yesterday = getYesterdayYMD();
-  const { index, maxDates } = getExistingFactsIndex();
+  const indexResult = getExistingFactsIndex();
+  const index = indexResult.index;
+  const maxDates = indexResult.maxDates;
   
   Logger.log('Smart Backfill starting...');
   Logger.log('Target: fill all metrics up to ' + yesterday);
   
-  let earliestNeeded = yesterday;
+  var earliestNeeded = yesterday;
   
-  for (const [metricKey, spec] of Object.entries(METRICS)) {
-    const chains = (spec.chains || []).filter(c => CHAINS[c]);
+  const metricKeys = Object.keys(METRICS);
+  for (var m = 0; m < metricKeys.length; m++) {
+    const metricKey = metricKeys[m];
+    const spec = METRICS[metricKey];
+    const chains = (spec.chains || []).filter(function(c) { return CHAINS[c]; });
     
-    for (const chain of chains) {
+    for (var c = 0; c < chains.length; c++) {
+      const chain = chains[c];
       const chainMetricKey = chain + '|' + metricKey;
       const lastDate = maxDates[chainMetricKey];
       
-      let startFrom;
+      var startFrom;
       if (lastDate) {
         startFrom = addDays(lastDate, 1);
       } else {
@@ -1483,33 +1452,40 @@ function smartBackfill() {
 
 function backfillRange(sinceYMD, untilYMD) {
   ensureSheets();
-  const { index } = getExistingFactsIndex();
+  const indexResult = getExistingFactsIndex();
   
   Logger.log('Backfilling ' + sinceYMD + ' to ' + untilYMD);
   
-  const result = buildRows(sinceYMD, untilYMD, index);
+  const result = buildRows(sinceYMD, untilYMD, indexResult.index);
   writeFactsAndHealth(result);
   
   Logger.log('Backfill complete!');
 }
 
 function updatePartnersSheet() {
-  const PARTNERS_LIMIT = 100;
-  
   Logger.log('Updating Partners sheet...');
   
   try {
-    const { rows, cols } = duneFetchTable(DUNE_IDS.PARTNERS, PARTNERS_LIMIT);
+    const result = duneFetchTable(DUNE_IDS.PARTNERS, 100);
+    const rows = result.rows;
+    const cols = result.cols;
     
     if (!rows || !rows.length || !cols || !cols.length) {
       Logger.log('Partners: No data returned, skipping update.');
       return;
     }
     
-    const dataRows = rows.map(r => cols.map(c => r[c] ?? ''));
+    const dataRows = [];
+    for (var i = 0; i < rows.length; i++) {
+      const row = [];
+      for (var j = 0; j < cols.length; j++) {
+        row.push(rows[i][cols[j]] || '');
+      }
+      dataRows.push(row);
+    }
     
     const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
-    let sheet = ss.getSheetByName('Partners');
+    var sheet = ss.getSheetByName('Partners');
     if (!sheet) {
       sheet = ss.insertSheet('Partners');
     }
@@ -1549,29 +1525,60 @@ function testGoldskyDailyData() {
   Logger.log('Testing Goldsky daily data fetch...');
   
   try {
-    const query = `query {
-      dailyUBIs(first: 5, orderBy: id, orderDirection: desc) {
-        id
-        activeUsers
-        newClaimers
-        totalClaims
-        totalUBIDistributed
-        quota
-      }
-    }`;
+    const query = 'query { dailyUBIs(first: 5, orderBy: id, orderDirection: desc) { id activeUsers newClaimers totalClaims totalUBIDistributed quota } }';
     
     const data = xdcGqlRequest(query);
     
     Logger.log('Success! Latest 5 days:');
     if (data && data.dailyUBIs) {
-      data.dailyUBIs.forEach(d => {
+      for (var i = 0; i < data.dailyUBIs.length; i++) {
+        const d = data.dailyUBIs[i];
         const ymd = xdcDayISOToYmd(d.id);
         Logger.log('  ' + ymd + ': DAU=' + d.activeUsers + ', newClaimers=' + d.newClaimers);
-      });
+      }
     }
   } catch (e) {
     Logger.log('Error: ' + e.message);
   }
+}
+
+function testNewP2PMetrics() {
+  Logger.log('=== Testing New XDC P2P Metrics ===');
+  
+  const sinceYMD = '2025-12-08';
+  const untilYMD = '2025-12-11';
+  const sinceDayISO = xdcYmdToDayISO(sinceYMD);
+  const untilDayISO = xdcYmdToDayISO(untilYMD);
+  
+  Logger.log('1. Daily P2P transactions:');
+  const daily = xdcFetchTransactionDaily({ field: 'transactionsCountClean' }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < daily.length; i++) {
+    Logger.log('   ' + daily[i].date + ': ' + daily[i].value + ' txs');
+  }
+  
+  Logger.log('2. Daily P2P volume:');
+  const volume = xdcFetchTransactionDaily({ field: 'transactionsValueClean', divisor: 1e18 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < volume.length; i++) {
+    Logger.log('   ' + volume[i].date + ': ' + volume[i].value.toFixed(2) + ' G$');
+  }
+  
+  Logger.log('3. Lifetime stats:');
+  const lifetime = xdcFetchTransactionLifetime({ field: 'transactionsCountClean' }, untilYMD);
+  Logger.log('   Lifetime P2P txs: ' + (lifetime.length ? lifetime[0].value : 0));
+  
+  const lifetimeVol = xdcFetchTransactionLifetime({ field: 'transactionsValueClean', divisor: 1e18 }, untilYMD);
+  Logger.log('   Lifetime P2P volume: ' + (lifetimeVol.length ? lifetimeVol[0].value.toFixed(2) : 0) + ' G$');
+  
+  const circulation = xdcFetchTransactionLifetime({ field: 'totalInCirculation', divisor: 1e18 }, untilYMD);
+  Logger.log('   G$ in circulation: ' + (circulation.length ? circulation[0].value.toFixed(2) : 0) + ' G$');
+  
+  Logger.log('4. 7-day rolling P2P txs:');
+  const rolling = xdcFetchTransactionRolling({ field: 'transactionsCountClean', windowDays: 7 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < rolling.length; i++) {
+    Logger.log('   ' + rolling[i].date + ': ' + rolling[i].value + ' txs (7d sum)');
+  }
+  
+  Logger.log('=== Test Complete ===');
 }
 
 function testBuildRows() {
@@ -1582,28 +1589,32 @@ function testBuildRows() {
   
   const result = buildRows(yesterday, yesterday, {});
   
-  Logger.log('\nGenerated ' + result.rows.length + ' rows:');
-  for (const r of result.rows) {
+  Logger.log('Generated ' + result.rows.length + ' rows:');
+  for (var i = 0; i < result.rows.length; i++) {
+    const r = result.rows[i];
     Logger.log('  ' + r.date + ' | ' + r.chain + ' | ' + r.metric_key + ' = ' + r.value);
   }
   
-  Logger.log('\nHealth records: ' + result.health.length);
-  for (const h of result.health) {
+  Logger.log('Health records: ' + result.health.length);
+  for (var i = 0; i < result.health.length; i++) {
+    const h = result.health[i];
     Logger.log('  ' + h.metric_key + '/' + h.chain + ': ' + h.status + ' (' + h.records + ' rows, ' + h.duration_ms + 'ms) ' + h.error);
   }
   
-  Logger.log('\n=== TEST COMPLETE (no data written) ===');
+  Logger.log('=== TEST COMPLETE (no data written) ===');
 }
 
 function testDuneConnection() {
   Logger.log('Testing Dune connection...');
   
   try {
-    const { rows, columnNames } = duneFetchTable(DUNE_IDS.ACTIVE_CLAIMERS, 3);
+    const result = duneFetchTable(DUNE_IDS.ACTIVE_CLAIMERS, 3);
     
-    Logger.log('Success! Columns: ' + columnNames.join(', '));
+    Logger.log('Success! Columns: ' + result.columnNames.join(', '));
     Logger.log('First 3 rows:');
-    rows.slice(0, 3).forEach((r, i) => Logger.log('  ' + i + ': ' + JSON.stringify(r)));
+    for (var i = 0; i < Math.min(3, result.rows.length); i++) {
+      Logger.log('  ' + i + ': ' + JSON.stringify(result.rows[i]));
+    }
   } catch (e) {
     Logger.log('Error: ' + e.message);
   }
@@ -1613,19 +1624,24 @@ function previewSmartBackfill() {
   ensureSheets();
   
   const yesterday = getYesterdayYMD();
-  const { maxDates } = getExistingFactsIndex();
+  const indexResult = getExistingFactsIndex();
+  const maxDates = indexResult.maxDates;
   
   Logger.log('=== SMART BACKFILL PREVIEW ===');
-  Logger.log('Target date: ' + yesterday + '\n');
+  Logger.log('Target date: ' + yesterday);
   
-  for (const [metricKey, spec] of Object.entries(METRICS)) {
-    const chains = (spec.chains || []).filter(c => CHAINS[c]);
+  const metricKeys = Object.keys(METRICS);
+  for (var m = 0; m < metricKeys.length; m++) {
+    const metricKey = metricKeys[m];
+    const spec = METRICS[metricKey];
+    const chains = (spec.chains || []).filter(function(c) { return CHAINS[c]; });
     
-    for (const chain of chains) {
+    for (var c = 0; c < chains.length; c++) {
+      const chain = chains[c];
       const chainMetricKey = chain + '|' + metricKey;
       const lastDate = maxDates[chainMetricKey];
       
-      let startFrom;
+      var startFrom;
       if (lastDate) {
         startFrom = addDays(lastDate, 1);
       } else {
@@ -1638,10 +1654,140 @@ function previewSmartBackfill() {
       
       const daysNeeded = startFrom <= yesterday ? dateDiffDays(startFrom, yesterday) + 1 : 0;
       
-      const status = daysNeeded === 0 ? '✓ up to date' : 'needs ' + daysNeeded + ' days (' + startFrom + ' to ' + yesterday + ')';
+      const status = daysNeeded === 0 ? 'up to date' : 'needs ' + daysNeeded + ' days (' + startFrom + ' to ' + yesterday + ')';
       Logger.log(metricKey + '/' + chain + ': ' + status);
     }
   }
   
-  Logger.log('\n=== END PREVIEW ===');
+  Logger.log('=== END PREVIEW ===');
+}
+
+function backfillNewP2PMetrics() {
+  Logger.log('Backfilling new XDC P2P metrics...');
+  
+  ensureSheets();
+  
+  const sinceYMD = CONFIG.XDC_GENESIS;
+  const untilYMD = getYesterdayYMD();
+  
+  const sinceDayISO = xdcYmdToDayISO(sinceYMD);
+  const untilDayISO = xdcYmdToDayISO(untilYMD);
+  
+  const startedAt = nowIso();
+  const runIdStr = generateRunId();
+  const rows = [];
+  
+  Logger.log('Fetching daily P2P tx count...');
+  const dailyTxCount = xdcFetchTransactionDaily({ field: 'transactionsCountClean' }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < dailyTxCount.length; i++) {
+    rows.push({ date: dailyTxCount[i].date, chain: 'XDC', metric_key: 'xdc_p2p_tx_count', value: dailyTxCount[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 0 });
+  }
+  Logger.log('  Found ' + dailyTxCount.length + ' days');
+  
+  Logger.log('Fetching daily P2P volume...');
+  const dailyVol = xdcFetchTransactionDaily({ field: 'transactionsValueClean', divisor: 1e18 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < dailyVol.length; i++) {
+    rows.push({ date: dailyVol[i].date, chain: 'XDC', metric_key: 'xdc_p2p_gd_amount', value: dailyVol[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 2 });
+  }
+  Logger.log('  Found ' + dailyVol.length + ' days');
+  
+  Logger.log('Computing 7d P2P tx count...');
+  const rolling7dTx = xdcFetchTransactionRolling({ field: 'transactionsCountClean', windowDays: 7 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < rolling7dTx.length; i++) {
+    rows.push({ date: rolling7dTx[i].date, chain: 'XDC', metric_key: 'xdc_p2p_tx_count_7d', value: rolling7dTx[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 0 });
+  }
+  Logger.log('  Computed ' + rolling7dTx.length + ' days');
+  
+  Logger.log('Computing 30d P2P tx count...');
+  const rolling30dTx = xdcFetchTransactionRolling({ field: 'transactionsCountClean', windowDays: 30 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < rolling30dTx.length; i++) {
+    rows.push({ date: rolling30dTx[i].date, chain: 'XDC', metric_key: 'xdc_p2p_tx_count_30d', value: rolling30dTx[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 0 });
+  }
+  Logger.log('  Computed ' + rolling30dTx.length + ' days');
+  
+  Logger.log('Computing 7d P2P volume...');
+  const rolling7dVol = xdcFetchTransactionRolling({ field: 'transactionsValueClean', windowDays: 7, divisor: 1e18 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < rolling7dVol.length; i++) {
+    rows.push({ date: rolling7dVol[i].date, chain: 'XDC', metric_key: 'xdc_p2p_gd_amount_7d', value: rolling7dVol[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 2 });
+  }
+  Logger.log('  Computed ' + rolling7dVol.length + ' days');
+  
+  Logger.log('Computing 30d P2P volume...');
+  const rolling30dVol = xdcFetchTransactionRolling({ field: 'transactionsValueClean', windowDays: 30, divisor: 1e18 }, sinceDayISO, untilDayISO);
+  for (var i = 0; i < rolling30dVol.length; i++) {
+    rows.push({ date: rolling30dVol[i].date, chain: 'XDC', metric_key: 'xdc_p2p_gd_amount_30d', value: rolling30dVol[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 2 });
+  }
+  Logger.log('  Computed ' + rolling30dVol.length + ' days');
+  
+  Logger.log('Fetching lifetime stats...');
+  const lifetimeTx = xdcFetchTransactionLifetime({ field: 'transactionsCountClean' }, untilYMD);
+  for (var i = 0; i < lifetimeTx.length; i++) {
+    rows.push({ date: lifetimeTx[i].date, chain: 'XDC', metric_key: 'xdc_p2p_lifetime_tx_count', value: lifetimeTx[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 0 });
+  }
+  
+  const lifetimeVol = xdcFetchTransactionLifetime({ field: 'transactionsValueClean', divisor: 1e18 }, untilYMD);
+  for (var i = 0; i < lifetimeVol.length; i++) {
+    rows.push({ date: lifetimeVol[i].date, chain: 'XDC', metric_key: 'xdc_p2p_lifetime_gd_amount', value: lifetimeVol[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 2 });
+  }
+  
+  const circulation = xdcFetchTransactionLifetime({ field: 'totalInCirculation', divisor: 1e18 }, untilYMD);
+  for (var i = 0; i < circulation.length; i++) {
+    rows.push({ date: circulation[i].date, chain: 'XDC', metric_key: 'xdc_gd_in_circulation', value: circulation[i].value, source: 'XDC_SUBGRAPH', updated_at: startedAt, decimals: 2 });
+  }
+  
+  Logger.log('Writing ' + rows.length + ' rows...');
+  writeFactsAndHealth({ rows: rows, health: [], runId: runIdStr });
+  
+  Logger.log('Backfill complete!');
+}
+
+function fixRollingSumMetrics() {
+  Logger.log('Fixing rolling sum metrics with fresh Goldsky data...');
+  
+  ensureSheets();
+  
+  const sinceYMD = CONFIG.XDC_GENESIS;
+  const untilYMD = getYesterdayYMD();
+  
+  const sinceDayISO = xdcYmdToDayISO(sinceYMD);
+  const untilDayISO = xdcYmdToDayISO(untilYMD);
+  
+  const startedAt = nowIso();
+  const runIdStr = generateRunId();
+  const rows = [];
+  
+  const rollingSumMetrics = [
+    { key: 'xdc_gd_claimed_30d', field: 'totalUBIDistributed', windowDays: 30, divisor: 1e18, decimals: 2 },
+    { key: 'xdc_gd_claimed_7d', field: 'totalUBIDistributed', windowDays: 7, divisor: 1e18, decimals: 2 },
+    { key: 'xdc_gd_per_user_30d', field: 'quota', windowDays: 30, divisor: 1e18, decimals: 2 },
+    { key: 'xdc_gd_per_user_7d', field: 'quota', windowDays: 7, divisor: 1e18, decimals: 2 }
+  ];
+  
+  for (var m = 0; m < rollingSumMetrics.length; m++) {
+    const metric = rollingSumMetrics[m];
+    Logger.log('Processing ' + metric.key + '...');
+    
+    const spec = { field: metric.field, windowDays: metric.windowDays, divisor: metric.divisor };
+    const results = xdcFetchRollingSum(spec, sinceDayISO, untilDayISO);
+    
+    for (var i = 0; i < results.length; i++) {
+      rows.push({
+        date: results[i].date,
+        chain: 'XDC',
+        metric_key: metric.key,
+        value: results[i].value,
+        source: 'XDC_SUBGRAPH',
+        run_id: runIdStr,
+        updated_at: startedAt,
+        decimals: metric.decimals
+      });
+    }
+    
+    Logger.log('  Generated ' + results.length + ' rows');
+  }
+  
+  Logger.log('Writing ' + rows.length + ' rows...');
+  writeFactsAndHealth({ rows: rows, health: [], runId: runIdStr });
+  
+  Logger.log('Fix complete!');
 }
