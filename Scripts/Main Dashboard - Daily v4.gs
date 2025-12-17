@@ -1,6 +1,6 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v4.0.2
- * Updated: Goldsky + XDC P2P transfer metrics
+ * GOODDOLLAR DASHBOARD v4.0.4
+ * New: Reserve subgraph for price, XDC USD metrics, Reserve volume metrics
  * ========================================= *****/
 
 /***** =========================================
@@ -19,6 +19,7 @@ const CONFIG = {
 const CHAINS = { CELO: true, XDC: true };
 
 const XDC_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/gd_xdc/1.2/gn';
+const RESERVE_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/reserve_celo/1.0/gn';
 
 const DUNE_IDS = {
   LIFETIMES:       '5966342',
@@ -30,13 +31,6 @@ const DUNE_IDS = {
 };
 
 const METRICS = {
-  gd_usd_price: {
-    adapter: 'Dune',
-    chains: ['CELO'],
-    aggregate: false,
-    decimals: 8,
-    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 1 },
-  },
   celo_dau: {
     adapter: 'Dune',
     chains: ['CELO'],
@@ -131,10 +125,55 @@ const METRICS = {
   celo_p2p_usd_amount: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: false,
+    aggregate: false,  // No XDC equivalent yet
     decimals: 2,
     dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 4 },
   },
+  // NEW: P2P 7-day rolling metrics
+  celo_p2p_tx_count_7d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 0,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 5 },
+  },
+  celo_p2p_gd_amount_7d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 2,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 6 },
+  },
+  celo_p2p_usd_amount_7d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: false,  // No XDC equivalent yet
+    decimals: 2,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 7 },
+  },
+  // NEW: P2P 30-day rolling metrics
+  celo_p2p_tx_count_30d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 0,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 8 },
+  },
+  celo_p2p_gd_amount_30d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: true,
+    decimals: 2,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 9 },
+  },
+  celo_p2p_usd_amount_30d: {
+    adapter: 'Dune',
+    chains: ['CELO'],
+    aggregate: false,  // No XDC equivalent yet
+    decimals: 2,
+    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 10 },
+  },
+  // P2P user counts - NOT aggregated (risk of double-counting across chains)
   celo_p2p_senders: {
     adapter: 'Dune',
     chains: ['CELO'],
@@ -187,7 +226,7 @@ const METRICS = {
   celo_p2p_lifetime_unique_users: {
     adapter: 'Dune',
     chains: ['CELO'],
-    aggregate: false,
+    aggregate: false,  // No XDC equivalent
     decimals: 0,
     dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 5 },
   },
@@ -205,14 +244,14 @@ const METRICS = {
     decimals: 0,
     xdc: { type: 'global_total', field: 'uniqueClaimers' },
   },
-  celo_lifetime_claim_TXs: {
+  celo_lifetime_claim_txs: {
     adapter: 'Dune',
     chains: ['CELO'],
     aggregate: true,
     decimals: 0,
     dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 7 },
   },
-  xdc_lifetime_claim_TXs: {
+  xdc_lifetime_claim_txs: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
@@ -345,26 +384,12 @@ const METRICS = {
     decimals: 2,
     xdc: { type: 'daily_field', field: 'quota', divisor: 1e18 },
   },
-  celo_p2p_tx_count_7d: {
-    adapter: 'Dune',
-    chains: ['CELO'],
-    aggregate: true,
-    decimals: 0,
-    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 5 },
-  },
   xdc_p2p_tx_count_7d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 0,
     xdc: { type: 'transaction_rolling', field: 'transactionsCountClean', windowDays: 7 },
-  },
-  celo_p2p_tx_count_30d: {
-    adapter: 'Dune',
-    chains: ['CELO'],
-    aggregate: true,
-    decimals: 0,
-    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 8 },
   },
   xdc_p2p_tx_count_30d: {
     adapter: 'Subgraph',
@@ -373,26 +398,12 @@ const METRICS = {
     decimals: 0,
     xdc: { type: 'transaction_rolling', field: 'transactionsCountClean', windowDays: 30 },
   },
-  celo_p2p_gd_amount_7d: {
-    adapter: 'Dune',
-    chains: ['CELO'],
-    aggregate: true,
-    decimals: 2,
-    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 6 },
-  },
   xdc_p2p_gd_amount_7d: {
     adapter: 'Subgraph',
     chains: ['XDC'],
     aggregate: true,
     decimals: 2,
     xdc: { type: 'transaction_rolling', field: 'transactionsValueClean', windowDays: 7, divisor: 1e18 },
-  },
-  celo_p2p_gd_amount_30d: {
-    adapter: 'Dune',
-    chains: ['CELO'],
-    aggregate: true,
-    decimals: 2,
-    dune: { type: 'timeseries', queryId: DUNE_IDS.P2P_TRANSFERS, dateCol: 0, valueCol: 9 },
   },
   xdc_p2p_gd_amount_30d: {
     adapter: 'Subgraph',
@@ -408,7 +419,75 @@ const METRICS = {
     decimals: 2,
     xdc: { type: 'transaction_lifetime', field: 'totalInCirculation', divisor: 1e18 },
   },
-
+  
+  // ===== PRICE (from Reserve subgraph) =====
+  gd_usd_price: {
+    adapter: 'Reserve',
+    chains: ['CELO'],
+    aggregate: false,
+    decimals: 8,
+    reserve: { type: 'daily_avg_price' },
+  },
+  
+  // ===== RESERVE VOLUME METRICS =====
+  celo_reserve_in: {
+    adapter: 'Reserve',
+    chains: ['CELO'],
+    aggregate: false,
+    decimals: 2,
+    reserve: { type: 'daily_volume', field: 'amountIn' },
+  },
+  celo_reserve_out: {
+    adapter: 'Reserve',
+    chains: ['CELO'],
+    aggregate: false,
+    decimals: 2,
+    reserve: { type: 'daily_volume', field: 'amountOut' },
+  },
+  celo_reserve_volume: {
+    adapter: 'Reserve',
+    chains: ['CELO'],
+    aggregate: false,
+    decimals: 2,
+    reserve: { type: 'daily_volume', field: 'volume' },
+  },
+  
+  // ===== XDC USD METRICS (computed from gd_usd_price) =====
+  xdc_p2p_usd_amount: {
+    adapter: 'Computed',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    computed: { type: 'multiply_by_price', sourceMetric: 'xdc_p2p_gd_amount' },
+  },
+  xdc_lifetime_claimed_usd_amount: {
+    adapter: 'Computed',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    computed: { type: 'multiply_by_price', sourceMetric: 'xdc_lifetime_claimed_gd_amount' },
+  },
+  xdc_usd_claimed_30d: {
+    adapter: 'Computed',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    computed: { type: 'multiply_by_price', sourceMetric: 'xdc_gd_claimed_30d' },
+  },
+  xdc_usd_claimed_7d: {
+    adapter: 'Computed',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    computed: { type: 'multiply_by_price', sourceMetric: 'xdc_gd_claimed_7d' },
+  },
+  xdc_usd_claimed_1d: {
+    adapter: 'Computed',
+    chains: ['XDC'],
+    aggregate: true,
+    decimals: 2,
+    computed: { type: 'multiply_by_price', sourceMetric: 'xdc_gd_claimed_1d' },
+  },
 };
 
 /***** =========================================
@@ -896,6 +975,153 @@ function xdcFetchTransactionRolling(spec, sinceDayISO, untilDayISO) {
 }
 
 /***** =========================================
+ * 4b) RESERVE SUBGRAPH HELPERS (GOLDSKY)
+ * ========================================= *****/
+
+// Reuse day conversion functions from XDC (same format)
+function dayISOToYmd(dayISO) {
+  var dayNum = Number(dayISO);
+  var seconds = dayNum * 86400;
+  var d = new Date(seconds * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
+function ymdToDayISO(ymd) {
+  var d = new Date(ymd + 'T00:00:00Z');
+  var seconds = Math.floor(d.getTime() / 1000);
+  return String(Math.floor(seconds / 86400));
+}
+
+function reserveGqlRequest(queryStr) {
+  var payload = JSON.stringify({ query: queryStr, variables: {} });
+  
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: payload,
+    muteHttpExceptions: true,
+    headers: { 'Accept': 'application/json' }
+  };
+  
+  var res = UrlFetchApp.fetch(RESERVE_SUBGRAPH_URL, options);
+  var status = res.getResponseCode();
+  var text = res.getContentText();
+  
+  if (status < 200 || status >= 300) {
+    throw new Error('Reserve Subgraph HTTP error (' + status + '): ' + text.slice(0, 500));
+  }
+  
+  var json = JSON.parse(text);
+  
+  if (json.errors && json.errors.length) {
+    throw new Error('Reserve Subgraph GraphQL errors: ' + JSON.stringify(json.errors));
+  }
+  
+  return json.data;
+}
+
+function reserveFetchDailyAvgPrice(sinceDayISO, untilDayISO) {
+  // Only fetch the most recent day (yesterday) - no historical backfill
+  // We already have historical prices from Dune
+  var query = 'query { reservePrices(first: 1000, orderBy: timestamp, orderDirection: desc, where: { day: "' + untilDayISO + '" }) { id day price timestamp } }';
+  
+  var data = reserveGqlRequest(query);
+  
+  if (!data || !data.reservePrices || !data.reservePrices.length) {
+    return [];
+  }
+  
+  var nodes = data.reservePrices;
+  
+  // Calculate average price for the day
+  var sum = 0;
+  var count = 0;
+  for (var i = 0; i < nodes.length; i++) {
+    var price = Number(nodes[i].price) / 1e18;
+    sum += price;
+    count++;
+  }
+  
+  if (count === 0) {
+    return [];
+  }
+  
+  var avg = sum / count;
+  var ymd = dayISOToYmd(untilDayISO);
+  
+  return [{ date: ymd, value: avg, source: 'RESERVE_SUBGRAPH' }];
+}
+
+function reserveFetchDailyVolume(spec, sinceDayISO, untilDayISO) {
+  // Limit to last 60 days to avoid rate limits and bloat
+  var sinceNum = Number(sinceDayISO);
+  var untilNum = Number(untilDayISO);
+  var maxDays = 60;
+  
+  if (untilNum - sinceNum > maxDays) {
+    sinceNum = untilNum - maxDays;
+    sinceDayISO = String(sinceNum);
+  }
+  
+  // Paginate through all records for the date range
+  var allNodes = [];
+  var lastTimestamp = '0';
+  var pageSize = 1000;
+  var maxPages = 10; // Safety limit
+  
+  for (var page = 0; page < maxPages; page++) {
+    var query = 'query { reservePrices(first: ' + pageSize + ', orderBy: timestamp, orderDirection: asc, where: { day_gte: "' + sinceDayISO + '", day_lte: "' + untilDayISO + '", timestamp_gt: "' + lastTimestamp + '" }) { id day amountIn amountOut timestamp } }';
+    
+    var data = reserveGqlRequest(query);
+    
+    if (!data || !data.reservePrices || !data.reservePrices.length) {
+      break;
+    }
+    
+    var nodes = data.reservePrices;
+    allNodes = allNodes.concat(nodes);
+    
+    if (nodes.length < pageSize) {
+      break; // No more pages
+    }
+    
+    lastTimestamp = nodes[nodes.length - 1].timestamp;
+  }
+  
+  if (!allNodes.length) {
+    return [];
+  }
+  
+  // Group by day and sum amounts
+  var dayVolumes = {};
+  for (var i = 0; i < allNodes.length; i++) {
+    var n = allNodes[i];
+    var day = n.day;
+    var amountIn = Number(n.amountIn) / 1e18;
+    var amountOut = Number(n.amountOut) / 1e18;
+    
+    if (!dayVolumes[day]) {
+      dayVolumes[day] = { amountIn: 0, amountOut: 0, volume: 0 };
+    }
+    dayVolumes[day].amountIn += amountIn;
+    dayVolumes[day].amountOut += amountOut;
+    dayVolumes[day].volume += amountIn + amountOut;
+  }
+  
+  var field = spec.field; // 'amountIn', 'amountOut', or 'volume'
+  var out = [];
+  var days = Object.keys(dayVolumes).sort();
+  for (var i = 0; i < days.length; i++) {
+    var day = days[i];
+    var val = dayVolumes[day][field] || 0;
+    var ymd = dayISOToYmd(day);
+    out.push({ date: ymd, value: val, source: 'RESERVE_SUBGRAPH' });
+  }
+  
+  return out;
+}
+
+/***** =========================================
  * 5) ADAPTERS
  * ========================================= *****/
 
@@ -903,6 +1129,7 @@ const Adapters = {
   Dune: {
     fetch: function(metricKey, chain, sinceYMD, untilYMD, spec) {
       if (!spec) throw new Error('Missing dune spec for ' + metricKey);
+      
       
       if (spec.type !== 'timeseries') {
         throw new Error('Unknown Dune spec type for ' + metricKey + ': ' + spec.type);
@@ -993,6 +1220,208 @@ const Adapters = {
       }
       return map;
     }
+  },
+  
+  Reserve: {
+    fetch: function(metricKey, chain, sinceYMD, untilYMD, spec) {
+      if (!spec) throw new Error('Missing reserve spec for ' + metricKey);
+      
+      var sinceDayISO = ymdToDayISO(sinceYMD);
+      var untilDayISO = ymdToDayISO(untilYMD);
+      
+      switch (spec.type) {
+        case 'daily_avg_price':
+          return reserveFetchDailyAvgPrice(sinceDayISO, untilDayISO);
+        case 'daily_volume':
+          return reserveFetchDailyVolume(spec, sinceDayISO, untilDayISO);
+        default:
+          throw new Error('Unknown Reserve spec type for ' + metricKey + ': ' + spec.type);
+      }
+    }
+  },
+  
+  Computed: {
+    // Computed metrics are processed after all other metrics are fetched
+    // They use existing row data to calculate derived values
+    fetch: function(metricKey, chain, sinceYMD, untilYMD, spec, allRows, priceMap) {
+      if (!spec) throw new Error('Missing computed spec for ' + metricKey);
+      
+      if (spec.type !== 'multiply_by_price') {
+        throw new Error('Unknown Computed spec type for ' + metricKey + ': ' + spec.type);
+      }
+      
+      var sourceMetric = spec.sourceMetric;
+      var out = [];
+      
+      // Find source metric rows in the current batch
+      for (var i = 0; i < allRows.length; i++) {
+        var row = allRows[i];
+        if (row.metric_key !== sourceMetric) continue;
+        
+        var price = priceMap[row.date];
+        if (price == null || price === 0) continue;
+        
+        var usdValue = row.value * price;
+        out.push({
+          date: row.date,
+          value: usdValue,
+          source: row.source + '+RESERVE_PRICE'
+        });
+      }
+      
+      return out;
+    },
+    
+    // Enhanced fetch that also looks up from facts table
+    fetchWithFactsLookup: function(metricKey, chain, sinceYMD, untilYMD, spec, allRows, priceMap, existingIndex) {
+      if (!spec) throw new Error('Missing computed spec for ' + metricKey);
+      
+      if (spec.type !== 'multiply_by_price') {
+        throw new Error('Unknown Computed spec type for ' + metricKey + ': ' + spec.type);
+      }
+      
+      var sourceMetric = spec.sourceMetric;
+      var out = [];
+      var usedFallbackPrice = false;
+      var fallbackPriceDate = null;
+      
+      // Build a map of source metric values from current batch
+      var sourceFromBatch = {};
+      for (var i = 0; i < allRows.length; i++) {
+        var row = allRows[i];
+        if (row.metric_key === sourceMetric) {
+          sourceFromBatch[row.date] = row.value;
+        }
+      }
+      
+      // Get dates that need USD conversion (source metric exists but USD metric doesn't)
+      var datesToProcess = [];
+      var d = parseYMD(sinceYMD);
+      var endD = parseYMD(untilYMD);
+      
+      while (d <= endD) {
+        var ymd = formatYMD(d);
+        var factKey = ymd + '|' + chain + '|' + metricKey;
+        
+        // Only process if the USD metric doesn't already exist
+        if (!existingIndex[factKey]) {
+          datesToProcess.push(ymd);
+        }
+        
+        d.setDate(d.getDate() + 1);
+      }
+      
+      if (datesToProcess.length === 0) {
+        return { rows: [], warning: null };
+      }
+      
+      // Look up source metric values from facts table for dates not in current batch
+      var sourceFromFacts = {};
+      if (datesToProcess.length > 0) {
+        var ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+        var facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+        var lastRow = facts.getLastRow();
+        
+        if (lastRow > 1) {
+          var data = facts.getRange(2, 1, lastRow - 1, 4).getValues(); // date, chain, metric, value
+          
+          for (var i = 0; i < data.length; i++) {
+            var dateVal = data[i][0];
+            var rowChain = data[i][1];
+            var rowMetric = data[i][2];
+            var rowValue = data[i][3];
+            
+            if (rowMetric !== sourceMetric) continue;
+            
+            var ymd = (dateVal instanceof Date) ? formatYMD(dateVal) : String(dateVal).slice(0, 10);
+            sourceFromFacts[ymd] = Number(rowValue) || 0;
+          }
+        }
+      }
+      
+      // If priceMap is empty, try to get price from facts table
+      var effectivePriceMap = priceMap;
+      if (Object.keys(priceMap).length === 0) {
+        var ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+        var facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+        var lastRow = facts.getLastRow();
+        
+        if (lastRow > 1) {
+          var data = facts.getRange(2, 1, lastRow - 1, 4).getValues();
+          var latestPriceDate = null;
+          var latestPrice = null;
+          
+          for (var i = 0; i < data.length; i++) {
+            var rowMetric = data[i][2];
+            if (rowMetric !== 'gd_usd_price') continue;
+            
+            var dateVal = data[i][0];
+            var ymd = (dateVal instanceof Date) ? formatYMD(dateVal) : String(dateVal).slice(0, 10);
+            var price = Number(data[i][3]) || 0;
+            
+            if (price > 0) {
+              effectivePriceMap[ymd] = price;
+              if (!latestPriceDate || ymd > latestPriceDate) {
+                latestPriceDate = ymd;
+                latestPrice = price;
+              }
+            }
+          }
+          
+          if (latestPriceDate) {
+            usedFallbackPrice = true;
+            fallbackPriceDate = latestPriceDate;
+          }
+        }
+      }
+      
+      // Process each date
+      for (var i = 0; i < datesToProcess.length; i++) {
+        var ymd = datesToProcess[i];
+        
+        // Get source value (prefer batch, fall back to facts)
+        var sourceValue = sourceFromBatch[ymd];
+        if (sourceValue == null) {
+          sourceValue = sourceFromFacts[ymd];
+        }
+        
+        if (sourceValue == null || sourceValue === 0) continue;
+        
+        // Get price (prefer same day, fall back to latest available)
+        var price = effectivePriceMap[ymd];
+        if (price == null || price === 0) {
+          // Use latest available price
+          var priceDates = Object.keys(effectivePriceMap).sort();
+          if (priceDates.length > 0) {
+            var latestPriceDate = priceDates[priceDates.length - 1];
+            price = effectivePriceMap[latestPriceDate];
+            usedFallbackPrice = true;
+            fallbackPriceDate = latestPriceDate;
+          }
+        }
+        
+        if (price == null || price === 0) continue;
+        
+        var usdValue = sourceValue * price;
+        var source = 'COMPUTED';
+        if (usedFallbackPrice) {
+          source = 'COMPUTED+PRICE_FROM_' + fallbackPriceDate;
+        }
+        
+        out.push({
+          date: ymd,
+          value: usdValue,
+          source: source
+        });
+      }
+      
+      var warning = null;
+      if (usedFallbackPrice && fallbackPriceDate) {
+        warning = 'Used price from ' + fallbackPriceDate + ' for some calculations';
+      }
+      
+      return { rows: out, warning: warning };
+    }
   }
 };
 
@@ -1033,6 +1462,8 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
   
   const duneMetrics = [];
   const subgraphMetrics = [];
+  const reserveMetrics = [];
+  const computedMetrics = [];
   
   const metricKeys = Object.keys(METRICS);
   for (var m = 0; m < metricKeys.length; m++) {
@@ -1047,6 +1478,10 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
         duneMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
       } else if (spec.adapter === 'Subgraph' && spec.xdc) {
         subgraphMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
+      } else if (spec.adapter === 'Reserve' && spec.reserve) {
+        reserveMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
+      } else if (spec.adapter === 'Computed' && spec.computed) {
+        computedMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
       }
     }
   }
@@ -1214,6 +1649,112 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
     
     if (dauDates.length > 0) {
       addHealth('XDC_SUBGRAPH', 'xdc_returning_claimers', 'XDC', 'ok', dauDates.length, 0, 'computed');
+    }
+  }
+  
+  // Process Reserve metrics
+  var priceMap = {}; // Will store date -> price for computed metrics
+  
+  for (var i = 0; i < reserveMetrics.length; i++) {
+    var item = reserveMetrics[i];
+    var metricKey = item.metricKey;
+    var spec = item.spec;
+    var chain = item.chain;
+    var t0 = Date.now();
+    
+    try {
+      var results = Adapters.Reserve.fetch(metricKey, chain, sinceYMD, untilYMD, spec.reserve);
+      
+      var count = 0;
+      for (var j = 0; j < results.length; j++) {
+        var r = results[j];
+        var factKey = r.date + '|' + chain + '|' + metricKey;
+        if (existingIndex[factKey]) continue;
+        
+        rows.push({
+          date: r.date,
+          chain: chain,
+          metric_key: metricKey,
+          value: r.value,
+          source: r.source,
+          run_id: runIdStr,
+          updated_at: startedAt
+        });
+        count++;
+        
+        // Store price for computed metrics
+        if (metricKey === 'gd_usd_price') {
+          priceMap[r.date] = r.value;
+        }
+      }
+      
+      addHealth('RESERVE_SUBGRAPH', metricKey, chain, 'ok', count, Date.now() - t0);
+      if (CONFIG.VERBOSE) {
+        Logger.log('ok  ' + metricKey + '/' + chain + ': ' + count + ' row(s)');
+      }
+      
+    } catch (e) {
+      addHealth('RESERVE_SUBGRAPH', metricKey, chain, 'error', 0, Date.now() - t0, e.message);
+      Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
+    }
+  }
+  
+  // If we didn't get price from reserve (e.g., already exists), try to get from existing rows
+  if (Object.keys(priceMap).length === 0) {
+    // Look for gd_usd_price in the rows we already have
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].metric_key === 'gd_usd_price') {
+        priceMap[rows[i].date] = rows[i].value;
+      }
+    }
+  }
+  
+  // Process Computed metrics (must be after all other metrics are fetched)
+  for (var i = 0; i < computedMetrics.length; i++) {
+    var item = computedMetrics[i];
+    var metricKey = item.metricKey;
+    var spec = item.spec;
+    var chain = item.chain;
+    var t0 = Date.now();
+    
+    try {
+      // Use enhanced lookup that checks facts table when batch doesn't have data
+      var result = Adapters.Computed.fetchWithFactsLookup(
+        metricKey, chain, sinceYMD, untilYMD, spec.computed, rows, priceMap, existingIndex
+      );
+      
+      var computedRows = result.rows || [];
+      var warning = result.warning;
+      
+      var count = 0;
+      for (var j = 0; j < computedRows.length; j++) {
+        var r = computedRows[j];
+        var factKey = r.date + '|' + chain + '|' + metricKey;
+        if (existingIndex[factKey]) continue;
+        
+        rows.push({
+          date: r.date,
+          chain: chain,
+          metric_key: metricKey,
+          value: r.value,
+          source: r.source,
+          run_id: runIdStr,
+          updated_at: startedAt
+        });
+        count++;
+      }
+      
+      var healthError = warning || '';
+      addHealth('COMPUTED', metricKey, chain, 'ok', count, Date.now() - t0, healthError);
+      if (CONFIG.VERBOSE) {
+        var msg = 'ok  ' + metricKey + '/' + chain + ': ' + count + ' row(s)';
+        if (warning) msg += ' [' + warning + ']';
+        Logger.log(msg);
+      }
+      
+    } catch (e) {
+      addHealth('COMPUTED', metricKey, chain, 'error', 0, Date.now() - t0, e.message);
+      Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
     }
   }
   
@@ -1790,4 +2331,110 @@ function fixRollingSumMetrics() {
   writeFactsAndHealth({ rows: rows, health: [], runId: runIdStr });
   
   Logger.log('Fix complete!');
+}
+
+/***** =========================================
+ * 10) RESERVE SUBGRAPH TEST FUNCTIONS
+ * ========================================= *****/
+
+function testReserveConnection() {
+  Logger.log('Testing Reserve Subgraph connection...');
+  
+  try {
+    var query = 'query { reservePrices(first: 3, orderBy: timestamp, orderDirection: desc) { id day price timestamp } }';
+    var data = reserveGqlRequest(query);
+    
+    Logger.log('Success! Latest 3 prices:');
+    if (data && data.reservePrices) {
+      for (var i = 0; i < data.reservePrices.length; i++) {
+        var p = data.reservePrices[i];
+        var ymd = dayISOToYmd(p.day);
+        var priceUsd = Number(p.price) / 1e18;
+        Logger.log('  ' + ymd + ': $' + priceUsd.toFixed(8));
+      }
+    }
+  } catch (e) {
+    Logger.log('Error: ' + e.message);
+  }
+}
+
+function testReserveDailyPrice() {
+  Logger.log('Testing Reserve daily average price...');
+  
+  var yesterday = getYesterdayYMD();
+  var weekAgo = addDays(yesterday, -7);
+  
+  var sinceDayISO = ymdToDayISO(weekAgo);
+  var untilDayISO = ymdToDayISO(yesterday);
+  
+  Logger.log('Fetching prices from ' + weekAgo + ' to ' + yesterday);
+  
+  try {
+    var results = reserveFetchDailyAvgPrice(sinceDayISO, untilDayISO);
+    
+    Logger.log('Got ' + results.length + ' days of prices:');
+    for (var i = 0; i < results.length; i++) {
+      Logger.log('  ' + results[i].date + ': $' + results[i].value.toFixed(8));
+    }
+  } catch (e) {
+    Logger.log('Error: ' + e.message);
+  }
+}
+
+function testReserveVolume() {
+  Logger.log('Testing Reserve daily volume...');
+  
+  var yesterday = getYesterdayYMD();
+  var weekAgo = addDays(yesterday, -7);
+  
+  var sinceDayISO = ymdToDayISO(weekAgo);
+  var untilDayISO = ymdToDayISO(yesterday);
+  
+  Logger.log('Fetching volume from ' + weekAgo + ' to ' + yesterday);
+  
+  try {
+    var resultsIn = reserveFetchDailyVolume({ field: 'amountIn' }, sinceDayISO, untilDayISO);
+    var resultsOut = reserveFetchDailyVolume({ field: 'amountOut' }, sinceDayISO, untilDayISO);
+    var resultsVol = reserveFetchDailyVolume({ field: 'volume' }, sinceDayISO, untilDayISO);
+    
+    Logger.log('Daily volumes:');
+    for (var i = 0; i < resultsVol.length; i++) {
+      var date = resultsVol[i].date;
+      var volIn = resultsIn[i] ? resultsIn[i].value : 0;
+      var volOut = resultsOut[i] ? resultsOut[i].value : 0;
+      var volTotal = resultsVol[i].value;
+      Logger.log('  ' + date + ': in=' + volIn.toFixed(2) + ', out=' + volOut.toFixed(2) + ', total=' + volTotal.toFixed(2));
+    }
+  } catch (e) {
+    Logger.log('Error: ' + e.message);
+  }
+}
+
+function testComputedUsdMetrics() {
+  Logger.log('Testing Computed USD metrics...');
+  
+  var yesterday = getYesterdayYMD();
+  
+  // First get the price
+  var sinceDayISO = ymdToDayISO(yesterday);
+  var untilDayISO = ymdToDayISO(yesterday);
+  
+  try {
+    var priceResults = reserveFetchDailyAvgPrice(sinceDayISO, untilDayISO);
+    if (!priceResults.length) {
+      Logger.log('No price data for ' + yesterday);
+      return;
+    }
+    
+    var price = priceResults[0].value;
+    Logger.log('G$ price on ' + yesterday + ': $' + price.toFixed(8));
+    
+    // Now simulate computing XDC USD metrics
+    var testGdAmount = 1000000; // 1M G$
+    var usdAmount = testGdAmount * price;
+    Logger.log('Example: 1,000,000 G$ = $' + usdAmount.toFixed(2) + ' USD');
+    
+  } catch (e) {
+    Logger.log('Error: ' + e.message);
+  }
 }
