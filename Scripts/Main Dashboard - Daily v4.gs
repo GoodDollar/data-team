@@ -1,6 +1,6 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v4.0.4
- * New: Reserve subgraph for price, XDC USD metrics, Reserve volume metrics
+ * GOODDOLLAR DASHBOARD v4.0.5
+ * New: Supply metrics (ETH, Fuse, Celo, XDC aggregated)
  * ========================================= *****/
 
 /***** =========================================
@@ -16,10 +16,19 @@ const CONFIG = {
   XDC_GENESIS: '2025-11-12',
 };
 
-const CHAINS = { CELO: true, XDC: true };
+const CHAINS = { CELO: true, XDC: true, ETH: true, FUSE: true };
 
 const XDC_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/gd_xdc/1.2/gn';
 const RESERVE_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/reserve_celo/1.0/gn';
+
+// Supply contract addresses
+const SUPPLY_CONTRACTS = {
+  ETH_GD: '0x67C5870b4A41D4Ebef24d2456547A03F1f3e094B',
+  FUSE_GD: '0x495d133B938596C9984d462F007B676bDc57eCEC',
+  CELO_GD: '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
+  FROZEN_WALLET_1: '0xec577447d314cf1e443e9f4488216651450dbe7c',
+  FROZEN_WALLET_2: '0x6738fa889ff31f82d9fe8862ec025dbe318f3fde'
+};
 
 const DUNE_IDS = {
   LIFETIMES:       '5966342',
@@ -488,6 +497,51 @@ const METRICS = {
     decimals: 2,
     computed: { type: 'multiply_by_price', sourceMetric: 'xdc_gd_claimed_1d' },
   },
+  
+  // ===== SUPPLY METRICS =====
+  eth_gd_total_supply: {
+    adapter: 'Supply',
+    chains: ['ETH'],
+    aggregate: false,
+    decimals: 2,
+    supply: { type: 'eth_total' },
+  },
+  eth_gd_frozen_supply: {
+    adapter: 'Supply',
+    chains: ['ETH'],
+    aggregate: false,
+    decimals: 2,
+    supply: { type: 'eth_frozen' },
+  },
+  eth_gd_in_circulation: {
+    adapter: 'SupplyComputed',
+    chains: ['ETH'],
+    aggregate: false,
+    decimals: 2,
+    supplyComputed: { type: 'eth_circulating' },
+  },
+  fuse_gd_in_circulation: {
+    adapter: 'Supply',
+    chains: ['FUSE'],
+    aggregate: false,
+    decimals: 2,
+    supply: { type: 'fuse_supply' },
+  },
+  celo_gd_in_circulation: {
+    adapter: 'Supply',
+    chains: ['CELO'],
+    aggregate: false,
+    decimals: 2,
+    supply: { type: 'celo_supply' },
+  },
+  // xdc_gd_in_circulation is already defined above
+  agg_gd_in_circulation: {
+    adapter: 'SupplyComputed',
+    chains: ['AGG'],
+    aggregate: false,
+    decimals: 2,
+    supplyComputed: { type: 'total_circulating' },
+  },
 };
 
 /***** =========================================
@@ -644,6 +698,13 @@ function duneApiKey() {
   const props = PropertiesService.getScriptProperties();
   const key = props.getProperty('DUNE_API_KEY');
   if (!key) throw new Error('Missing DUNE_API_KEY in Script Properties');
+  return key;
+}
+
+function etherscanApiKey() {
+  const props = PropertiesService.getScriptProperties();
+  const key = props.getProperty('ETHERSCAN_API_KEY');
+  if (!key) throw new Error('Missing ETHERSCAN_API_KEY in Script Properties');
   return key;
 }
 
@@ -1122,6 +1183,81 @@ function reserveFetchDailyVolume(spec, sinceDayISO, untilDayISO) {
 }
 
 /***** =========================================
+ * 4c) SUPPLY HELPERS (Explorer APIs)
+ * ========================================= *****/
+
+function fetchEthereumSupply(untilYMD) {
+  // Fetch ETH G$ total supply from Etherscan
+  var url = 'https://api.etherscan.io/v2/api?chainid=1&module=stats&action=tokensupply&contractaddress=' + SUPPLY_CONTRACTS.ETH_GD + '&apikey=' + etherscanApiKey();
+  
+  var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var json = JSON.parse(response.getContentText());
+  
+  if (!json.result) {
+    throw new Error('Etherscan API error: ' + JSON.stringify(json));
+  }
+  
+  // ETH G$ has 2 decimals
+  var supply = Number(json.result) / 100;
+  
+  return [{ date: untilYMD, value: supply, source: 'ETHERSCAN_API' }];
+}
+
+function fetchEthereumFrozenSupply(untilYMD) {
+  // Fetch frozen wallet balances and sum them
+  var frozenAddresses = [SUPPLY_CONTRACTS.FROZEN_WALLET_1, SUPPLY_CONTRACTS.FROZEN_WALLET_2];
+  var totalFrozen = 0;
+  
+  for (var i = 0; i < frozenAddresses.length; i++) {
+    var url = 'https://api.etherscan.io/v2/api?chainid=1&module=account&action=tokenbalance&contractaddress=' + SUPPLY_CONTRACTS.ETH_GD + '&address=' + frozenAddresses[i] + '&tag=latest&apikey=' + etherscanApiKey();
+    
+    var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var json = JSON.parse(response.getContentText());
+    
+    if (json.result) {
+      // ETH G$ has 2 decimals
+      totalFrozen += Number(json.result) / 100;
+    }
+  }
+  
+  return [{ date: untilYMD, value: totalFrozen, source: 'ETHERSCAN_API' }];
+}
+
+function fetchFuseSupply(untilYMD) {
+  // Fetch Fuse G$ supply from Fuse Explorer
+  var url = 'https://explorer.fuse.io/api?module=stats&action=tokensupply&contractaddress=' + SUPPLY_CONTRACTS.FUSE_GD;
+  
+  var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var json = JSON.parse(response.getContentText());
+  
+  if (!json.result) {
+    throw new Error('Fuse Explorer API error: ' + JSON.stringify(json));
+  }
+  
+  // Fuse G$ has 2 decimals
+  var supply = Number(json.result) / 100;
+  
+  return [{ date: untilYMD, value: supply, source: 'FUSE_EXPLORER_API' }];
+}
+
+function fetchCeloSupply(untilYMD) {
+  // Fetch Celo G$ supply from Celo Explorer
+  var url = 'https://explorer.celo.org/mainnet/api?module=stats&action=tokensupply&contractaddress=' + SUPPLY_CONTRACTS.CELO_GD;
+  
+  var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var json = JSON.parse(response.getContentText());
+  
+  if (!json.result) {
+    throw new Error('Celo Explorer API error: ' + JSON.stringify(json));
+  }
+  
+  // Celo G$ has 18 decimals
+  var supply = Number(json.result) / 1e18;
+  
+  return [{ date: untilYMD, value: supply, source: 'CELO_EXPLORER_API' }];
+}
+
+/***** =========================================
  * 5) ADAPTERS
  * ========================================= *****/
 
@@ -1129,6 +1265,7 @@ const Adapters = {
   Dune: {
     fetch: function(metricKey, chain, sinceYMD, untilYMD, spec) {
       if (!spec) throw new Error('Missing dune spec for ' + metricKey);
+      
       
       
       if (spec.type !== 'timeseries') {
@@ -1422,6 +1559,144 @@ const Adapters = {
       
       return { rows: out, warning: warning };
     }
+  },
+  
+  Supply: {
+    fetch: function(metricKey, chain, sinceYMD, untilYMD, spec) {
+      if (!spec) throw new Error('Missing supply spec for ' + metricKey);
+      
+      // Supply metrics only fetch the latest day (untilYMD)
+      switch (spec.type) {
+        case 'eth_total':
+          return fetchEthereumSupply(untilYMD);
+        case 'eth_frozen':
+          return fetchEthereumFrozenSupply(untilYMD);
+        case 'fuse_supply':
+          return fetchFuseSupply(untilYMD);
+        case 'celo_supply':
+          return fetchCeloSupply(untilYMD);
+        default:
+          throw new Error('Unknown Supply spec type for ' + metricKey + ': ' + spec.type);
+      }
+    }
+  },
+  
+  SupplyComputed: {
+    // Computed supply metrics that depend on other supply metrics
+    fetch: function(metricKey, chain, sinceYMD, untilYMD, spec, allRows, existingIndex) {
+      if (!spec) throw new Error('Missing supply computed spec for ' + metricKey);
+      
+      var out = [];
+      
+      if (spec.type === 'eth_circulating') {
+        // eth_gd_in_circulation = eth_gd_total_supply - eth_gd_frozen_supply
+        var ethTotal = null;
+        var ethFrozen = null;
+        
+        // Look in current batch first
+        for (var i = 0; i < allRows.length; i++) {
+          if (allRows[i].metric_key === 'eth_gd_total_supply' && allRows[i].date === untilYMD) {
+            ethTotal = allRows[i].value;
+          }
+          if (allRows[i].metric_key === 'eth_gd_frozen_supply' && allRows[i].date === untilYMD) {
+            ethFrozen = allRows[i].value;
+          }
+        }
+        
+        // If not in batch, look in facts table
+        if (ethTotal === null || ethFrozen === null) {
+          var ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+          var facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+          var lastRow = facts.getLastRow();
+          
+          if (lastRow > 1) {
+            var data = facts.getRange(2, 1, lastRow - 1, 4).getValues();
+            for (var i = 0; i < data.length; i++) {
+              var dateVal = data[i][0];
+              var ymd = (dateVal instanceof Date) ? formatYMD(dateVal) : String(dateVal).slice(0, 10);
+              if (ymd !== untilYMD) continue;
+              
+              var rowMetric = data[i][2];
+              var rowValue = Number(data[i][3]) || 0;
+              
+              if (rowMetric === 'eth_gd_total_supply' && ethTotal === null) {
+                ethTotal = rowValue;
+              }
+              if (rowMetric === 'eth_gd_frozen_supply' && ethFrozen === null) {
+                ethFrozen = rowValue;
+              }
+            }
+          }
+        }
+        
+        if (ethTotal !== null && ethFrozen !== null) {
+          out.push({
+            date: untilYMD,
+            value: ethTotal - ethFrozen,
+            source: 'COMPUTED'
+          });
+        }
+        
+      } else if (spec.type === 'total_circulating') {
+        // agg_gd_in_circulation = eth + fuse + celo + xdc
+        var ethCirc = null;
+        var fuseCirc = null;
+        var celoCirc = null;
+        var xdcCirc = null;
+        
+        // Look in current batch first
+        for (var i = 0; i < allRows.length; i++) {
+          var row = allRows[i];
+          if (row.date !== untilYMD) continue;
+          
+          if (row.metric_key === 'eth_gd_in_circulation') ethCirc = row.value;
+          if (row.metric_key === 'fuse_gd_in_circulation') fuseCirc = row.value;
+          if (row.metric_key === 'celo_gd_in_circulation') celoCirc = row.value;
+          if (row.metric_key === 'xdc_gd_in_circulation') xdcCirc = row.value;
+        }
+        
+        // If not in batch, look in facts table
+        var ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+        var facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+        var lastRow = facts.getLastRow();
+        
+        if (lastRow > 1) {
+          var data = facts.getRange(2, 1, lastRow - 1, 4).getValues();
+          for (var i = 0; i < data.length; i++) {
+            var dateVal = data[i][0];
+            var ymd = (dateVal instanceof Date) ? formatYMD(dateVal) : String(dateVal).slice(0, 10);
+            if (ymd !== untilYMD) continue;
+            
+            var rowMetric = data[i][2];
+            var rowValue = Number(data[i][3]) || 0;
+            
+            if (rowMetric === 'eth_gd_in_circulation' && ethCirc === null) ethCirc = rowValue;
+            if (rowMetric === 'fuse_gd_in_circulation' && fuseCirc === null) fuseCirc = rowValue;
+            if (rowMetric === 'celo_gd_in_circulation' && celoCirc === null) celoCirc = rowValue;
+            if (rowMetric === 'xdc_gd_in_circulation' && xdcCirc === null) xdcCirc = rowValue;
+          }
+        }
+        
+        // Calculate total if we have all values
+        if (ethCirc !== null && fuseCirc !== null && celoCirc !== null && xdcCirc !== null) {
+          out.push({
+            date: untilYMD,
+            value: ethCirc + fuseCirc + celoCirc + xdcCirc,
+            source: 'COMPUTED'
+          });
+        } else {
+          // Log which ones are missing
+          var missing = [];
+          if (ethCirc === null) missing.push('eth_gd_in_circulation');
+          if (fuseCirc === null) missing.push('fuse_gd_in_circulation');
+          if (celoCirc === null) missing.push('celo_gd_in_circulation');
+          if (xdcCirc === null) missing.push('xdc_gd_in_circulation');
+          Logger.log('agg_gd_in_circulation: missing components: ' + missing.join(', '));
+        }
+      }
+      
+      return out;
+    }
   }
 };
 
@@ -1464,12 +1739,14 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
   const subgraphMetrics = [];
   const reserveMetrics = [];
   const computedMetrics = [];
+  const supplyMetrics = [];
+  const supplyComputedMetrics = [];
   
   const metricKeys = Object.keys(METRICS);
   for (var m = 0; m < metricKeys.length; m++) {
     const metricKey = metricKeys[m];
     const spec = METRICS[metricKey];
-    const chains = (spec.chains || []).filter(function(c) { return CHAINS[c]; });
+    const chains = (spec.chains || []).filter(function(c) { return CHAINS[c] || c === 'AGG'; });
     if (!chains.length) continue;
     
     for (var c = 0; c < chains.length; c++) {
@@ -1482,6 +1759,10 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
         reserveMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
       } else if (spec.adapter === 'Computed' && spec.computed) {
         computedMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
+      } else if (spec.adapter === 'Supply' && spec.supply) {
+        supplyMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
+      } else if (spec.adapter === 'SupplyComputed' && spec.supplyComputed) {
+        supplyComputedMetrics.push({ metricKey: metricKey, spec: spec, chain: chain });
       }
     }
   }
@@ -1754,6 +2035,86 @@ function buildRows(sinceYMD, untilYMD, existingIndex) {
       
     } catch (e) {
       addHealth('COMPUTED', metricKey, chain, 'error', 0, Date.now() - t0, e.message);
+      Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
+    }
+  }
+  
+  // Process Supply metrics
+  for (var i = 0; i < supplyMetrics.length; i++) {
+    var item = supplyMetrics[i];
+    var metricKey = item.metricKey;
+    var spec = item.spec;
+    var chain = item.chain;
+    var t0 = Date.now();
+    
+    try {
+      var results = Adapters.Supply.fetch(metricKey, chain, sinceYMD, untilYMD, spec.supply);
+      
+      var count = 0;
+      for (var j = 0; j < results.length; j++) {
+        var r = results[j];
+        var factKey = r.date + '|' + chain + '|' + metricKey;
+        if (existingIndex[factKey]) continue;
+        
+        rows.push({
+          date: r.date,
+          chain: chain,
+          metric_key: metricKey,
+          value: r.value,
+          source: r.source,
+          run_id: runIdStr,
+          updated_at: startedAt
+        });
+        count++;
+      }
+      
+      addHealth('SUPPLY', metricKey, chain, 'ok', count, Date.now() - t0);
+      if (CONFIG.VERBOSE) {
+        Logger.log('ok  ' + metricKey + '/' + chain + ': ' + count + ' row(s)');
+      }
+      
+    } catch (e) {
+      addHealth('SUPPLY', metricKey, chain, 'error', 0, Date.now() - t0, e.message);
+      Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
+    }
+  }
+  
+  // Process SupplyComputed metrics (must be after Supply metrics)
+  for (var i = 0; i < supplyComputedMetrics.length; i++) {
+    var item = supplyComputedMetrics[i];
+    var metricKey = item.metricKey;
+    var spec = item.spec;
+    var chain = item.chain;
+    var t0 = Date.now();
+    
+    try {
+      var results = Adapters.SupplyComputed.fetch(metricKey, chain, sinceYMD, untilYMD, spec.supplyComputed, rows, existingIndex);
+      
+      var count = 0;
+      for (var j = 0; j < results.length; j++) {
+        var r = results[j];
+        var factKey = r.date + '|' + chain + '|' + metricKey;
+        if (existingIndex[factKey]) continue;
+        
+        rows.push({
+          date: r.date,
+          chain: chain,
+          metric_key: metricKey,
+          value: r.value,
+          source: r.source,
+          run_id: runIdStr,
+          updated_at: startedAt
+        });
+        count++;
+      }
+      
+      addHealth('SUPPLY_COMPUTED', metricKey, chain, 'ok', count, Date.now() - t0);
+      if (CONFIG.VERBOSE) {
+        Logger.log('ok  ' + metricKey + '/' + chain + ': ' + count + ' row(s)');
+      }
+      
+    } catch (e) {
+      addHealth('SUPPLY_COMPUTED', metricKey, chain, 'error', 0, Date.now() - t0, e.message);
       Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
     }
   }
