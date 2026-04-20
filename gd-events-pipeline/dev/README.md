@@ -3,6 +3,25 @@
 BigQuery-backed mirror of on-chain event logs. One row per event, zero
 duplicates, zero gaps. Self-verifying and self-repairing on a daily cron.
 
+## Deploying v4
+
+Before deploying v4 code, complete this checklist in order:
+
+- [ ] **1. Run the Phase 6 migration SQL** on every existing contract event table.
+  See [MIGRATIONS/001_add_block_timestamp.md](../MIGRATIONS/001_add_block_timestamp.md) for the exact `ALTER TABLE` statements.
+- [ ] **2. Confirm the column exists** via `INFORMATION_SCHEMA.COLUMNS` — check that
+  `block_timestamp TIMESTAMP` appears for each contract table.
+- [ ] **3. Deploy the v4 code** (`npm install && npm run typecheck`).
+- [ ] **4. Smoke check** — run `npm run verify` (read-only). No throws expected.
+  BQ will return a schema-mismatch error if step 1 was skipped.
+- [ ] **5. Monitor the next cron run** for `IngestionStatus` failures. The first run
+  after deployment will populate `block_timestamp` on new rows via MERGE UPDATE.
+- [ ] **6. Optional: bulk backfill** — to populate `block_timestamp` on historical rows,
+  run `FETCH_CONCURRENCY=1 npm run backfill`. This re-processes full history at
+  low concurrency and fills `block_timestamp` for every row via MERGE UPDATE.
+
+---
+
 ## What's different in v3
 
 | Concern | v1/v2 | v3 |
