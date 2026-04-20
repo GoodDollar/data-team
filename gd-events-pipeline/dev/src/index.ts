@@ -32,6 +32,7 @@ import {
   logFinalSummary,
   acquireLock,
   releaseLock,
+  extendLock,
 } from "./pipeline";
 
 const VALID_MODES = ["daily", "append", "backfill", "verify", "repair", "dedup"] as const;
@@ -119,6 +120,25 @@ async function main() {
 
   let exitCode = 0;
 
+  // Heartbeat: extend the lock every TTL/3 so a long-running backfill
+  // doesn't lose its lock before finishing. Only active when lock is held.
+  const heartbeatIntervalMs = lockAcquired
+    ? Math.floor(CONFIG.LOCK_TTL_MS / 3)
+    : 0;
+  const heartbeat = lockAcquired
+    ? setInterval(async () => {
+        try {
+          await extendLock(
+            LOCK_NAME,
+            LOCK_HOLDER,
+            new Date(Date.now() + CONFIG.LOCK_TTL_MS)
+          );
+        } catch (e: any) {
+          log.warn("Lock heartbeat failed; continuing", { error: e?.message });
+        }
+      }, heartbeatIntervalMs)
+    : null;
+
   try {
     const mode = modeArg === "append" ? "daily" : modeArg;
     switch (mode) {
@@ -144,6 +164,7 @@ async function main() {
     log.fatal(`Run failed: ${e?.message}`, { stack: e?.stack });
     exitCode = 1;
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     await release();
   }
 

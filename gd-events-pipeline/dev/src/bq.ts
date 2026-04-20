@@ -731,11 +731,20 @@ export async function markIngestionStatus(
 // ----------------------------------------------------------------------------
 
 /**
- * Acquire a named lock. Returns true if acquired, false if held by
- * another non-expired holder. Atomic via MERGE.
+ * Acquire a named lock. Returns true if acquired, false if held by another
+ * non-expired holder.
  *
- * If a holder exists but its expires_at is past, we steal the lock and
- * log a warning — the previous run crashed without releasing.
+ * Uses a single MERGE whose match condition includes the expiry check — an
+ * unexpired live lock is never overwritten, an expired lock is stolen.
+ * After the MERGE, we read back to see who holds the lock.
+ *
+ * Known residual race: two concurrent MERGEs on an absent row can both INSERT
+ * (BigQuery DML on the same row from concurrent jobs typically serialises, but
+ * it is not guaranteed). The read-back identifies the winner; the loser will
+ * see a different holder and return false. If both see themselves as winner
+ * (possible if the read-back happens before cross-job visibility), one will
+ * proceed and collide downstream — the heartbeat and TTL bound the window.
+ * For strict mutual exclusion replace with GCS or Firestore (future work).
  */
 export async function acquireLock(
   lockName: string,
@@ -746,36 +755,16 @@ export async function acquireLock(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMs);
 
-  // First, read current state
-  const rows = await bqQuery(
-    `SELECT holder, expires_at FROM ${locksTable} WHERE lock_name = @lock_name`,
-    { lock_name: lockName }
-  );
-
-  if (rows.length > 0) {
-    const existing = rows[0];
-    const existingExpiry = new Date(existing.expires_at?.value ?? existing.expires_at);
-    if (existingExpiry > now) {
-      log.warn(`Lock ${lockName} held by ${existing.holder} until ${existingExpiry.toISOString()}`);
-      return false;
-    }
-    log.warn(
-      `Stealing expired lock ${lockName} from ${existing.holder} (expired ${existingExpiry.toISOString()})`
-    );
-  }
-
   await bqQuery(
-    `
-    MERGE ${locksTable} AS T
-    USING (SELECT @lock_name AS lock_name, @holder AS holder,
-           TIMESTAMP(@acquired_at) AS acquired_at,
-           TIMESTAMP(@expires_at) AS expires_at) AS S
-      ON T.lock_name = S.lock_name
-    WHEN MATCHED THEN UPDATE SET
-      holder = S.holder, acquired_at = S.acquired_at, expires_at = S.expires_at
-    WHEN NOT MATCHED THEN INSERT (lock_name, holder, acquired_at, expires_at)
-      VALUES (S.lock_name, S.holder, S.acquired_at, S.expires_at)
-    `,
+    `MERGE ${locksTable} AS T
+     USING (SELECT @lock_name AS lock_name, @holder AS holder,
+            TIMESTAMP(@acquired_at) AS acquired_at,
+            TIMESTAMP(@expires_at) AS expires_at) AS S
+       ON T.lock_name = S.lock_name
+     WHEN MATCHED AND T.expires_at < CURRENT_TIMESTAMP() THEN UPDATE SET
+       holder = S.holder, acquired_at = S.acquired_at, expires_at = S.expires_at
+     WHEN NOT MATCHED THEN INSERT (lock_name, holder, acquired_at, expires_at)
+       VALUES (S.lock_name, S.holder, S.acquired_at, S.expires_at)`,
     {
       lock_name: lockName,
       holder,
@@ -784,12 +773,36 @@ export async function acquireLock(
     }
   );
 
-  // Race check: someone else could have won the MERGE. Re-read.
+  // Read back to confirm ownership.
   const verify = await bqQuery(
-    `SELECT holder FROM ${locksTable} WHERE lock_name = @lock_name`,
+    `SELECT holder, expires_at FROM ${locksTable} WHERE lock_name = @lock_name`,
     { lock_name: lockName }
   );
-  return verify[0]?.holder === holder;
+
+  if (verify.length === 0) return false;
+  if (verify[0].holder === holder) return true;
+
+  const existingExpiry = new Date(verify[0].expires_at?.value ?? verify[0].expires_at);
+  log.warn(`Lock ${lockName} held by ${verify[0].holder} until ${existingExpiry.toISOString()}`);
+  return false;
+}
+
+/**
+ * Extend the lock's expiry. Called by the heartbeat interval so a long-running
+ * process does not lose the lock before it finishes.
+ */
+export async function extendLock(
+  lockName: string,
+  holder: string,
+  newExpiresAt: Date
+): Promise<void> {
+  const locksTable = fullTableName(CONFIG.PIPELINE_LOCKS_TABLE);
+  await bqQuery(
+    `UPDATE ${locksTable}
+     SET expires_at = TIMESTAMP(@expires_at)
+     WHERE lock_name = @lock_name AND holder = @holder`,
+    { lock_name: lockName, holder, expires_at: newExpiresAt.toISOString() }
+  );
 }
 
 export async function releaseLock(

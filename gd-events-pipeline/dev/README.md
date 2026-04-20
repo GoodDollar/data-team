@@ -179,6 +179,23 @@ SELECT lock_name, holder, acquired_at, expires_at,
 FROM `gooddollar.BlockchainEvents.PipelineLocks`;
 ```
 
+#### Lock semantics
+
+The distributed lock is **best-effort, not strict mutual exclusion**:
+
+- The lock is a row in `PipelineLocks`. Acquisition uses a single MERGE whose
+  match condition includes the expiry check, followed by a read-back to confirm
+  ownership.
+- A **heartbeat** interval (every `LOCK_TTL_MS / 3`, default 2 hours) extends
+  the lock's expiry while the run is alive. A run that crashes without releasing
+  the lock will have it stolen after `LOCK_TTL_MS` (default 6 hours).
+- A dead process (crashed, OOM-killed) loses the lock after the TTL expires.
+  The next scheduled run will steal it and log a warning.
+- **Residual race**: two concurrent acquisition attempts on an absent lock row
+  could theoretically both succeed if BigQuery's DML job visibility has a gap.
+  This is rare in practice. For strict mutual exclusion, replace the backend
+  with GCS conditional writes or Firestore transactions (tracked as future work).
+
 ### Downstream: safe-to-query filter
 
 Consumers of the event tables should join against `IngestionStatus` to
