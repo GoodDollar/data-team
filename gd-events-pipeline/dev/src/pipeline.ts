@@ -55,6 +55,7 @@ import {
   markIngestionStatus,
   acquireLock,
   releaseLock,
+  extendLock,
   partitionAndClusterClauseFor,
   countUnknownEventsInRange,
   getVerifyCheckpoint,
@@ -825,4 +826,4 @@ export async function logFinalSummary(): Promise<void> {
 // LOCK HELPERS (re-exported for CLI convenience)
 // ----------------------------------------------------------------------------
 
-export { acquireLock, releaseLock };
+export { acquireLock, releaseLock, extendLock };
