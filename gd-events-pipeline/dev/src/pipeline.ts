@@ -26,6 +26,7 @@ import {
   CONFIG,
   CONTRACT_CONFIGS,
   ContractConfig,
+  ContractNetworkBinding,
   NetworkConfig,
   fullTableName,
   knownTopic0sFor,
@@ -143,7 +144,8 @@ async function pMapLimit<T, R>(
 const boundaryCache = new Map<string, number>();
 
 async function resolveDailyToBlock(
-  network: NetworkConfig
+  network: NetworkConfig,
+  firstBlock: number
 ): Promise<number> {
   const cached = boundaryCache.get(network.name);
   if (cached !== undefined) return cached;
@@ -156,12 +158,12 @@ async function resolveDailyToBlock(
   ) / 1000;
 
   const tip = await getChainTip(network);
-  const safeTip = Math.max(network.firstBlock, tip - network.finalityBlocks);
+  const safeTip = Math.max(firstBlock, tip - network.finalityBlocks);
 
   const timestampBound = await resolveBlockBeforeTimestamp(
     network,
     midnightUtc,
-    network.firstBlock,
+    firstBlock,
     safeTip
   );
 
@@ -435,18 +437,12 @@ AS
  *
  * Safe to re-run — staging+MERGE makes it idempotent.
  */
-export async function runBackfill(): Promise<void> {
+export async function runBackfill(contractsFilter?: string[]): Promise<void> {
   const unknowns = new UnknownCollector();
   const today = todayUtc();
 
-  const jobs: Array<{ cfg: ContractConfig; net: NetworkConfig }> = [];
-  for (const cfg of CONTRACT_CONFIGS) {
-    for (const net of cfg.networks) {
-      jobs.push({ cfg, net });
-    }
-  }
-
-  await pMapLimit(jobs, CONFIG.FETCH_CONCURRENCY, async ({ cfg, net }) => {
+  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+    const net = binding.network;
     try {
       await markIngestionStatus({
         networkName: net.name,
@@ -457,9 +453,9 @@ export async function runBackfill(): Promise<void> {
       });
 
       const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
-      const startBlock = lastBlock > 0 ? lastBlock + 1 : net.firstBlock;
+      const startBlock = lastBlock > 0 ? lastBlock + 1 : binding.firstBlock;
       const tip = await getChainTip(net);
-      const safeTip = Math.max(net.firstBlock, tip - net.finalityBlocks);
+      const safeTip = Math.max(binding.firstBlock, tip - net.finalityBlocks);
 
       if (startBlock > safeTip) {
         log.info(
@@ -476,9 +472,7 @@ export async function runBackfill(): Promise<void> {
         return;
       }
 
-      log.info(
-        `[${net.name}] ${cfg.tableId} backfill: ${startBlock}..${safeTip}`
-      );
+      log.info(`[${net.name}] ${cfg.tableId} backfill: ${startBlock}..${safeTip}`);
       const loaded = await ingestRange(cfg, net, startBlock, safeTip, unknowns);
 
       const finalLast = await getLastBlockInBQ(cfg.tableId, net.name);
@@ -529,18 +523,12 @@ export async function runBackfill(): Promise<void> {
  *   6. Re-verify repaired ranges
  *   7. Mark status = complete (or failed)
  */
-export async function runDaily(): Promise<void> {
+export async function runDaily(contractsFilter?: string[]): Promise<void> {
   const unknowns = new UnknownCollector();
   const today = todayUtc();
 
-  const jobs: Array<{ cfg: ContractConfig; net: NetworkConfig }> = [];
-  for (const cfg of CONTRACT_CONFIGS) {
-    for (const net of cfg.networks) {
-      jobs.push({ cfg, net });
-    }
-  }
-
-  await pMapLimit(jobs, CONFIG.FETCH_CONCURRENCY, async ({ cfg, net }) => {
+  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+    const net = binding.network;
     try {
       await markIngestionStatus({
         networkName: net.name,
@@ -550,7 +538,7 @@ export async function runDaily(): Promise<void> {
         runId: RUN_ID,
       });
 
-      const toBlock = await resolveDailyToBlock(net);
+      const toBlock = await resolveDailyToBlock(net, binding.firstBlock);
       if (toBlock < 0) {
         await markIngestionStatus({
           networkName: net.name,
@@ -563,7 +551,7 @@ export async function runDaily(): Promise<void> {
       }
 
       const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
-      const startBlock = lastBlock > 0 ? lastBlock + 1 : net.firstBlock;
+      const startBlock = lastBlock > 0 ? lastBlock + 1 : binding.firstBlock;
 
       let loaded = 0;
       if (startBlock > toBlock) {
@@ -587,7 +575,7 @@ export async function runDaily(): Promise<void> {
           net,
           CONFIG.VERIFY_WINDOW_DAYS
         );
-        const verifyFrom = Math.max(net.firstBlock, newLast - windowBlocks);
+        const verifyFrom = Math.max(binding.firstBlock, newLast - windowBlocks);
 
         // Skip verify entirely if no new rows were ingested and the
         // checkpoint already covers the verify window — nothing changed.
@@ -672,45 +660,54 @@ export async function runDaily(): Promise<void> {
 }
 
 /**
- * Rough conversion from days to blocks, used to size the verify window.
- * These are deliberately loose upper bounds — verify is cheap (metadata
- * only) so over-verifying is fine; under-verifying misses reorgs.
+ * Rough conversion from days to blocks, sized from NetworkConfig.blocksPerDay
+ * with a 2x safety factor. Over-verifying is cheaper than under-verifying.
  */
 function estimateBlocksForDays(network: NetworkConfig, days: number): number {
-  // Very conservative: assume 1 block per second as an upper bound.
-  // That's ~86400 blocks/day — more than any chain produces in practice.
-  // Tune via CHAIN_BLOCKS_PER_DAY env if more precision needed.
-  const perDay =
-    network.name === "CELO" ? 17_500 : network.name === "XDC" ? 8_640 : 86_400;
-  return perDay * days * 2; // 2x safety factor
+  return network.blocksPerDay * days * 2;
 }
 
 function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Returns all active (cfg, binding) pairs across all enabled contracts. */
+function activeJobs(
+  contractsFilter?: string[]
+): Array<{ cfg: ContractConfig; binding: ContractNetworkBinding }> {
+  const jobs: Array<{ cfg: ContractConfig; binding: ContractNetworkBinding }> = [];
+  for (const cfg of CONTRACT_CONFIGS) {
+    if (cfg.enabled === false) continue;
+    if (contractsFilter && contractsFilter.length > 0) {
+      const matchesId = contractsFilter.includes(cfg.tableId);
+      const matchesTag = contractsFilter.some(
+        (f) => f.startsWith("tag:") && (cfg.tags ?? []).includes(f.slice(4))
+      );
+      if (!matchesId && !matchesTag) continue;
+    }
+    for (const binding of cfg.networkBindings) {
+      if (binding.enabled === false) continue;
+      jobs.push({ cfg, binding });
+    }
+  }
+  return jobs;
+}
+
 // ----------------------------------------------------------------------------
 // MODE: VERIFY (read-only)
 // ----------------------------------------------------------------------------
 
-export async function runVerify(): Promise<void> {
-  const jobs: Array<{ cfg: ContractConfig; net: NetworkConfig }> = [];
-  for (const cfg of CONTRACT_CONFIGS) {
-    for (const net of cfg.networks) {
-      jobs.push({ cfg, net });
-    }
-  }
-
-  await pMapLimit(jobs, CONFIG.FETCH_CONCURRENCY, async ({ cfg, net }) => {
+export async function runVerify(contractsFilter?: string[]): Promise<void> {
+  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+    const net = binding.network;
     const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
     if (lastBlock === 0) {
       log.info(`[${net.name}] ${cfg.tableId}: no data to verify`);
       return;
     }
 
-    // Start from the last verified checkpoint to skip already-clean history.
     const checkpoint = await getVerifyCheckpoint(cfg.tableId, net.name);
-    const verifyFrom = Math.max(net.firstBlock, checkpoint);
+    const verifyFrom = Math.max(binding.firstBlock, checkpoint);
 
     const mismatches = await verifyBlockRange(cfg, net, verifyFrom, lastBlock);
     if (mismatches.length === 0) {
@@ -723,29 +720,22 @@ export async function runVerify(): Promise<void> {
 // MODE: REPAIR
 // ----------------------------------------------------------------------------
 
-export async function runRepair(): Promise<void> {
+export async function runRepair(contractsFilter?: string[]): Promise<void> {
   const unknowns = new UnknownCollector();
-
-  const jobs: Array<{ cfg: ContractConfig; net: NetworkConfig }> = [];
-  for (const cfg of CONTRACT_CONFIGS) {
-    for (const net of cfg.networks) {
-      jobs.push({ cfg, net });
-    }
-  }
 
   // Parallel reads, but writes inside repairRanges are serialised per table
   // via withTableLock — so parallel repair is safe.
-  await pMapLimit(jobs, CONFIG.FETCH_CONCURRENCY, async ({ cfg, net }) => {
+  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+    const net = binding.network;
     const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
     if (lastBlock === 0) return;
 
     const checkpoint = await getVerifyCheckpoint(cfg.tableId, net.name);
-    const verifyFrom = Math.max(net.firstBlock, checkpoint);
+    const verifyFrom = Math.max(binding.firstBlock, checkpoint);
 
     const mismatches = await verifyBlockRange(cfg, net, verifyFrom, lastBlock);
     if (mismatches.length > 0) {
       await repairRanges(cfg, net, mismatches, unknowns);
-      // Verify again after repair; only advance checkpoint on a clean pass.
       const stillBroken = await verifyBlockRange(cfg, net, verifyFrom, lastBlock);
       if (stillBroken.length === 0) {
         await advanceVerifyCheckpoint(cfg.tableId, net.name, lastBlock, RUN_ID);
@@ -762,12 +752,10 @@ export async function runRepair(): Promise<void> {
 // MODE: DEDUP
 // ----------------------------------------------------------------------------
 
-export async function runDedup(): Promise<void> {
-  // Sequential across (contract, network) pairs. Dedup is a rewrite.
-  for (const cfg of CONTRACT_CONFIGS) {
-    for (const net of cfg.networks) {
-      await dedupNetwork(cfg, net.name);
-    }
+export async function runDedup(contractsFilter?: string[]): Promise<void> {
+  // Sequential across (contract, network) pairs. Dedup is a whole-table rewrite.
+  for (const { cfg, binding } of activeJobs(contractsFilter)) {
+    await dedupNetwork(cfg, binding.network.name);
   }
 }
 
@@ -778,6 +766,7 @@ export async function runDedup(): Promise<void> {
 export async function ensureAllTables(): Promise<void> {
   await ensureInfrastructureTables();
   for (const cfg of CONTRACT_CONFIGS) {
+    if (cfg.enabled === false) continue;
     await ensureTableExists(cfg);
   }
 }
@@ -788,20 +777,15 @@ export async function ensureAllTables(): Promise<void> {
 
 export async function logFinalSummary(): Promise<void> {
   log.info("--- Final Counts ---");
-  for (const cfg of CONTRACT_CONFIGS) {
-    for (const net of cfg.networks) {
-      try {
-        const count = await getRowCount(cfg.tableId, net.name);
-        const last = await getLastBlockInBQ(cfg.tableId, net.name);
-        log.info(
-          `[${net.name}] ${cfg.tableId}: ${count} events (last_block=${last})`
-        );
-      } catch (e: any) {
-        log.warn(
-          `[${net.name}] ${cfg.tableId}: could not fetch summary`,
-          { error: e?.message }
-        );
-      }
+  for (const { cfg, binding } of activeJobs()) {
+    const net = binding.network;
+    try {
+      const last = await getLastBlockInBQ(cfg.tableId, net.name);
+      log.info(`[${net.name}] ${cfg.tableId}: last_block=${last}`);
+    } catch (e: any) {
+      log.warn(`[${net.name}] ${cfg.tableId}: could not fetch summary`, {
+        error: e?.message,
+      });
     }
   }
 }

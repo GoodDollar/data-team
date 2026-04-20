@@ -105,14 +105,26 @@ export interface NetworkConfig {
   url: string;
   /** Human-readable network name, used as the `network` column value */
   name: string;
-  /** Block number just before the first known event on this network */
-  firstBlock: number;
   /**
    * Finality safety margin. We never ingest closer to the chain tip than
    * this many blocks, to avoid ingesting data that could be reorged out.
    * Tune per chain's finality characteristics.
    */
   finalityBlocks: number;
+  /**
+   * Rough upper bound on blocks produced per day. Used for verify window
+   * sizing. Only needs to be accurate within 2x.
+   */
+  blocksPerDay: number;
+}
+
+/** Binds a network to a contract with a per-(contract, network) firstBlock. */
+export interface ContractNetworkBinding {
+  network: NetworkConfig;
+  /** Block number just before the first known event for this contract on this network. */
+  firstBlock: number;
+  /** Set to false to skip this (contract, network) pair without removing the config. */
+  enabled?: boolean;
 }
 
 export interface ContractConfig {
@@ -120,7 +132,12 @@ export interface ContractConfig {
   schema: Array<{ name: string; type: string }>;
   abi: readonly any[];
   contracts: string[];
-  networks: NetworkConfig[];
+  /** Per-(contract, network) bindings replacing the old flat `networks` array. */
+  networkBindings: ContractNetworkBinding[];
+  /** Set to false to disable this contract across all networks. */
+  enabled?: boolean;
+  /** Optional tags for grouping filter (e.g. "invites", "ubi"). */
+  tags?: string[];
   /**
    * Converts a decoded event log into a flat object matching the BigQuery
    * schema. Return null to skip an event that decoded but isn't relevant.
@@ -142,27 +159,25 @@ export interface ContractConfig {
 // NETWORKS
 // ----------------------------------------------------------------------------
 
-// CELO: post-L2 uses Ethereum finality; 64 blocks is a safe margin.
-// XDC: Delegated PoS, near-instant finality; 15 blocks is plenty.
-const CELO_NETWORK: NetworkConfig = {
-  url: "https://celo.hypersync.xyz",
-  name: "CELO",
-  firstBlock: 18_006_679, // UBIScheme deployment block
-  finalityBlocks: 64,
-};
-
-const XDC_NETWORK: NetworkConfig = {
-  url: "https://xdc.hypersync.xyz",
-  name: "XDC",
-  firstBlock: 95_249_624, // UBIScheme deployment block
-  finalityBlocks: 15,
-};
-
-const FUSE_NETWORK: NetworkConfig = {
-  url: "https://fuse.hypersync.xyz",
-  name: "FUSE",
-  firstBlock: 15_747_401, // UBIScheme deployment block
-  finalityBlocks: 20,
+export const NETWORKS: Record<string, NetworkConfig> = {
+  CELO: {
+    url: "https://celo.hypersync.xyz",
+    name: "CELO",
+    finalityBlocks: 64,
+    blocksPerDay: 17_500,
+  },
+  XDC: {
+    url: "https://xdc.hypersync.xyz",
+    name: "XDC",
+    finalityBlocks: 15,
+    blocksPerDay: 8_640,
+  },
+  FUSE: {
+    url: "https://fuse.hypersync.xyz",
+    name: "FUSE",
+    finalityBlocks: 20,
+    blocksPerDay: 86_400,
+  },
 };
 
 // ----------------------------------------------------------------------------
@@ -171,6 +186,7 @@ const FUSE_NETWORK: NetworkConfig = {
 
 const INVITE_CONFIG: ContractConfig = {
   tableId: "InviteContractEvents",
+  tags: ["invites"],
   schema: [
     { name: "network", type: "STRING" },
     { name: "block_number", type: "INTEGER" },
@@ -212,7 +228,10 @@ const INVITE_CONFIG: ContractConfig = {
     "0x6bd698566632bf2e81e2278f1656CB24aAF06D2e",
     "0x36829D1Cda92FFF5782d5d48991620664FC857d3",
   ],
-  networks: [CELO_NETWORK, XDC_NETWORK],
+  networkBindings: [
+    { network: NETWORKS.CELO, firstBlock: 18_483_200 },
+    { network: NETWORKS.XDC, firstBlock: 100_412_600 },
+  ],
   decodeToRow: (decoded, log, networkName) => ({
     network: networkName,
     block_number: log.blockNumber,
@@ -231,6 +250,7 @@ const INVITE_CONFIG: ContractConfig = {
 
 const CLAIM_CONFIG: ContractConfig = {
   tableId: "ClaimContractEvents",
+  tags: ["ubi"],
   schema: [
     { name: "network", type: "STRING" },
     { name: "block_number", type: "INTEGER" },
@@ -258,7 +278,11 @@ const CLAIM_CONFIG: ContractConfig = {
     "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1", // Celo
     "0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf", // XDC
   ],
-  networks: [FUSE_NETWORK, CELO_NETWORK, XDC_NETWORK],
+  networkBindings: [
+    { network: NETWORKS.FUSE, firstBlock: 15_747_401 },
+    { network: NETWORKS.CELO, firstBlock: 18_006_679 },
+    { network: NETWORKS.XDC, firstBlock: 95_249_624 },
+  ],
   decodeToRow: (decoded, log, networkName) => ({
     network: networkName,
     block_number: log.blockNumber,
@@ -286,6 +310,12 @@ export function fullTableName(tableId: string): string {
   return `\`${CONFIG.GCP_PROJECT_ID}.${CONFIG.DATASET_ID}.${tableId}\``;
 }
 
+export function stagingTableName(tableId: string, runId: string): string {
+  // Underscores + short run id suffix; BQ table names cap at 1024 chars
+  // and we want these easy to spot and clean up.
+  return `_staging_${tableId}_${runId}`;
+}
+
 /**
  * Returns the set of topic0 hashes (as lowercase 0x-prefixed strings) for
  * all events declared in this contract's ABI. Used by verify paths to
@@ -295,10 +325,4 @@ export function knownTopic0sFor(cfg: ContractConfig): string[] {
   return cfg.abi
     .filter((item: any) => item.type === "event")
     .map((item: any) => toEventSelector(item).toLowerCase());
-}
-
-export function stagingTableName(tableId: string, runId: string): string {
-  // Underscores + short run id suffix; BQ table names cap at 1024 chars
-  // and we want these easy to spot and clean up.
-  return `_staging_${tableId}_${runId}`;
 }
