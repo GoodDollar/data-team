@@ -1,0 +1,142 @@
+/**
+ * ============================================================================
+ * index.ts — CLI entry point
+ * ============================================================================
+ *
+ * USAGE:
+ *   npx tsx src/index.ts backfill   Full historical load (idempotent)
+ *   npx tsx src/index.ts daily      Cron path: ingest + verify + repair
+ *   npx tsx src/index.ts verify     Integrity check, read-only
+ *   npx tsx src/index.ts repair     Verify and fix mismatches
+ *   npx tsx src/index.ts dedup      Utility: safety-net deduplication
+ *
+ * Acquires a named lock at start and releases on exit (including abort).
+ * Prevents concurrent runs from racing on the same tables.
+ * ============================================================================
+ */
+
+import { hostname } from "os";
+import { CONFIG, CONTRACT_CONFIGS } from "./config";
+import { log, RUN_ID } from "./log";
+import {
+  runBackfill,
+  runDaily,
+  runVerify,
+  runRepair,
+  runDedup,
+  ensureAllTables,
+  logFinalSummary,
+  acquireLock,
+  releaseLock,
+} from "./pipeline";
+
+const VALID_MODES = ["daily", "append", "backfill", "verify", "repair", "dedup"] as const;
+type Mode = (typeof VALID_MODES)[number];
+
+const LOCK_NAME = "pipeline:main";
+const LOCK_HOLDER = `${hostname()}:${process.pid}:${RUN_ID}`;
+
+async function main() {
+  const modeArg = (process.argv[2] || "daily") as Mode;
+  const runStart = Date.now();
+
+  log.info("Pipeline run starting", {
+    mode: modeArg,
+    project: CONFIG.GCP_PROJECT_ID,
+    dataset: CONFIG.DATASET_ID,
+    contracts: CONTRACT_CONFIGS.map((c) => c.tableId),
+    lock_holder: LOCK_HOLDER,
+  });
+
+  if (!VALID_MODES.includes(modeArg as Mode)) {
+    log.fatal(`Unknown mode: "${modeArg}"`, { validModes: VALID_MODES });
+    process.exit(1);
+  }
+
+  // Ensure infrastructure tables first — needed for lock acquisition
+  try {
+    await ensureAllTables();
+  } catch (e: any) {
+    log.fatal("Failed to ensure tables exist", { error: e?.message });
+    process.exit(1);
+  }
+
+  // Acquire lock. Verify mode is read-only, so it can skip the lock.
+  const needsLock = modeArg !== "verify";
+  let lockAcquired = false;
+
+  if (needsLock) {
+    lockAcquired = await acquireLock(LOCK_NAME, LOCK_HOLDER, CONFIG.LOCK_TTL_MS);
+    if (!lockAcquired) {
+      log.fatal(
+        `Could not acquire lock ${LOCK_NAME}; another run is in progress`
+      );
+      process.exit(2);
+    }
+    log.info(`Acquired lock ${LOCK_NAME}`, { holder: LOCK_HOLDER });
+  }
+
+  // Release on any exit path
+  const release = async () => {
+    if (lockAcquired) {
+      try {
+        await releaseLock(LOCK_NAME, LOCK_HOLDER);
+        log.info(`Released lock ${LOCK_NAME}`);
+      } catch (e: any) {
+        log.warn(`Failed to release lock ${LOCK_NAME}`, { error: e?.message });
+      }
+    }
+  };
+
+  const onSignal = async (signal: string) => {
+    log.warn(`Received ${signal}; releasing lock and exiting`);
+    await release();
+    process.exit(130);
+  };
+  process.on("SIGINT", () => onSignal("SIGINT"));
+  process.on("SIGTERM", () => onSignal("SIGTERM"));
+
+  let exitCode = 0;
+
+  try {
+    const mode = modeArg === "append" ? "daily" : modeArg;
+    switch (mode) {
+      case "backfill":
+        await runBackfill();
+        break;
+      case "daily":
+        await runDaily();
+        break;
+      case "verify":
+        await runVerify();
+        break;
+      case "repair":
+        await runRepair();
+        break;
+      case "dedup":
+        await runDedup();
+        break;
+    }
+
+    await logFinalSummary();
+  } catch (e: any) {
+    log.fatal(`Run failed: ${e?.message}`, { stack: e?.stack });
+    exitCode = 1;
+  } finally {
+    await release();
+  }
+
+  const elapsed = ((Date.now() - runStart) / 1000).toFixed(1);
+  log.info(`Pipeline complete in ${elapsed}s`, { exit_code: exitCode });
+  process.exit(exitCode);
+}
+
+main().catch(async (e) => {
+  log.fatal(`Unhandled error: ${e?.message}`, { stack: e?.stack });
+  try {
+    await releaseLock(LOCK_NAME, LOCK_HOLDER);
+  } catch {
+    // best-effort
+  }
+  process.exit(1);
+});

@@ -1,0 +1,28 @@
+{
+  "name": "gooddollar-event-pipeline",
+  "version": "3.0.0",
+  "description": "Blockchain event ingestion pipeline for BigQuery (v3: staging+MERGE, partitioned tables, reorg-safe, completeness tracking)",
+  "type": "commonjs",
+  "scripts": {
+    "daily": "tsx src/index.ts daily",
+    "backfill": "tsx src/index.ts backfill",
+    "verify": "tsx src/index.ts verify",
+    "repair": "tsx src/index.ts repair",
+    "dedup": "tsx src/index.ts dedup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@envio-dev/hypersync-client": "0.6.3",
+    "@google-cloud/bigquery": "^7.9.0",
+    "dotenv": "^16.4.5",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
