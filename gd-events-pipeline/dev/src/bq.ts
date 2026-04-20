@@ -21,9 +21,7 @@
  */
 
 import { BigQuery } from "@google-cloud/bigquery";
-import { writeFileSync, unlinkSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { Readable } from "stream";
 import { randomUUID } from "crypto";
 import {
   CONFIG,
@@ -415,11 +413,10 @@ function productionMergeUpdateClause(tableId: string): string {
 }
 
 /**
- * Single load job: write NDJSON to temp file, load to target table with
- * the given disposition, clean up temp file.
+ * Stream NDJSON directly into a BigQuery load job — no temp files on disk.
  *
- * Retries on transient load-job errors. Permanent errors (schema
- * mismatch) surface immediately.
+ * Retries on transient errors by creating a fresh Readable for each attempt
+ * (streams cannot be re-read). Permanent errors surface immediately.
  */
 async function loadChunkToTable(
   rows: DecodedRow[],
@@ -428,60 +425,52 @@ async function loadChunkToTable(
 ): Promise<void> {
   if (rows.length === 0) return;
 
-  const unique = randomUUID();
-  const tmpFile = join(tmpdir(), `bq_load_${tableId}_${unique}.json`);
+  const tbl = bigquery
+    .dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID })
+    .table(tableId);
 
-  try {
-    const ndjson = rows.map((r) => JSON.stringify(r, bigintReplacer)).join("\n");
-    writeFileSync(tmpFile, ndjson, "utf-8");
+  let lastErr: any;
+  for (let attempt = 1; attempt <= CONFIG.LOAD_RETRIES; attempt++) {
+    try {
+      // Build NDJSON string once; create a fresh Readable per attempt.
+      const ndjson = rows.map((r) => JSON.stringify(r, bigintReplacer)).join("\n") + "\n";
 
-    const tbl = bigquery
-      .dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID })
-      .table(tableId);
-
-    let lastErr: any;
-    for (let attempt = 1; attempt <= CONFIG.LOAD_RETRIES; attempt++) {
-      try {
-        const [job] = await tbl.load(tmpFile, {
+      const [job] = await new Promise<[any]>((resolve, reject) => {
+        const source = Readable.from([ndjson]);
+        const writeStream = tbl.createWriteStream({
           sourceFormat: "NEWLINE_DELIMITED_JSON",
           writeDisposition: writeMode,
-          autodetect: writeMode === "WRITE_TRUNCATE", // staging table: detect schema on first load
+          autodetect: writeMode === "WRITE_TRUNCATE",
           createDisposition: "CREATE_IF_NEEDED",
         });
+        source
+          .pipe(writeStream)
+          .on("error", reject)
+          .on("job", (j: any) => resolve([j]));
+      });
 
-        const errors = job.status?.errors;
-        if (errors && errors.length > 0) {
-          throw new Error(
-            `Load job errors: ${errors.map((e: any) => e.message).join("; ")}`
-          );
-        }
-        return;
-      } catch (e: any) {
-        lastErr = e;
-        if (!isRetriableBQError(e) || attempt === CONFIG.LOAD_RETRIES) {
-          log.error("Load job failed", {
-            tableId,
-            attempt,
-            error: e?.message,
-          });
-          throw e;
-        }
-        const waitMs = 5_000 * attempt;
-        log.warn(
-          `Load retry ${attempt}/${CONFIG.LOAD_RETRIES} in ${waitMs}ms`,
-          { tableId, error: e?.message }
+      const errors = job.status?.errors;
+      if (errors && errors.length > 0) {
+        throw new Error(
+          `Load job errors: ${errors.map((e: any) => e.message).join("; ")}`
         );
-        await sleep(waitMs);
       }
-    }
-    throw lastErr;
-  } finally {
-    try {
-      unlinkSync(tmpFile);
-    } catch {
-      // temp file cleanup failures are not critical
+      return;
+    } catch (e: any) {
+      lastErr = e;
+      if (!isRetriableBQError(e) || attempt === CONFIG.LOAD_RETRIES) {
+        log.error("Load job failed", { tableId, attempt, error: e?.message });
+        throw e;
+      }
+      const waitMs = 5_000 * attempt;
+      log.warn(`Load retry ${attempt}/${CONFIG.LOAD_RETRIES} in ${waitMs}ms`, {
+        tableId,
+        error: e?.message,
+      });
+      await sleep(waitMs);
     }
   }
+  throw lastErr;
 }
 
 /**
