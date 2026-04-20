@@ -32,6 +32,7 @@ import {
   knownTopic0sFor,
 } from "./config";
 import { log, RUN_ID } from "./log";
+import { MAX_CHUNK_ROWS_HARD_CAP } from "./constants";
 import {
   streamDecodedEvents,
   fetchDecodedEvents,
@@ -193,10 +194,16 @@ async function resolveDailyToBlock(
 /**
  * Consume a row stream and emit chunks that:
  *   - contain approximately `target` rows, AND
- *   - never split a single block across two chunks
+ *   - never split a single block across two chunks (block-aligned invariant)
  *
- * When we exceed the target mid-block, we keep accumulating that block's
- * rows and emit the chunk at the next block boundary.
+ * When the soft target is exceeded mid-block, rows keep accumulating until
+ * the next block boundary. MAX_CHUNK_ROWS_HARD_CAP is a safety valve for
+ * pathological blocks: it emits a partial chunk but continues collecting the
+ * same block's remaining rows before advancing, so the resume-point invariant
+ * (MAX(block_number)+1 is safe) is preserved within a run.
+ *
+ * Hard-cap splits are extraordinarily rare for our contracts. Logging at WARN
+ * when they fire makes them easy to spot.
  */
 async function* blockAlignedChunks(
   source: AsyncIterable<DecodedRow>,
@@ -204,20 +211,43 @@ async function* blockAlignedChunks(
 ): AsyncGenerator<DecodedRow[], void, unknown> {
   let buffer: DecodedRow[] = [];
   let currentBlock: number | null = null;
+  let hardCapFired = false;
 
   for await (const row of source) {
     const blk = Number(row.block_number);
     if (currentBlock === null) currentBlock = blk;
 
     if (blk !== currentBlock) {
-      // Block boundary crossed. Flush if we're at or past target.
-      if (buffer.length >= target) {
+      // Block boundary crossed.
+      if (hardCapFired) {
+        // We were mid-block when the cap fired. Now that the block has ended,
+        // emit any remaining rows before moving on.
+        if (buffer.length > 0) {
+          yield buffer;
+          buffer = [];
+        }
+        hardCapFired = false;
+      } else if (buffer.length >= target) {
         yield buffer;
         buffer = [];
       }
       currentBlock = blk;
     }
+
     buffer.push(row);
+
+    // Hard cap: emit immediately if buffer exceeds limit, even mid-block.
+    // Continue collecting this block's remaining rows before advancing,
+    // so the resume-point invariant is preserved within the run.
+    if (!hardCapFired && buffer.length >= MAX_CHUNK_ROWS_HARD_CAP) {
+      log.warn("Chunker hard cap fired mid-block; emitting partial chunk", {
+        blockNumber: currentBlock,
+        bufferSize: buffer.length,
+      });
+      yield buffer;
+      buffer = [];
+      hardCapFired = true; // still collecting the rest of currentBlock
+    }
   }
 
   if (buffer.length > 0) {
@@ -476,15 +506,16 @@ export async function runBackfill(contractsFilter?: string[]): Promise<void> {
       const loaded = await ingestRange(cfg, net, startBlock, safeTip, unknowns);
 
       const finalLast = await getLastBlockInBQ(cfg.tableId, net.name);
-      const rowCount = await getRowCount(cfg.tableId, net.name);
 
+      // row_count = rows merged this run (delta), not total table rows.
+      // Avoids a full-table COUNT(*) scan per (contract, network).
       await markIngestionStatus({
         networkName: net.name,
         tableId: cfg.tableId,
         date: today,
         status: "complete",
         lastBlock: finalLast,
-        rowCount,
+        rowCount: loaded,
         runId: RUN_ID,
       });
 
@@ -627,14 +658,14 @@ export async function runDaily(contractsFilter?: string[]): Promise<void> {
       }
 
       const finalLast = await getLastBlockInBQ(cfg.tableId, net.name);
-      const rowCount = await getRowCount(cfg.tableId, net.name);
+      // row_count = rows merged this run (delta), not total table rows.
       await markIngestionStatus({
         networkName: net.name,
         tableId: cfg.tableId,
         date: today,
         status: "complete",
         lastBlock: finalLast,
-        rowCount,
+        rowCount: loaded,
         runId: RUN_ID,
       });
     } catch (e: any) {
