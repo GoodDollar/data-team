@@ -9,10 +9,14 @@
  *
  * Every log line carries the run_id so a whole run's timeline can be
  * reconstructed with a single grep.
+ *
+ * File writes are async via a write stream (not appendFileSync) so they
+ * never block the event loop. Call flushLogs() before process.exit to
+ * drain the stream buffer.
  * ============================================================================
  */
 
-import { appendFileSync } from "fs";
+import { createWriteStream, WriteStream } from "fs";
 import { randomUUID } from "crypto";
 import { CONFIG } from "./config";
 
@@ -39,6 +43,24 @@ const MIN_LEVEL = LEVEL_ORDER[configuredLevel];
 
 /** Unique id for this process run. Threads through every log line. */
 export const RUN_ID = randomUUID().slice(0, 8);
+
+// Buffered async write stream — never blocks the event loop.
+const logStream: WriteStream = createWriteStream(CONFIG.LOG_FILE, { flags: "a" });
+logStream.on("error", (err) => {
+  // Never recurse into our own logger on stream errors.
+  process.stderr.write(`[log.ts] Write stream error: ${err.message}\n`);
+});
+
+/**
+ * Drain the log write stream. Call before process.exit so buffered lines
+ * are not lost on shutdown.
+ */
+export function flushLogs(): Promise<void> {
+  return new Promise((resolve) => {
+    // end() flushes remaining data, then closes the stream.
+    logStream.end(resolve);
+  });
+}
 
 /**
  * JSON.stringify replacer that handles BigInts and circular references.
@@ -93,11 +115,8 @@ function emit(
   // eslint-disable-next-line no-console
   console.log(`[${ts}] [${level}] [${RUN_ID}] ${msg}`);
 
-  try {
-    appendFileSync(CONFIG.LOG_FILE, jsonLine + "\n");
-  } catch {
-    // Never crash on log-file write failures
-  }
+  // Async write — never blocks. Errors handled by stream error listener.
+  logStream.write(jsonLine + "\n");
 }
 
 export const log = {

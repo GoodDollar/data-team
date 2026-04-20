@@ -17,7 +17,7 @@
 
 import { hostname } from "os";
 import { CONFIG, CONTRACT_CONFIGS } from "./config";
-import { log, RUN_ID } from "./log";
+import { log, RUN_ID, flushLogs } from "./log";
 import {
   runBackfill,
   runDaily,
@@ -91,6 +91,7 @@ async function main() {
   const onSignal = async (signal: string) => {
     log.warn(`Received ${signal}; releasing lock and exiting`);
     await release();
+    await flushLogs();
     process.exit(130);
   };
   process.on("SIGINT", () => onSignal("SIGINT"));
@@ -128,6 +129,7 @@ async function main() {
 
   const elapsed = ((Date.now() - runStart) / 1000).toFixed(1);
   log.info(`Pipeline complete in ${elapsed}s`, { exit_code: exitCode });
+  await flushLogs();
   process.exit(exitCode);
 }
 
@@ -138,5 +140,6 @@ main().catch(async (e) => {
   } catch {
     // best-effort
   }
+  await flushLogs();
   process.exit(1);
 });
