@@ -151,6 +151,15 @@ export async function ensureTableExists(cfg: ContractConfig): Promise<void> {
 }
 
 /**
+ * Returns the exact PARTITION BY / CLUSTER BY fragment used in
+ * CREATE OR REPLACE TABLE statements. Centralised here so dedupNetwork
+ * and buildCreateTableDDL never drift out of sync.
+ */
+export function partitionAndClusterClauseFor(_tableId: string): string {
+  return `PARTITION BY RANGE_BUCKET(block_number, GENERATE_ARRAY(0, 500000000, 1000000))\nCLUSTER BY network, contract_address, event_name`;
+}
+
+/**
  * Emit the CREATE TABLE DDL that matches what ensureTableExists expects.
  * Useful for new-contract onboarding and for documentation.
  */
@@ -161,8 +170,7 @@ export function buildCreateTableDDL(cfg: ContractConfig): string {
   return `CREATE TABLE ${fullTableName(cfg.tableId)} (
 ${cols}
 )
-PARTITION BY RANGE_BUCKET(block_number, GENERATE_ARRAY(0, 500000000, 1000000))
-CLUSTER BY network, contract_address, event_name;`;
+${partitionAndClusterClauseFor(cfg.tableId)};`;
 }
 
 // ----------------------------------------------------------------------------
@@ -269,6 +277,26 @@ export async function getRowCount(
   const rows = await bqQuery(
     `SELECT COUNT(*) AS cnt FROM ${fullTableName(tableId)} WHERE network = @network`,
     { network: networkName }
+  );
+  return Number(rows[0]?.cnt ?? 0);
+}
+
+/**
+ * Count unknown events recorded in the UnknownEvents table for a
+ * (network, block range). Used to reconcile verify mismatches caused
+ * by events we cannot decode.
+ */
+export async function countUnknownEventsInRange(
+  networkName: string,
+  fromBlock: number,
+  toBlock: number
+): Promise<number> {
+  const rows = await bqQuery(
+    `SELECT COUNT(*) AS cnt FROM ${fullTableName(CONFIG.UNKNOWN_EVENTS_TABLE)}
+     WHERE network = @network
+       AND block_number >= @from
+       AND block_number < @to`,
+    { network: networkName, from: fromBlock, to: toBlock }
   );
   return Number(rows[0]?.cnt ?? 0);
 }
@@ -564,7 +592,11 @@ export async function markIngestionStatus(
   const statusTable = fullTableName(CONFIG.INGESTION_STATUS_TABLE);
   const now = new Date().toISOString();
 
-  // Upsert on (network, table_id, ingestion_date)
+  // started_at semantic: set once on INSERT (first call, typically status=pending),
+  // never overwritten on UPDATE. The WHEN MATCHED clause intentionally omits
+  // started_at so subsequent calls (status=complete/failed) preserve the original
+  // start time. If a run retries after failure the started_at reflects the retry
+  // start, which is acceptable — the new run is a fresh attempt.
   await bqQuery(
     `
     MERGE ${statusTable} AS T

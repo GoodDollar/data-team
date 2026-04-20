@@ -28,6 +28,7 @@ import {
   ContractConfig,
   NetworkConfig,
   fullTableName,
+  knownTopic0sFor,
 } from "./config";
 import { log, RUN_ID } from "./log";
 import {
@@ -52,6 +53,8 @@ import {
   markIngestionStatus,
   acquireLock,
   releaseLock,
+  partitionAndClusterClauseFor,
+  countUnknownEventsInRange,
 } from "./bq";
 
 // ----------------------------------------------------------------------------
@@ -293,6 +296,10 @@ async function verifyBlockRange(
     `[${network.name}] Verifying ${cfg.tableId} blocks ${fromBlock}..${toBlock}`
   );
 
+  // Only count logs for events our ABI can decode — prevents false-mismatch
+  // from contract upgrades adding new event types we don't recognise.
+  const knownTopics = knownTopic0sFor(cfg);
+
   for (
     let start = fromBlock;
     start < toBlock;
@@ -302,7 +309,7 @@ async function verifyBlockRange(
 
     const [ourCount, chainCount] = await Promise.all([
       countBlockRange(cfg.tableId, network.name, start, end),
-      countLogs(cfg, network, start, end),
+      countLogs(cfg, network, start, end, knownTopics),
     ]);
 
     if (ourCount !== chainCount) {
@@ -362,8 +369,9 @@ async function repairRanges(
  * shouldn't accumulate. This exists as a utility for recovering from
  * bugs and manual direct writes.
  *
- * Runs a per-network whole-table rewrite filtered by network. Not
- * parallelizable — calling code must serialize across networks.
+ * Uses a single atomic CREATE OR REPLACE TABLE scoped to this network.
+ * Other networks' rows are preserved via UNION ALL. Not parallelizable —
+ * calling code must serialize across networks.
  */
 async function dedupNetwork(
   cfg: ContractConfig,
@@ -374,34 +382,27 @@ async function dedupNetwork(
 
   const before = await getRowCount(cfg.tableId, networkName);
 
-  // Use a transactional-ish rewrite scoped to this network:
-  //   1. Build deduped this-network rows
-  //   2. DELETE this network's rows
-  //   3. INSERT deduped rows
-  // Wrapped in a BQ transaction (BEGIN/COMMIT) so the delete and insert
-  // are atomic together.
-  await bqQuery(`
-    BEGIN TRANSACTION;
-
-    CREATE TEMP TABLE _dedup_net AS
+  const partCluster = partitionAndClusterClauseFor(cfg.tableId);
+  await bqQuery(
+    `CREATE OR REPLACE TABLE ${fullTable}
+${partCluster}
+AS
+  SELECT * FROM (
+    SELECT * FROM ${fullTable}
+    WHERE network != @network
+    UNION ALL
     SELECT * EXCEPT(_rn) FROM (
-      SELECT *,
-        ROW_NUMBER() OVER (
-          PARTITION BY network, block_number, log_index, tx_hash
-          ORDER BY event_name
-        ) AS _rn
+      SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY network, block_number, log_index, tx_hash
+        ORDER BY event_name
+      ) AS _rn
       FROM ${fullTable}
       WHERE network = @network
     )
-    WHERE _rn = 1;
-
-    DELETE FROM ${fullTable} WHERE network = @network;
-
-    INSERT INTO ${fullTable}
-    SELECT * FROM _dedup_net;
-
-    COMMIT TRANSACTION;
-  `, { network: networkName });
+    WHERE _rn = 1
+  )`,
+    { network: networkName }
+  );
 
   const after = await getRowCount(cfg.tableId, networkName);
   const removed = before - after;
@@ -587,9 +588,30 @@ export async function runDaily(): Promise<void> {
             newLast
           );
           if (stillBroken.length > 0) {
-            throw new Error(
-              `${stillBroken.length} ranges still mismatched after repair`
-            );
+            // For each still-broken range check whether the excess is fully
+            // explained by unknown (undecodable) events recorded in
+            // UnknownEvents — if so, this is a contract-upgrade scenario
+            // and not a data-integrity problem.
+            const unexplained: BlockRange[] = [];
+            for (const r of stillBroken) {
+              const decoded = await countBlockRange(cfg.tableId, net.name, r.from, r.to);
+              const unknown = await countUnknownEventsInRange(net.name, r.from, r.to);
+              const totalChain = await countLogs(cfg, net, r.from, r.to);
+              if (decoded + unknown === totalChain) {
+                log.warn(
+                  `[${net.name}] ${cfg.tableId} mismatch in ${r.from}..${r.to} ` +
+                  `fully reconciled by unknown events (decoded=${decoded} unknown=${unknown} chain=${totalChain})`,
+                  { tableId: cfg.tableId }
+                );
+              } else {
+                unexplained.push(r);
+              }
+            }
+            if (unexplained.length > 0) {
+              throw new Error(
+                `${unexplained.length} ranges still mismatched after repair and unknown-event reconciliation`
+              );
+            }
           }
         }
       }
