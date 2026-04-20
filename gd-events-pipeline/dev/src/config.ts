@@ -129,6 +129,7 @@ export interface ContractConfig {
     decoded: { eventName: string; args: any },
     log: {
       blockNumber: number;
+      blockTimestamp: number; // Unix seconds
       transactionHash: string;
       address: string;
       logIndex: number;
@@ -173,6 +174,7 @@ const INVITE_CONFIG: ContractConfig = {
   schema: [
     { name: "network", type: "STRING" },
     { name: "block_number", type: "INTEGER" },
+    { name: "block_timestamp", type: "TIMESTAMP" },
     { name: "log_index", type: "INTEGER" },
     { name: "tx_hash", type: "STRING" },
     { name: "contract_address", type: "STRING" },
@@ -214,6 +216,7 @@ const INVITE_CONFIG: ContractConfig = {
   decodeToRow: (decoded, log, networkName) => ({
     network: networkName,
     block_number: log.blockNumber,
+    block_timestamp: new Date(log.blockTimestamp * 1000).toISOString(),
     log_index: log.logIndex,
     tx_hash: log.transactionHash,
     contract_address: log.address,
@@ -231,6 +234,7 @@ const CLAIM_CONFIG: ContractConfig = {
   schema: [
     { name: "network", type: "STRING" },
     { name: "block_number", type: "INTEGER" },
+    { name: "block_timestamp", type: "TIMESTAMP" },
     { name: "log_index", type: "INTEGER" },
     { name: "tx_hash", type: "STRING" },
     { name: "contract_address", type: "STRING" },
@@ -258,6 +262,7 @@ const CLAIM_CONFIG: ContractConfig = {
   decodeToRow: (decoded, log, networkName) => ({
     network: networkName,
     block_number: log.blockNumber,
+    block_timestamp: new Date(log.blockTimestamp * 1000).toISOString(),
     log_index: log.logIndex,
     tx_hash: log.transactionHash,
     contract_address: log.address,

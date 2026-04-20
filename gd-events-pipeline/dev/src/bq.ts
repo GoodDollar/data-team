@@ -367,6 +367,18 @@ export async function advanceVerifyCheckpoint(
 // STAGING + MERGE (the one true write path)
 // ----------------------------------------------------------------------------
 
+// Schema used for the UnknownEvents staging table in writeUnknownEvents.
+const UNKNOWN_EVENTS_SCHEMA: Array<{ name: string; type: string }> = [
+  { name: "network", type: "STRING" },
+  { name: "block_number", type: "INTEGER" },
+  { name: "log_index", type: "INTEGER" },
+  { name: "tx_hash", type: "STRING" },
+  { name: "contract_address", type: "STRING" },
+  { name: "topic0", type: "STRING" },
+  { name: "raw_data", type: "STRING" },
+  { name: "first_seen", type: "TIMESTAMP" },
+];
+
 /**
  * Load rows into a per-run staging table via atomic load job, then MERGE
  * into the production table on the composite unique key.
@@ -390,6 +402,11 @@ export async function stageAndMerge(
   const stagingRef = fullTableName(stagingId);
   const productionRef = fullTableName(tableId);
 
+  // Look up the schema for this tableId to avoid autodetect on staging loads.
+  const { CONTRACT_CONFIGS } = require("./config") as typeof import("./config");
+  const cfg = CONTRACT_CONFIGS.find((c) => c.tableId === tableId);
+  const schema = cfg?.schema ?? [];
+
   let totalLoaded = 0;
   let firstChunk = true;
 
@@ -399,7 +416,8 @@ export async function stageAndMerge(
       await loadChunkToTable(
         chunk,
         stagingId,
-        firstChunk ? "WRITE_TRUNCATE" : "WRITE_APPEND"
+        firstChunk ? "WRITE_TRUNCATE" : "WRITE_APPEND",
+        schema
       );
       totalLoaded += chunk.length;
       firstChunk = false;
@@ -479,13 +497,15 @@ function productionMergeUpdateClause(tableId: string): string {
 /**
  * Stream NDJSON directly into a BigQuery load job — no temp files on disk.
  *
- * Retries on transient errors by creating a fresh Readable for each attempt
- * (streams cannot be re-read). Permanent errors surface immediately.
+ * Explicit schema avoids autodetect, preventing silent type-inference
+ * surprises on empty staging tables. Retries create a fresh Readable each
+ * time (streams cannot be re-read). Permanent errors surface immediately.
  */
 async function loadChunkToTable(
   rows: DecodedRow[],
   tableId: string,
-  writeMode: "WRITE_APPEND" | "WRITE_TRUNCATE"
+  writeMode: "WRITE_APPEND" | "WRITE_TRUNCATE",
+  schema: Array<{ name: string; type: string }>
 ): Promise<void> {
   if (rows.length === 0) return;
 
@@ -504,7 +524,10 @@ async function loadChunkToTable(
         const writeStream = tbl.createWriteStream({
           sourceFormat: "NEWLINE_DELIMITED_JSON",
           writeDisposition: writeMode,
-          autodetect: writeMode === "WRITE_TRUNCATE",
+          schema: schema.length > 0
+            ? { fields: schema.map((f) => ({ name: f.name, type: f.type })) }
+            : undefined,
+          autodetect: schema.length === 0,
           createDisposition: "CREATE_IF_NEEDED",
         });
         source
@@ -594,7 +617,7 @@ export async function writeUnknownEvents(
   const productionRef = fullTableName(CONFIG.UNKNOWN_EVENTS_TABLE);
 
   try {
-    await loadChunkToTable(rows, stagingId, "WRITE_TRUNCATE");
+    await loadChunkToTable(rows, stagingId, "WRITE_TRUNCATE", UNKNOWN_EVENTS_SCHEMA);
     await bqQuery(`
       MERGE ${productionRef} AS T
       USING ${stagingRef} AS S

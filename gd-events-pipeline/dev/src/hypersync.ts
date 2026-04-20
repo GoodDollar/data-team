@@ -123,6 +123,8 @@ export async function* streamDecodedEvents(
         "Topic2",
         "Topic3",
       ],
+      // Request block timestamps so we can attach them to each decoded row.
+      block: ["Number", "Timestamp"],
     },
   };
 
@@ -133,6 +135,10 @@ export async function* streamDecodedEvents(
   );
 
   let emitted = 0;
+  // Map from block number to Unix-second timestamp. Populated as block data
+  // arrives alongside log data. Cleared after each recv batch — HyperSync
+  // returns all logs for a block in the same recv batch as the block record.
+  const blockTimestamps = new Map<number, number>();
 
   while (true) {
     const res: any = await withHypersyncRetry(
@@ -143,6 +149,18 @@ export async function* streamDecodedEvents(
 
     if (res === null || res === undefined) break;
 
+    // Populate block timestamp map from this batch's blocks.
+    for (const block of (res.data?.blocks ?? [])) {
+      const num = Number(block.number ?? block.Number);
+      const rawTs = block.timestamp ?? block.Timestamp;
+      const ts = typeof rawTs === "string"
+        ? parseInt(rawTs, 16)
+        : Number(rawTs);
+      if (Number.isFinite(num) && Number.isFinite(ts)) {
+        blockTimestamps.set(num, ts);
+      }
+    }
+
     const logs = res.data?.logs ?? [];
     for (const logEntry of logs) {
       const topics = (logEntry.topics || []).filter(
@@ -150,6 +168,15 @@ export async function* streamDecodedEvents(
       ) as [`0x${string}`, ...`0x${string}`[]];
 
       if (topics.length === 0) continue;
+
+      const blockNum = Number(logEntry.blockNumber);
+      const blockTs = blockTimestamps.get(blockNum);
+      if (blockTs === undefined) {
+        throw new Error(
+          `Log at block ${blockNum} has no matching block timestamp. ` +
+          `HyperSync query must include block.Timestamp field selection.`
+        );
+      }
 
       try {
         const decoded = decodeEventLog({
@@ -163,7 +190,8 @@ export async function* streamDecodedEvents(
         const row = cfg.decodeToRow(
           { eventName: decoded.eventName, args: decoded.args as any },
           {
-            blockNumber: logEntry.blockNumber,
+            blockNumber: blockNum,
+            blockTimestamp: blockTs,
             transactionHash: logEntry.transactionHash,
             address: logEntry.address,
             logIndex: requireLogIndex(logEntry, network.name),
@@ -188,7 +216,7 @@ export async function* streamDecodedEvents(
         if (opts.onUnknown) {
           opts.onUnknown({
             network: network.name,
-            block_number: logEntry.blockNumber,
+            block_number: blockNum,
             log_index: requireLogIndex(logEntry, network.name),
             tx_hash: logEntry.transactionHash,
             contract_address: logEntry.address,
@@ -207,6 +235,11 @@ export async function* streamDecodedEvents(
         }
       }
     }
+
+    // Clear the timestamp map after each batch. All logs for a block appear
+    // in the same recv batch as the block record, so older entries are safe
+    // to discard. This bounds memory for very long-running streams.
+    blockTimestamps.clear();
   }
 }
 
@@ -229,13 +262,27 @@ export async function fetchDecodedEvents(
   return rows;
 }
 
+function isRateLimit(e: any): boolean {
+  const msg = String(e?.message ?? "").toLowerCase();
+  return msg.includes("429") || msg.includes("rate limit") || msg.includes("too many requests");
+}
+
+function backoffMs(attempt: number, rateLimited: boolean): number {
+  if (rateLimited) {
+    // On rate-limit: longer base with ±50% jitter to spread retries across workers.
+    const base = 30_000;
+    const jitter = base * 0.5 * (Math.random() * 2 - 1);
+    return Math.max(1_000, base + jitter);
+  }
+  return Math.min(30_000, 1_000 * 2 ** (attempt - 1));
+}
+
 /**
  * Retry wrapper for HyperSync operations.
  *
- * We don't try to classify errors — any failure retries with backoff.
- * HyperSync transient errors (rate limits, brief network drops, gateway
- * timeouts) all resolve with a short wait. After HYPERSYNC_RETRIES, we
- * let the error propagate so the caller can decide.
+ * Rate-limit errors (429) use a longer base delay with ±50% jitter to
+ * spread concurrent worker retries. Other transient errors use exponential
+ * backoff. After HYPERSYNC_RETRIES, the error propagates to the caller.
  */
 async function withHypersyncRetry<T>(
   fn: () => Promise<T>,
@@ -249,9 +296,11 @@ async function withHypersyncRetry<T>(
     } catch (e: any) {
       lastErr = e;
       if (attempt === CONFIG.HYPERSYNC_RETRIES) break;
-      const waitMs = Math.min(30_000, 1_000 * 2 ** (attempt - 1));
+      const rl = isRateLimit(e);
+      const waitMs = backoffMs(attempt, rl);
       log.warn(
-        `HyperSync ${opName} failed (attempt ${attempt}/${CONFIG.HYPERSYNC_RETRIES}), backing off ${waitMs}ms`,
+        `HyperSync ${opName} failed (attempt ${attempt}/${CONFIG.HYPERSYNC_RETRIES}), ` +
+        `${rl ? "rate-limited" : "backing off"} ${Math.round(waitMs)}ms`,
         { network: networkName, error: e?.message }
       );
       await sleep(waitMs);
