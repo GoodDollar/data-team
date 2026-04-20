@@ -14,6 +14,13 @@
  *   --contracts=<id1,id2,...>        Filter by tableId (e.g. InviteContractEvents)
  *   --contracts=tag:<tag>,...        Filter by tag (e.g. tag:invites,tag:ubi)
  *
+ * Exit codes:
+ *   0   Clean success
+ *   1   Run failure (any contract/network failed)
+ *   2   Lock not acquired (another run is in progress)
+ *   3   Required tables missing (mode needed them)
+ *   130 Received SIGINT
+ *
  * Acquires a named lock at start and releases on exit (including abort).
  * Prevents concurrent runs from racing on the same tables.
  * ============================================================================
@@ -72,13 +79,27 @@ async function main() {
     process.exit(1);
   }
 
-  // Ensure infrastructure tables first — needed for lock acquisition
+  // Ensure infrastructure tables first — needed for lock acquisition.
+  // Returns the set of missing contract tables (not fatal for verify mode).
+  let missingTables = new Set<string>();
   try {
-    await ensureAllTables();
+    missingTables = await ensureAllTables();
   } catch (e: any) {
-    log.fatal("Failed to ensure tables exist", { error: e?.message });
+    log.fatal("Failed to ensure infrastructure tables", { error: e?.message });
     await flushLogs();
     process.exit(1);
+  }
+
+  // For write modes, missing tables are fatal — exit 3.
+  const mode = modeArg === "append" ? "daily" : modeArg;
+  const writeModes = ["backfill", "daily", "repair", "dedup"];
+  if (missingTables.size > 0 && writeModes.includes(mode)) {
+    log.fatal(
+      `${missingTables.size} required table(s) missing; cannot run ${mode}`,
+      { missing: [...missingTables] }
+    );
+    await flushLogs();
+    process.exit(3);
   }
 
   // Acquire lock. Verify mode is read-only, so it can skip the lock.
@@ -140,26 +161,31 @@ async function main() {
     : null;
 
   try {
-    const mode = modeArg === "append" ? "daily" : modeArg;
     switch (mode) {
       case "backfill":
-        await runBackfill(contractsFilter);
+        await runBackfill(contractsFilter, missingTables);
         break;
       case "daily":
-        await runDaily(contractsFilter);
+        await runDaily(contractsFilter, missingTables);
         break;
       case "verify":
-        await runVerify(contractsFilter);
+        await runVerify(contractsFilter, missingTables);
         break;
       case "repair":
-        await runRepair(contractsFilter);
+        await runRepair(contractsFilter, missingTables);
         break;
       case "dedup":
-        await runDedup(contractsFilter);
+        await runDedup(contractsFilter, missingTables);
         break;
     }
 
-    await logFinalSummary();
+    await logFinalSummary(missingTables);
+
+    // For verify mode: exit 1 if ALL tables were missing (nothing verified).
+    if (mode === "verify" && missingTables.size > 0) {
+      const allMissing = [...missingTables].length === CONTRACT_CONFIGS.filter(c => c.enabled !== false).length;
+      if (allMissing) exitCode = 1;
+    }
   } catch (e: any) {
     log.fatal(`Run failed: ${e?.message}`, { stack: e?.stack });
     exitCode = 1;

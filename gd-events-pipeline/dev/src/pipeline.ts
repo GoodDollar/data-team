@@ -468,11 +468,11 @@ AS
  *
  * Safe to re-run — staging+MERGE makes it idempotent.
  */
-export async function runBackfill(contractsFilter?: string[]): Promise<void> {
+export async function runBackfill(contractsFilter?: string[], missingTables?: Set<string>): Promise<void> {
   const unknowns = new UnknownCollector();
   const today = todayUtc();
 
-  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+  await pMapLimit(activeJobs(contractsFilter, missingTables), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
     const net = binding.network;
     try {
       await markIngestionStatus({
@@ -555,11 +555,11 @@ export async function runBackfill(contractsFilter?: string[]): Promise<void> {
  *   6. Re-verify repaired ranges
  *   7. Mark status = complete (or failed)
  */
-export async function runDaily(contractsFilter?: string[]): Promise<void> {
+export async function runDaily(contractsFilter?: string[], missingTables?: Set<string>): Promise<void> {
   const unknowns = new UnknownCollector();
   const today = todayUtc();
 
-  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+  await pMapLimit(activeJobs(contractsFilter, missingTables), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
     const net = binding.network;
     try {
       await markIngestionStatus({
@@ -705,11 +705,16 @@ function todayUtc(): string {
 
 /** Returns all active (cfg, binding) pairs across all enabled contracts. */
 function activeJobs(
-  contractsFilter?: string[]
+  contractsFilter?: string[],
+  missingTables?: Set<string>
 ): Array<{ cfg: ContractConfig; binding: ContractNetworkBinding }> {
   const jobs: Array<{ cfg: ContractConfig; binding: ContractNetworkBinding }> = [];
   for (const cfg of CONTRACT_CONFIGS) {
     if (cfg.enabled === false) continue;
+    if (missingTables?.has(cfg.tableId)) {
+      log.error(`Skipping ${cfg.tableId}: table does not exist`, { tableId: cfg.tableId });
+      continue;
+    }
     if (contractsFilter && contractsFilter.length > 0) {
       const matchesId = contractsFilter.includes(cfg.tableId);
       const matchesTag = contractsFilter.some(
@@ -729,8 +734,8 @@ function activeJobs(
 // MODE: VERIFY (read-only)
 // ----------------------------------------------------------------------------
 
-export async function runVerify(contractsFilter?: string[]): Promise<void> {
-  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+export async function runVerify(contractsFilter?: string[], missingTables?: Set<string>): Promise<void> {
+  await pMapLimit(activeJobs(contractsFilter, missingTables), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
     const net = binding.network;
     const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
     if (lastBlock === 0) {
@@ -752,12 +757,12 @@ export async function runVerify(contractsFilter?: string[]): Promise<void> {
 // MODE: REPAIR
 // ----------------------------------------------------------------------------
 
-export async function runRepair(contractsFilter?: string[]): Promise<void> {
+export async function runRepair(contractsFilter?: string[], missingTables?: Set<string>): Promise<void> {
   const unknowns = new UnknownCollector();
 
   // Parallel reads, but writes inside repairRanges are serialised per table
   // via withTableLock — so parallel repair is safe.
-  await pMapLimit(activeJobs(contractsFilter), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
+  await pMapLimit(activeJobs(contractsFilter, missingTables), CONFIG.FETCH_CONCURRENCY, async ({ cfg, binding }) => {
     const net = binding.network;
     const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
     if (lastBlock === 0) return;
@@ -784,9 +789,9 @@ export async function runRepair(contractsFilter?: string[]): Promise<void> {
 // MODE: DEDUP
 // ----------------------------------------------------------------------------
 
-export async function runDedup(contractsFilter?: string[]): Promise<void> {
+export async function runDedup(contractsFilter?: string[], missingTables?: Set<string>): Promise<void> {
   // Sequential across (contract, network) pairs. Dedup is a whole-table rewrite.
-  for (const { cfg, binding } of activeJobs(contractsFilter)) {
+  for (const { cfg, binding } of activeJobs(contractsFilter, missingTables)) {
     await dedupNetwork(cfg, binding.network.name);
   }
 }
@@ -795,21 +800,28 @@ export async function runDedup(contractsFilter?: string[]): Promise<void> {
 // SETUP (run once before mode-specific work)
 // ----------------------------------------------------------------------------
 
-export async function ensureAllTables(): Promise<void> {
+/**
+ * Ensure all infrastructure and contract tables exist. Returns the set of
+ * tableIds whose tables are missing (creation DDL is logged per-table as ERROR).
+ */
+export async function ensureAllTables(): Promise<Set<string>> {
   await ensureInfrastructureTables();
+  const missing = new Set<string>();
   for (const cfg of CONTRACT_CONFIGS) {
     if (cfg.enabled === false) continue;
-    await ensureTableExists(cfg);
+    const ok = await ensureTableExists(cfg);
+    if (!ok) missing.add(cfg.tableId);
   }
+  return missing;
 }
 
 // ----------------------------------------------------------------------------
 // FINAL SUMMARY
 // ----------------------------------------------------------------------------
 
-export async function logFinalSummary(): Promise<void> {
+export async function logFinalSummary(missingTables?: Set<string>): Promise<void> {
   log.info("--- Final Counts ---");
-  for (const { cfg, binding } of activeJobs()) {
+  for (const { cfg, binding } of activeJobs(undefined, missingTables)) {
     const net = binding.network;
     try {
       const last = await getLastBlockInBQ(cfg.tableId, net.name);

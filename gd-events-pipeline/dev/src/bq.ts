@@ -103,15 +103,15 @@ export async function bqQuery(
 /**
  * Verify a table exists and is set up the way we want.
  *
- * We don't auto-create production tables because adding partitioning to
- * a populated table requires a deliberate rewrite (CREATE TABLE AS
- * SELECT into a new partitioned table, then rename). Instead, we print
- * the exact command to create it correctly.
+ * Returns true if the table exists (regardless of partitioning/clustering
+ * state). Returns false if the table is missing, logging an ERROR with the
+ * DDL to create it. Does NOT call process.exit — that is the caller's
+ * responsibility so that verify mode can skip missing tables gracefully.
  *
- * If the table exists but isn't partitioned/clustered, we warn loudly
- * but proceed — the pipeline still works, just more expensively.
+ * If the table exists but isn't partitioned/clustered, warns loudly but
+ * still returns true — the pipeline works, just more expensively.
  */
-export async function ensureTableExists(cfg: ContractConfig): Promise<void> {
+export async function ensureTableExists(cfg: ContractConfig): Promise<boolean> {
   const tbl = bigquery
     .dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID })
     .table(cfg.tableId);
@@ -119,24 +119,23 @@ export async function ensureTableExists(cfg: ContractConfig): Promise<void> {
   const [exists] = await tbl.exists();
   if (!exists) {
     const schemaDef = cfg.schema.map((f) => `${f.name}:${f.type}`).join(",");
-    log.fatal(
+    log.error(
       `Table ${CONFIG.DATASET_ID}.${cfg.tableId} does not exist. Create it with the DDL below.`,
       {
         ddl_sql: buildCreateTableDDL(cfg),
         bq_cli_fallback: `bq mk --table ${CONFIG.GCP_PROJECT_ID}:${CONFIG.DATASET_ID}.${cfg.tableId} ${schemaDef}`,
       }
     );
-    process.exit(1);
+    return false;
   }
 
-  // Check partitioning/clustering
   const [metadata] = await tbl.getMetadata();
   const partitioning = metadata.rangePartitioning || metadata.timePartitioning;
   const clustering = metadata.clustering;
 
   if (!partitioning) {
     log.warn(
-      `Table ${cfg.tableId} is not partitioned. Verify/repair queries will be expensive. Consider migrating to a partitioned table.`,
+      `Table ${cfg.tableId} is not partitioned. Verify/repair queries will be expensive. Consider migrating.`,
       { tableId: cfg.tableId }
     );
   }
@@ -146,6 +145,7 @@ export async function ensureTableExists(cfg: ContractConfig): Promise<void> {
       { tableId: cfg.tableId }
     );
   }
+  return true;
 }
 
 /**
