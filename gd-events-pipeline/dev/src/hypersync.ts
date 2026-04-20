@@ -26,6 +26,7 @@ import { HypersyncClient } from "@envio-dev/hypersync-client";
 import { decodeEventLog } from "viem";
 import { CONFIG, NetworkConfig, ContractConfig } from "./config";
 import { log } from "./log";
+import { MAX_NULL_PROBES } from "./constants";
 
 export interface DecodedRow {
   [key: string]: any;
@@ -48,6 +49,22 @@ export interface StreamOptions {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Validate that a log entry carries a usable logIndex. A missing or
+ * non-finite logIndex would produce duplicate dedup-key collisions because
+ * the fallback 0 is a valid log index for real events.
+ */
+function requireLogIndex(logEntry: any, networkName: string): number {
+  const li = logEntry.logIndex;
+  if (typeof li !== "number" || !Number.isFinite(li) || li < 0) {
+    throw new Error(
+      `HyperSync returned a log without a valid logIndex on ${networkName}: ` +
+      `block=${logEntry.blockNumber} tx=${logEntry.transactionHash} logIndex=${String(li)}`
+    );
+  }
+  return li;
 }
 
 function makeClient(network: NetworkConfig) {
@@ -131,7 +148,7 @@ export async function* streamDecodedEvents(
             blockNumber: logEntry.blockNumber,
             transactionHash: logEntry.transactionHash,
             address: logEntry.address,
-            logIndex: logEntry.logIndex ?? 0,
+            logIndex: requireLogIndex(logEntry, network.name),
           },
           network.name
         );
@@ -154,7 +171,7 @@ export async function* streamDecodedEvents(
           opts.onUnknown({
             network: network.name,
             block_number: logEntry.blockNumber,
-            log_index: logEntry.logIndex ?? 0,
+            log_index: requireLogIndex(logEntry, network.name),
             tx_hash: logEntry.transactionHash,
             contract_address: logEntry.address,
             topic0: topics[0] ?? "",
@@ -285,18 +302,27 @@ export async function resolveBlockBeforeTimestamp(
   if (highTs !== null && highTs < targetUnixSec) return high;
 
   // Binary search invariant:
-  //   block[low].ts  < targetUnixSec
-  //   block[high].ts >= targetUnixSec (or unknown, treated as >=)
+  //   block[lo].ts  < targetUnixSec
+  //   block[hi].ts >= targetUnixSec (or unknown, treated as >=)
   let lo = low;
   let hi = high;
+  let nullProbes = 0;
   while (hi - lo > 1) {
     const mid = Math.floor((lo + hi) / 2);
     const ts = await getBlockTimestamp(network, mid);
     if (ts === null) {
+      nullProbes++;
+      if (nullProbes > MAX_NULL_PROBES) {
+        throw new Error(
+          `resolveBlockBeforeTimestamp on ${network.name}: ${nullProbes} consecutive null timestamp probes. ` +
+          `HyperSync index likely lagging. Retry later.`
+        );
+      }
       // Block not available; treat as if >= target (pull hi in)
       hi = mid;
       continue;
     }
+    nullProbes = 0; // reset on any successful probe
     if (ts < targetUnixSec) {
       lo = mid;
     } else {
@@ -337,31 +363,32 @@ async function getBlockTimestamp(
 /**
  * Cheap event count for a block range using HyperSync metadata only.
  *
- * This avoids the full decode cost during verification. We only decode
- * (via fetchDecodedEvents) when a mismatch is detected and we need to
- * repair a specific sub-range.
- *
- * Note: this counts logs matching our contract addresses, not decoded
- * events. If the contract emits events we don't decode (e.g., after an
- * upgrade), those still count here and would produce a "mismatch" that
- * would then be investigated via full decode. That's the correct
- * behavior: the upgrade needs a human look.
+ * When topic0Filter is provided, only counts logs whose topic0 matches —
+ * this prevents contract-upgrade false mismatches where the contract emits
+ * new events we don't decode. Pass knownTopic0sFor(cfg) to count only
+ * events our ABI can decode. Omit to count all contract logs.
  */
 export async function countLogs(
   cfg: ContractConfig,
   network: NetworkConfig,
   fromBlock: number,
-  toBlock: number
+  toBlock: number,
+  topic0Filter?: string[]
 ): Promise<number> {
   const client = makeClient(network);
   return await withHypersyncRetry(
     async () => {
+      const logsFilter: any = { address: cfg.contracts };
+      if (topic0Filter && topic0Filter.length > 0) {
+        // HyperSync topics filter: topics[0] = array means "topic0 in set"
+        logsFilter.topics = [topic0Filter];
+      }
       // Stream with minimal field selection. We only need to count logs.
       const stream = await client.stream(
         {
           fromBlock,
           toBlock,
-          logs: [{ address: cfg.contracts }],
+          logs: [logsFilter],
           fieldSelection: { log: ["BlockNumber"] },
         },
         {}

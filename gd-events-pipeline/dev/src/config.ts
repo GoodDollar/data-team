@@ -14,6 +14,7 @@
  */
 
 import { config as loadDotenv } from "dotenv";
+import { toEventSelector } from "viem";
 
 loadDotenv();
 
@@ -277,6 +278,17 @@ export const CONTRACT_CONFIGS: ContractConfig[] = [INVITE_CONFIG, CLAIM_CONFIG];
 
 export function fullTableName(tableId: string): string {
   return `\`${CONFIG.GCP_PROJECT_ID}.${CONFIG.DATASET_ID}.${tableId}\``;
+}
+
+/**
+ * Returns the set of topic0 hashes (as lowercase 0x-prefixed strings) for
+ * all events declared in this contract's ABI. Used by verify paths to
+ * count only events we actually care about.
+ */
+export function knownTopic0sFor(cfg: ContractConfig): string[] {
+  return cfg.abi
+    .filter((item: any) => item.type === "event")
+    .map((item: any) => toEventSelector(item).toLowerCase());
 }
 
 export function stagingTableName(tableId: string, runId: string): string {
