@@ -179,6 +179,37 @@ SELECT lock_name, holder, acquired_at, expires_at,
 FROM `gooddollar.BlockchainEvents.PipelineLocks`;
 ```
 
+### Recent pipeline runs
+
+```sql
+SELECT run_id, mode, started_at, completed_at,
+       TIMESTAMP_DIFF(completed_at, started_at, SECOND) AS seconds_elapsed,
+       exit_code, total_contracts, total_networks, total_rows_merged
+FROM `gooddollar.BlockchainEvents.PipelineRuns`
+ORDER BY started_at DESC
+LIMIT 10;
+```
+
+### Runs longer than 2 hours
+
+```sql
+SELECT run_id, mode, started_at, completed_at,
+       TIMESTAMP_DIFF(completed_at, started_at, MINUTE) AS minutes_elapsed
+FROM `gooddollar.BlockchainEvents.PipelineRuns`
+WHERE TIMESTAMP_DIFF(completed_at, started_at, MINUTE) > 120
+ORDER BY started_at DESC;
+```
+
+### Runs with non-zero exit (failures)
+
+```sql
+SELECT run_id, mode, started_at, exit_code
+FROM `gooddollar.BlockchainEvents.PipelineRuns`
+WHERE exit_code != 0
+ORDER BY started_at DESC
+LIMIT 20;
+```
+
 #### Lock semantics
 
 The distributed lock is **best-effort, not strict mutual exclusion**:
@@ -212,13 +243,9 @@ WITH safe_dates AS (
 SELECT e.*
 FROM `gooddollar.BlockchainEvents.InviteContractEvents` e
 JOIN safe_dates s
-  ON DATE(TIMESTAMP_SECONDS((SELECT CAST(... AS INT64)))) = s.ingestion_date
+  ON DATE(e.block_timestamp) = s.ingestion_date
 WHERE e.network = 'CELO';
 ```
-
-(In practice you'd add a `block_timestamp` column to the event schema to
-make this join trivial; deferred to avoid scope creep on the ingestion
-layer.)
 
 ## Philosophy
 
