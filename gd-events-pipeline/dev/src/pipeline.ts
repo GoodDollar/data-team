@@ -55,6 +55,8 @@ import {
   releaseLock,
   partitionAndClusterClauseFor,
   countUnknownEventsInRange,
+  getVerifyCheckpoint,
+  advanceVerifyCheckpoint,
 } from "./bq";
 
 // ----------------------------------------------------------------------------
@@ -555,6 +557,7 @@ export async function runDaily(): Promise<void> {
       const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
       const startBlock = lastBlock > 0 ? lastBlock + 1 : net.firstBlock;
 
+      let loaded = 0;
       if (startBlock > toBlock) {
         log.info(
           `[${net.name}] ${cfg.tableId} already current (last=${lastBlock}, toBlock=${toBlock})`
@@ -563,7 +566,7 @@ export async function runDaily(): Promise<void> {
         log.info(
           `[${net.name}] ${cfg.tableId} daily ingest: ${startBlock}..${toBlock}`
         );
-        const loaded = await ingestRange(cfg, net, startBlock, toBlock, unknowns);
+        loaded = await ingestRange(cfg, net, startBlock, toBlock, unknowns);
         log.info(
           `[${net.name}] ${cfg.tableId} daily ingest: ${loaded} rows merged`
         );
@@ -577,40 +580,51 @@ export async function runDaily(): Promise<void> {
           CONFIG.VERIFY_WINDOW_DAYS
         );
         const verifyFrom = Math.max(net.firstBlock, newLast - windowBlocks);
-        const mismatches = await verifyBlockRange(cfg, net, verifyFrom, newLast);
 
-        if (mismatches.length > 0) {
-          await repairRanges(cfg, net, mismatches, unknowns);
-          const stillBroken = await verifyBlockRange(
-            cfg,
-            net,
-            verifyFrom,
-            newLast
+        // Skip verify entirely if no new rows were ingested and the
+        // checkpoint already covers the verify window — nothing changed.
+        const checkpoint = await getVerifyCheckpoint(cfg.tableId, net.name);
+        if (loaded === 0 && checkpoint >= newLast) {
+          log.info(
+            `[${net.name}] ${cfg.tableId} daily verify skipped: no new rows and checkpoint covers toBlock`,
+            { checkpoint, newLast }
           );
-          if (stillBroken.length > 0) {
-            // For each still-broken range check whether the excess is fully
-            // explained by unknown (undecodable) events recorded in
-            // UnknownEvents — if so, this is a contract-upgrade scenario
-            // and not a data-integrity problem.
-            const unexplained: BlockRange[] = [];
-            for (const r of stillBroken) {
-              const decoded = await countBlockRange(cfg.tableId, net.name, r.from, r.to);
-              const unknown = await countUnknownEventsInRange(net.name, r.from, r.to);
-              const totalChain = await countLogs(cfg, net, r.from, r.to);
-              if (decoded + unknown === totalChain) {
-                log.warn(
-                  `[${net.name}] ${cfg.tableId} mismatch in ${r.from}..${r.to} ` +
-                  `fully reconciled by unknown events (decoded=${decoded} unknown=${unknown} chain=${totalChain})`,
-                  { tableId: cfg.tableId }
-                );
-              } else {
-                unexplained.push(r);
+        } else {
+          const mismatches = await verifyBlockRange(cfg, net, verifyFrom, newLast);
+
+          if (mismatches.length > 0) {
+            await repairRanges(cfg, net, mismatches, unknowns);
+            const stillBroken = await verifyBlockRange(
+              cfg,
+              net,
+              verifyFrom,
+              newLast
+            );
+            if (stillBroken.length > 0) {
+              // For each still-broken range check whether the excess is fully
+              // explained by unknown (undecodable) events recorded in
+              // UnknownEvents — if so, this is a contract-upgrade scenario
+              // and not a data-integrity problem.
+              const unexplained: BlockRange[] = [];
+              for (const r of stillBroken) {
+                const decoded = await countBlockRange(cfg.tableId, net.name, r.from, r.to);
+                const unknown = await countUnknownEventsInRange(net.name, r.from, r.to);
+                const totalChain = await countLogs(cfg, net, r.from, r.to);
+                if (decoded + unknown === totalChain) {
+                  log.warn(
+                    `[${net.name}] ${cfg.tableId} mismatch in ${r.from}..${r.to} ` +
+                    `fully reconciled by unknown events (decoded=${decoded} unknown=${unknown} chain=${totalChain})`,
+                    { tableId: cfg.tableId }
+                  );
+                } else {
+                  unexplained.push(r);
+                }
               }
-            }
-            if (unexplained.length > 0) {
-              throw new Error(
-                `${unexplained.length} ranges still mismatched after repair and unknown-event reconciliation`
-              );
+              if (unexplained.length > 0) {
+                throw new Error(
+                  `${unexplained.length} ranges still mismatched after repair and unknown-event reconciliation`
+                );
+              }
             }
           }
         }
@@ -672,16 +686,29 @@ function todayUtc(): string {
 // ----------------------------------------------------------------------------
 
 export async function runVerify(): Promise<void> {
+  const jobs: Array<{ cfg: ContractConfig; net: NetworkConfig }> = [];
   for (const cfg of CONTRACT_CONFIGS) {
     for (const net of cfg.networks) {
-      const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
-      if (lastBlock === 0) {
-        log.info(`[${net.name}] ${cfg.tableId}: no data to verify`);
-        continue;
-      }
-      await verifyBlockRange(cfg, net, net.firstBlock, lastBlock);
+      jobs.push({ cfg, net });
     }
   }
+
+  await pMapLimit(jobs, CONFIG.FETCH_CONCURRENCY, async ({ cfg, net }) => {
+    const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
+    if (lastBlock === 0) {
+      log.info(`[${net.name}] ${cfg.tableId}: no data to verify`);
+      return;
+    }
+
+    // Start from the last verified checkpoint to skip already-clean history.
+    const checkpoint = await getVerifyCheckpoint(cfg.tableId, net.name);
+    const verifyFrom = Math.max(net.firstBlock, checkpoint);
+
+    const mismatches = await verifyBlockRange(cfg, net, verifyFrom, lastBlock);
+    if (mismatches.length === 0) {
+      await advanceVerifyCheckpoint(cfg.tableId, net.name, lastBlock, RUN_ID);
+    }
+  });
 }
 
 // ----------------------------------------------------------------------------
@@ -690,21 +717,36 @@ export async function runVerify(): Promise<void> {
 
 export async function runRepair(): Promise<void> {
   const unknowns = new UnknownCollector();
+
+  const jobs: Array<{ cfg: ContractConfig; net: NetworkConfig }> = [];
   for (const cfg of CONTRACT_CONFIGS) {
     for (const net of cfg.networks) {
-      const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
-      if (lastBlock === 0) continue;
-      const mismatches = await verifyBlockRange(
-        cfg,
-        net,
-        net.firstBlock,
-        lastBlock
-      );
-      if (mismatches.length > 0) {
-        await repairRanges(cfg, net, mismatches, unknowns);
-      }
+      jobs.push({ cfg, net });
     }
   }
+
+  // Parallel reads, but writes inside repairRanges are serialised per table
+  // via withTableLock — so parallel repair is safe.
+  await pMapLimit(jobs, CONFIG.FETCH_CONCURRENCY, async ({ cfg, net }) => {
+    const lastBlock = await getLastBlockInBQ(cfg.tableId, net.name);
+    if (lastBlock === 0) return;
+
+    const checkpoint = await getVerifyCheckpoint(cfg.tableId, net.name);
+    const verifyFrom = Math.max(net.firstBlock, checkpoint);
+
+    const mismatches = await verifyBlockRange(cfg, net, verifyFrom, lastBlock);
+    if (mismatches.length > 0) {
+      await repairRanges(cfg, net, mismatches, unknowns);
+      // Verify again after repair; only advance checkpoint on a clean pass.
+      const stillBroken = await verifyBlockRange(cfg, net, verifyFrom, lastBlock);
+      if (stillBroken.length === 0) {
+        await advanceVerifyCheckpoint(cfg.tableId, net.name, lastBlock, RUN_ID);
+      }
+    } else {
+      await advanceVerifyCheckpoint(cfg.tableId, net.name, lastBlock, RUN_ID);
+    }
+  });
+
   await unknowns.flush(RUN_ID);
 }
 

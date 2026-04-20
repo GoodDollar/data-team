@@ -388,6 +388,10 @@ async function getBlockTimestamp(
  * this prevents contract-upgrade false mismatches where the contract emits
  * new events we don't decode. Pass knownTopic0sFor(cfg) to count only
  * events our ABI can decode. Omit to count all contract logs.
+ *
+ * NOTE: @envio-dev/hypersync-client@0.6.3 does not expose a dedicated
+ * count-only method (no client.count(), client.getLogsCount(), or metadata-
+ * only totalLogs field). Falls back to stream-with-minimal-fields. See NOTES.md.
  */
 export async function countLogs(
   cfg: ContractConfig,
