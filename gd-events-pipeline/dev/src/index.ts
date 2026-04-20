@@ -10,6 +10,10 @@
  *   npx tsx src/index.ts repair     Verify and fix mismatches
  *   npx tsx src/index.ts dedup      Utility: safety-net deduplication
  *
+ * Optional flags:
+ *   --contracts=<id1,id2,...>        Filter by tableId (e.g. InviteContractEvents)
+ *   --contracts=tag:<tag>,...        Filter by tag (e.g. tag:invites,tag:ubi)
+ *
  * Acquires a named lock at start and releases on exit (including abort).
  * Prevents concurrent runs from racing on the same tables.
  * ============================================================================
@@ -36,8 +40,20 @@ type Mode = (typeof VALID_MODES)[number];
 const LOCK_NAME = "pipeline:main";
 const LOCK_HOLDER = `${hostname()}:${process.pid}:${RUN_ID}`;
 
+/** Parse --contracts=<value> from argv, returns undefined if not present. */
+function parseContractsFilter(): string[] | undefined {
+  for (const arg of process.argv.slice(3)) {
+    if (arg.startsWith("--contracts=")) {
+      const val = arg.slice("--contracts=".length).trim();
+      return val ? val.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
+    }
+  }
+  return undefined;
+}
+
 async function main() {
   const modeArg = (process.argv[2] || "daily") as Mode;
+  const contractsFilter = parseContractsFilter();
   const runStart = Date.now();
 
   log.info("Pipeline run starting", {
@@ -45,11 +61,13 @@ async function main() {
     project: CONFIG.GCP_PROJECT_ID,
     dataset: CONFIG.DATASET_ID,
     contracts: CONTRACT_CONFIGS.map((c) => c.tableId),
+    contracts_filter: contractsFilter ?? null,
     lock_holder: LOCK_HOLDER,
   });
 
   if (!VALID_MODES.includes(modeArg as Mode)) {
     log.fatal(`Unknown mode: "${modeArg}"`, { validModes: VALID_MODES });
+    await flushLogs();
     process.exit(1);
   }
 
@@ -58,6 +76,7 @@ async function main() {
     await ensureAllTables();
   } catch (e: any) {
     log.fatal("Failed to ensure tables exist", { error: e?.message });
+    await flushLogs();
     process.exit(1);
   }
 
@@ -71,6 +90,7 @@ async function main() {
       log.fatal(
         `Could not acquire lock ${LOCK_NAME}; another run is in progress`
       );
+      await flushLogs();
       process.exit(2);
     }
     log.info(`Acquired lock ${LOCK_NAME}`, { holder: LOCK_HOLDER });
@@ -103,19 +123,19 @@ async function main() {
     const mode = modeArg === "append" ? "daily" : modeArg;
     switch (mode) {
       case "backfill":
-        await runBackfill();
+        await runBackfill(contractsFilter);
         break;
       case "daily":
-        await runDaily();
+        await runDaily(contractsFilter);
         break;
       case "verify":
-        await runVerify();
+        await runVerify(contractsFilter);
         break;
       case "repair":
-        await runRepair();
+        await runRepair(contractsFilter);
         break;
       case "dedup":
-        await runDedup();
+        await runDedup(contractsFilter);
         break;
     }
 
