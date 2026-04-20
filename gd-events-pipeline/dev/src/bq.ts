@@ -183,6 +183,7 @@ export async function ensureInfrastructureTables(): Promise<void> {
   const unknownT = fullTableName(CONFIG.UNKNOWN_EVENTS_TABLE);
   const statusT = fullTableName(CONFIG.INGESTION_STATUS_TABLE);
   const locksT = fullTableName(CONFIG.PIPELINE_LOCKS_TABLE);
+  const checkpointsT = fullTableName(CONFIG.VERIFY_CHECKPOINTS_TABLE);
 
   await bqQuery(`
     CREATE TABLE IF NOT EXISTS ${unknownT} (
@@ -223,6 +224,17 @@ export async function ensureInfrastructureTables(): Promise<void> {
       acquired_at TIMESTAMP,
       expires_at TIMESTAMP
     )
+  `);
+
+  await bqQuery(`
+    CREATE TABLE IF NOT EXISTS ${checkpointsT} (
+      network STRING,
+      table_id STRING,
+      last_verified_block INT64,
+      last_verified_at TIMESTAMP,
+      run_id STRING
+    )
+    CLUSTER BY network, table_id
   `);
 }
 
@@ -297,6 +309,58 @@ export async function countUnknownEventsInRange(
     { network: networkName, from: fromBlock, to: toBlock }
   );
   return Number(rows[0]?.cnt ?? 0);
+}
+
+// ----------------------------------------------------------------------------
+// VERIFY CHECKPOINTS
+// ----------------------------------------------------------------------------
+
+/**
+ * Get the highest block verified as consistent (no mismatch) for this
+ * (table, network) pair. Returns 0 if no checkpoint exists, meaning
+ * verification should start from firstBlock.
+ */
+export async function getVerifyCheckpoint(
+  tableId: string,
+  networkName: string
+): Promise<number> {
+  const checkpointsT = fullTableName(CONFIG.VERIFY_CHECKPOINTS_TABLE);
+  const rows = await bqQuery(
+    `SELECT last_verified_block FROM ${checkpointsT}
+     WHERE table_id = @table_id AND network = @network
+     ORDER BY last_verified_block DESC LIMIT 1`,
+    { table_id: tableId, network: networkName }
+  );
+  return rows.length > 0 ? Number(rows[0].last_verified_block) : 0;
+}
+
+/**
+ * Advance the verify checkpoint to the given block. Called only after
+ * a clean pass (no mismatches remaining after repair). Idempotent.
+ * Never moves the checkpoint backward — uses GREATEST in the UPDATE clause.
+ */
+export async function advanceVerifyCheckpoint(
+  tableId: string,
+  networkName: string,
+  verifiedThroughBlock: number,
+  runId: string
+): Promise<void> {
+  const checkpointsT = fullTableName(CONFIG.VERIFY_CHECKPOINTS_TABLE);
+  const now = new Date().toISOString();
+  await bqQuery(
+    `MERGE ${checkpointsT} AS T
+     USING (SELECT @table_id AS table_id, @network AS network,
+            @block AS last_verified_block, TIMESTAMP(@now) AS last_verified_at,
+            @run_id AS run_id) AS S
+       ON T.table_id = S.table_id AND T.network = S.network
+     WHEN MATCHED THEN UPDATE SET
+       last_verified_block = GREATEST(T.last_verified_block, S.last_verified_block),
+       last_verified_at = S.last_verified_at,
+       run_id = S.run_id
+     WHEN NOT MATCHED THEN INSERT (network, table_id, last_verified_block, last_verified_at, run_id)
+       VALUES (S.network, S.table_id, S.last_verified_block, S.last_verified_at, S.run_id)`,
+    { table_id: tableId, network: networkName, block: verifiedThroughBlock, now, run_id: runId }
+  );
 }
 
 // ----------------------------------------------------------------------------
