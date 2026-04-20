@@ -69,23 +69,31 @@ const tableMutexes = new Map<string, Promise<void>>();
  * Serialize writes to a given production table. Fetch can still run in
  * parallel with other networks' fetches for the same table, but MERGE
  * and DELETE are taken in turn.
+ *
+ * Two bugs fixed vs. the original:
+ *   (a) The cleanup compared tableMutexes.get(tableId) === next, but the
+ *       stored value was prev.then(() => next), not next itself — so the
+ *       cleanup never fired. Now we store `chained` and compare against it.
+ *   (b) If prev rejects, prev.then(() => next) creates an unhandled
+ *       rejection. We swallow upstream errors here: each caller owns its own
+ *       error propagation; the mutex must not compound or forward others' errors.
  */
 async function withTableLock<T>(
   tableId: string,
   fn: () => Promise<T>
 ): Promise<T> {
   const prev = tableMutexes.get(tableId) ?? Promise.resolve();
-  let release: () => void;
+  let release!: () => void;
   const next = new Promise<void>((r) => (release = r));
-  tableMutexes.set(tableId, prev.then(() => next));
+  const chained = prev.catch(() => {}).then(() => next);
+  tableMutexes.set(tableId, chained);
 
   try {
-    await prev;
+    await prev.catch(() => {}); // swallow upstream errors; they concern the originating caller
     return await fn();
   } finally {
-    release!();
-    // Clean up if no one's queued behind us
-    if (tableMutexes.get(tableId) === next) {
+    release();
+    if (tableMutexes.get(tableId) === chained) {
       tableMutexes.delete(tableId);
     }
   }
