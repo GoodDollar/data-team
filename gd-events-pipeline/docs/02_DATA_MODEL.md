@@ -61,8 +61,8 @@ For naming conventions, partitioning rules, and layer responsibilities see [`01_
 
 **Networks (MVP):** XDC only.
 
-**XDC contract address:** `0x36829d1cda92fff5782d5d48991620664fc857d3`
-**XDC deployment block (firstBlock for backfill):** 100,412,600
+**XDC contract address:** `0x6bd698566632bf2e81e2278f1656cb24aaf06d2e`
+**XDC deployment block (firstBlock for backfill):** 95,144,756
 
 **Event-specific columns:**
 

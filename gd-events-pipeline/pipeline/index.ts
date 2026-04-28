@@ -129,12 +129,12 @@ const CONTRACT_CONFIGS: Record<string, ContractConfig> = {
   invite: {
     tableId: "InviteContractEvents",
     contracts: [
-      // "0x6bd698566632bf2e81e2278f1656CB24aAF06D2e", // Celo — MVP: XDC-only — re-enable post-MVP
-      "0x36829D1Cda92FFF5782d5d48991620664FC857d3", // XDC
+      // "0x36829D1Cda92FFF5782d5d48991620664FC857d3", // Celo — MVP: XDC-only — re-enable post-MVP
+      "0x6bd698566632bf2e81e2278f1656CB24aAF06D2e", // XDC
     ],
     networks: [
-      // { url: "https://celo.hypersync.xyz", name: "CELO", chainId: 42220, firstBlock: 18_483_200,  finalityBlocks: 64 }, // MVP: XDC-only — re-enable post-MVP
-      { url: "https://xdc.hypersync.xyz",  name: "XDC",  chainId: 50,    firstBlock: 100_412_600, finalityBlocks: 15 },
+      // { url: "https://celo.hypersync.xyz", name: "CELO", chainId: 42220, firstBlock: 18_483_200, finalityBlocks: 64 }, // MVP: XDC-only — re-enable post-MVP
+      { url: "https://xdc.hypersync.xyz",  name: "XDC",  chainId: 50,    firstBlock: 95_144_756, finalityBlocks: 15 },
     ],
     abi: [
       {

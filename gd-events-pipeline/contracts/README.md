@@ -22,7 +22,7 @@ Phase-3 invites campaign. Emits `InviteeJoined(address indexed inviter, address 
 
 | Network | Address | Deployment block |
 |---|---|---|
-| XDC | `0x36829d1cda92fff5782d5d48991620664fc857d3` | 100,412,600 |
+| XDC | `0x6bd698566632bf2e81e2278f1656cb24aaf06d2e` | 95,144,756 |
 
 The contract emits its own address as `inviter` for campaign signups (no human inviter). The L2 view detects this via `LOWER(inviter) = LOWER(contract_address)` — chain-agnostic, no hardcoded literals.
 
@@ -41,7 +41,7 @@ The contract emits its own address as `inviter` for campaign signups (no human i
 
 | Network | Address |
 |---|---|
-| Celo | `0x6bd698566632bf2e81e2278f1656cb24aaf06d2e` |
+| Celo | `0x36829d1cda92fff5782d5d48991620664fc857d3` |
 
 ### Other GoodDollar contracts (post-MVP, multi-chain)
 

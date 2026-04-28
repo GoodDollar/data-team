@@ -126,8 +126,8 @@ CREATE OR REPLACE TABLE `gooddollar.BlockchainEvents.ClaimContractEvents` (
 Ingests `InviteeJoined` and `InviterBounty` events from the GoodDollar Invite contract.
 
 **Contracts:**
-- Celo: `0x6bd698566632bf2e81e2278f1656CB24aAF06D2e` (firstBlock 18,483,200)
-- XDC:  `0x36829D1Cda92FFF5782d5d48991620664FC857d3` (firstBlock 100,412,600)
+- Celo: `0x36829D1Cda92FFF5782d5d48991620664FC857d3` (firstBlock 18,483,200)
+- XDC:  `0x6bd698566632bf2e81e2278f1656CB24aAF06D2e` (firstBlock 95,144,756)
 
 **Event-specific columns:**
 
