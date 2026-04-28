@@ -236,6 +236,23 @@ export async function ensureInfrastructureTables(): Promise<void> {
     )
     CLUSTER BY network, table_id
   `);
+
+  const runsT = fullTableName(CONFIG.PIPELINE_RUNS_TABLE);
+  await bqQuery(`
+    CREATE TABLE IF NOT EXISTS ${runsT} (
+      run_id STRING,
+      mode STRING,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
+      exit_code INT64,
+      host STRING,
+      error_message STRING,
+      total_rows_merged INT64,
+      total_contracts INT64,
+      total_networks INT64
+    )
+    PARTITION BY DATE(started_at)
+  `);
 }
 
 // ----------------------------------------------------------------------------
@@ -813,5 +830,62 @@ export async function releaseLock(
   await bqQuery(
     `DELETE FROM ${locksTable} WHERE lock_name = @lock_name AND holder = @holder`,
     { lock_name: lockName, holder }
+  );
+}
+
+// ----------------------------------------------------------------------------
+// PIPELINE RUN SUMMARY
+// ----------------------------------------------------------------------------
+
+/**
+ * Insert a "run started" row into PipelineRuns. Call at startup.
+ * Failures are non-fatal — observability must not crash the pipeline.
+ */
+export async function startPipelineRun(
+  runId: string,
+  mode: string,
+  host: string
+): Promise<void> {
+  const runsT = fullTableName(CONFIG.PIPELINE_RUNS_TABLE);
+  const now = new Date().toISOString();
+  await bqQuery(
+    `INSERT INTO ${runsT} (run_id, mode, started_at, host)
+     VALUES (@run_id, @mode, TIMESTAMP(@started_at), @host)`,
+    { run_id: runId, mode, started_at: now, host }
+  );
+}
+
+/**
+ * Update the PipelineRuns row with final metrics. Call at shutdown.
+ * Failures are non-fatal — observability must not crash the pipeline.
+ */
+export async function completePipelineRun(opts: {
+  runId: string;
+  exitCode: number;
+  errorMessage?: string;
+  totalRowsMerged: number;
+  totalContracts: number;
+  totalNetworks: number;
+}): Promise<void> {
+  const runsT = fullTableName(CONFIG.PIPELINE_RUNS_TABLE);
+  const now = new Date().toISOString();
+  await bqQuery(
+    `UPDATE ${runsT}
+     SET completed_at = TIMESTAMP(@completed_at),
+         exit_code = @exit_code,
+         error_message = @error_message,
+         total_rows_merged = @total_rows_merged,
+         total_contracts = @total_contracts,
+         total_networks = @total_networks
+     WHERE run_id = @run_id`,
+    {
+      run_id: opts.runId,
+      completed_at: now,
+      exit_code: opts.exitCode,
+      error_message: opts.errorMessage ?? null,
+      total_rows_merged: opts.totalRowsMerged,
+      total_contracts: opts.totalContracts,
+      total_networks: opts.totalNetworks,
+    }
   );
 }

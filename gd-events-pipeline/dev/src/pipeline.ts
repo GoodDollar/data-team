@@ -56,6 +56,8 @@ import {
   acquireLock,
   releaseLock,
   extendLock,
+  startPipelineRun,
+  completePipelineRun,
   partitionAndClusterClauseFor,
   countUnknownEventsInRange,
   getVerifyCheckpoint,
@@ -838,4 +840,4 @@ export async function logFinalSummary(missingTables?: Set<string>): Promise<void
 // LOCK HELPERS (re-exported for CLI convenience)
 // ----------------------------------------------------------------------------
 
-export { acquireLock, releaseLock, extendLock };
+export { acquireLock, releaseLock, extendLock, startPipelineRun, completePipelineRun };
