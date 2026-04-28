@@ -1,4 +1,14 @@
-# GoodDollar Blockchain Event Pipeline (v3)
+# pipeline-v4 (WIP — POST-MVP, DO NOT RUN)
+
+> **This is the hardened pipeline rewrite. It is unfinished and is NOT part of the MVP.**
+> The MVP uses [`/pipeline/`](../../pipeline/) at the project root.
+> Resume work here only after the MVP is validated and the production pipeline
+> needs the additional reliability features (distributed locks, heartbeats, verify
+> checkpoints, structured logging, etc.).
+
+---
+
+# GoodDollar Blockchain Event Pipeline (v3 → v4 hardening)
 
 BigQuery-backed mirror of on-chain event logs. One row per event, zero
 duplicates, zero gaps. Self-verifying and self-repairing on a daily cron.
