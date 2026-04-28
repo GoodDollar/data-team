@@ -32,10 +32,6 @@ interface TxContext {
   from: string;
   to: string;
   value: string;   // wei, stored as STRING (uint256 range)
-  gas: string;
-  gasPrice: string;
-  effectiveGasPrice: string;
-  gasUsed: string;
   status: number;  // 1 = success, 0 = reverted
   nonce: number;
 }
@@ -81,12 +77,12 @@ const CONTRACT_CONFIGS: Record<string, ContractConfig> = {
     tableId: "ClaimContractEvents",
     contracts: [
       // "0xd253A5203817225e9768C05E5996d642fb96bA86", // Fuse — disabled: FUSE not supported by HyperSync
-      "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1", // Celo
+      // "0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1", // Celo — MVP: XDC-only — re-enable post-MVP
       "0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf", // XDC
     ],
     networks: [
       // { url: "https://fuse.hypersync.xyz", name: "FUSE", chainId: 122, firstBlock: 15_747_401, finalityBlocks: 20 }, // disabled: not supported by HyperSync
-      { url: "https://celo.hypersync.xyz",  name: "CELO", chainId: 42220, firstBlock: 18_006_679, finalityBlocks: 64 },
+      // { url: "https://celo.hypersync.xyz",  name: "CELO", chainId: 42220, firstBlock: 18_006_679, finalityBlocks: 64 }, // MVP: XDC-only — re-enable post-MVP
       { url: "https://xdc.hypersync.xyz",   name: "XDC",  chainId: 50,    firstBlock: 95_249_624, finalityBlocks: 15 },
     ],
     abi: [
@@ -116,10 +112,6 @@ const CONTRACT_CONFIGS: Record<string, ContractConfig> = {
       tx_from:                tx.from  || null,
       tx_to:                  tx.to    || null,
       tx_value:               tx.value,
-      tx_gas:                 tx.gas,
-      tx_gas_price:           tx.gasPrice,
-      tx_effective_gas_price: tx.effectiveGasPrice,
-      tx_gas_used:            tx.gasUsed,
       tx_status:              tx.status,
       tx_nonce:               tx.nonce,
       log_index:              log.logIndex,
@@ -137,11 +129,11 @@ const CONTRACT_CONFIGS: Record<string, ContractConfig> = {
   invite: {
     tableId: "InviteContractEvents",
     contracts: [
-      "0x6bd698566632bf2e81e2278f1656CB24aAF06D2e",
-      "0x36829D1Cda92FFF5782d5d48991620664FC857d3",
+      // "0x6bd698566632bf2e81e2278f1656CB24aAF06D2e", // Celo — MVP: XDC-only — re-enable post-MVP
+      "0x36829D1Cda92FFF5782d5d48991620664FC857d3", // XDC
     ],
     networks: [
-      { url: "https://celo.hypersync.xyz", name: "CELO", chainId: 42220, firstBlock: 18_483_200,  finalityBlocks: 64 },
+      // { url: "https://celo.hypersync.xyz", name: "CELO", chainId: 42220, firstBlock: 18_483_200,  finalityBlocks: 64 }, // MVP: XDC-only — re-enable post-MVP
       { url: "https://xdc.hypersync.xyz",  name: "XDC",  chainId: 50,    firstBlock: 100_412_600, finalityBlocks: 15 },
     ],
     abi: [
@@ -178,10 +170,6 @@ const CONTRACT_CONFIGS: Record<string, ContractConfig> = {
       tx_from:                tx.from  || null,
       tx_to:                  tx.to    || null,
       tx_value:               tx.value,
-      tx_gas:                 tx.gas,
-      tx_gas_price:           tx.gasPrice,
-      tx_effective_gas_price: tx.effectiveGasPrice,
-      tx_gas_used:            tx.gasUsed,
       tx_status:              tx.status,
       tx_nonce:               tx.nonce,
       log_index:              log.logIndex,
@@ -220,8 +208,8 @@ async function insertWithRetry(rows: any[], tableId: string, retries = 3): Promi
     } catch (e: any) {
       // PartialFailureError buries the real reason in e.errors[0].errors[0].
       // Log it clearly so schema mismatches are immediately obvious.
-      if (e.errors?.length > 0) {
-        const firstRowErr = e.errors[0];
+      const firstRowErr = e.errors?.[0];
+      if (firstRowErr?.errors?.length > 0) {
         console.error("  BQ rejection — first row errors:", JSON.stringify(firstRowErr.errors));
         console.error("  BQ rejection — first row data:  ", JSON.stringify(firstRowErr.row));
       }
@@ -293,10 +281,6 @@ async function syncEvents(
         "From",
         "To",
         "Value",
-        "Gas",
-        "GasPrice",
-        "EffectiveGasPrice",
-        "GasUsed",
         "Status",
         "Nonce",
       ],
@@ -309,7 +293,7 @@ async function syncEvents(
   const stream = await client.stream(query, {});
   let totalDecoded = 0;
   let totalSkipped = 0;
-  const BATCH_SIZE = 500;
+  const BATCH_SIZE = 1000;
   let pendingRows: any[] = [];
   const ingestedAt = new Date().toISOString();
 
@@ -357,15 +341,11 @@ async function syncEvents(
         };
 
         const txCtx: TxContext = {
-          from:               (tx?.from as string) ?? "",
-          to:                 (tx?.to   as string) ?? "",
-          value:              tx?.value?.toString()              ?? "0",
-          gas:                tx?.gas?.toString()                ?? "0",
-          gasPrice:           tx?.gasPrice?.toString()           ?? "0",
-          effectiveGasPrice:  tx?.effectiveGasPrice?.toString()  ?? "0",
-          gasUsed:            tx?.gasUsed?.toString()            ?? "0",
-          status:             tx?.status !== undefined ? Number(tx.status) : 1,
-          nonce:              tx?.nonce  !== undefined ? Number(tx.nonce)  : 0,
+          from:   (tx?.from as string) ?? "",
+          to:     (tx?.to   as string) ?? "",
+          value:  tx?.value?.toString() ?? "0",
+          status: tx?.status !== undefined ? Number(tx.status) : 1,
+          nonce:  tx?.nonce  !== undefined ? Number(tx.nonce)  : 0,
         };
 
         const row = cfg.decodeToRow(decoded.eventName as unknown as string, decoded.args, logCtx, txCtx, network.name, network.chainId, ingestedAt);
@@ -384,10 +364,10 @@ async function syncEvents(
       }
     }
 
-    if (pendingRows.length >= BATCH_SIZE) {
-      await insertWithRetry(pendingRows, cfg.tableId);
-      console.log(`[${network.name}] Inserted ${pendingRows.length} rows (total: ${totalDecoded})`);
-      pendingRows = [];
+    while (pendingRows.length >= BATCH_SIZE) {
+      const chunk = pendingRows.splice(0, BATCH_SIZE);
+      await insertWithRetry(chunk, cfg.tableId);
+      console.log(`[${network.name}] Inserted ${chunk.length} rows (total: ${totalDecoded})`);
     }
   }
 

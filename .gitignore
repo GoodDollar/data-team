@@ -13,3 +13,4 @@ Thumbs.db
 
 # Build outputs
 dist
+gd-events-pipeline/invite_events.csv
