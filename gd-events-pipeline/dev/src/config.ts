@@ -94,6 +94,7 @@ export const CONFIG = {
   ),
   PIPELINE_LOCKS_TABLE: envString("PIPELINE_LOCKS_TABLE", "PipelineLocks"),
   VERIFY_CHECKPOINTS_TABLE: envString("VERIFY_CHECKPOINTS_TABLE", "VerifyCheckpoints"),
+  PIPELINE_RUNS_TABLE: envString("PIPELINE_RUNS_TABLE", "PipelineRuns"),
 };
 
 // ----------------------------------------------------------------------------

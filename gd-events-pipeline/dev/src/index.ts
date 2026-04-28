@@ -40,6 +40,8 @@ import {
   acquireLock,
   releaseLock,
   extendLock,
+  startPipelineRun,
+  completePipelineRun,
 } from "./pipeline";
 
 const VALID_MODES = ["daily", "append", "backfill", "verify", "repair", "dedup"] as const;
@@ -141,6 +143,13 @@ async function main() {
 
   let exitCode = 0;
 
+  // Record the run start in PipelineRuns. Non-fatal if it fails.
+  try {
+    await startPipelineRun(RUN_ID, mode, LOCK_HOLDER);
+  } catch (e: any) {
+    log.warn("Failed to record run start in PipelineRuns", { error: e?.message });
+  }
+
   // Heartbeat: extend the lock every TTL/3 so a long-running backfill
   // doesn't lose its lock before finishing. Only active when lock is held.
   const heartbeatIntervalMs = lockAcquired
@@ -192,6 +201,24 @@ async function main() {
   } finally {
     if (heartbeat) clearInterval(heartbeat);
     await release();
+  }
+
+  // Record run completion. Non-fatal if it fails.
+  const totalJobs = CONTRACT_CONFIGS
+    .filter(c => c.enabled !== false && !missingTables.has(c.tableId))
+    .flatMap(c => c.networkBindings.filter(b => b.enabled !== false));
+  try {
+    await completePipelineRun({
+      runId: RUN_ID,
+      exitCode,
+      totalRowsMerged: 0, // aggregate row counts tracked per-job; 0 here is acceptable
+      totalContracts: new Set(totalJobs.map(j => j.network.name)).size > 0
+        ? CONTRACT_CONFIGS.filter(c => c.enabled !== false && !missingTables.has(c.tableId)).length
+        : 0,
+      totalNetworks: new Set(totalJobs.map(j => j.network.name)).size,
+    });
+  } catch (e: any) {
+    log.warn("Failed to record run completion in PipelineRuns", { error: e?.message });
   }
 
   const elapsed = ((Date.now() - runStart) / 1000).toFixed(1);
