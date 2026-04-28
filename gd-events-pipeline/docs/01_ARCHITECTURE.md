@@ -74,7 +74,7 @@
 | L3 dataset | PascalCase plural | `Marts` |
 | L3 mart | snake_case, time-prefix when applicable | `daily_invite_metrics` |
 | Column | snake_case | `block_timestamp`, `signup_type` |
-| Address columns | always lowercase hex with `0x` prefix; store as STRING; apply `LOWER()` in views | `0x36829d1cda92fff5782d5d48991620664fc857d3` |
+| Address columns | always lowercase hex with `0x` prefix; store as STRING; apply `LOWER()` in views | `0x6bd698566632bf2e81e2278f1656cb24aaf06d2e` |
 
 ## Partitioning + clustering rules
 

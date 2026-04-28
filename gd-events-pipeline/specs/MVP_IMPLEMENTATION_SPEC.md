@@ -172,7 +172,7 @@ Inside `CONTRACT_CONFIGS.claim`:
 - `networks`: keep only the XDC entry. Same comment marker on Celo + Fuse.
 
 Inside `CONTRACT_CONFIGS.invite`:
-- `contracts`: keep only the XDC address `0x36829d1cda92fff5782d5d48991620664fc857d3`. Comment out the Celo address.
+- `contracts`: keep only the XDC address `0x6bd698566632bf2e81e2278f1656cb24aaf06d2e`. Comment out the Celo address.
 - `networks`: keep only XDC. Comment out Celo.
 
 #### Edit 1.9 — Tighten error logging in `insertWithRetry`
