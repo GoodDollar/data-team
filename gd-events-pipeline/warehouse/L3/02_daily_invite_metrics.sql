@@ -91,4 +91,4 @@ SELECT
 FROM date_spine d
 LEFT JOIN daily_signups s USING (metric_date, network)
 LEFT JOIN daily_payouts  p USING (metric_date, network)
-ORDER BY d.metric_date, d.network;
+;
