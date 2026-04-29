@@ -37,4 +37,4 @@ SELECT
   SUM(daily_total_g_claimed)     OVER (PARTITION BY network ORDER BY metric_date) AS cumulative_total_g_claimed
 
 FROM daily
-ORDER BY metric_date, network;
+;
