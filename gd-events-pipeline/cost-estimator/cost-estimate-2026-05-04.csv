@@ -1,0 +1,65 @@
+Group,Contract Label,Chain,Address,Status,Scan Mode,Current Chain Tip,Days Since First Block,Historical Event Count (actual or estimated),Historical Count Is Estimated?,Daily Avg Events (last 7d),Historical L1 Size (GB),Daily Growth (MB/day),Monthly Growth (GB/month),Backfill via Streaming Insert USD ⚠️ AVOID,Backfill via Load Job USD ✅ USE THIS,Monthly Storage USD (now),1-Year Cumulative Storage USD,Daily L3 Mart Scan GB,Monthly Query Cost USD (before free tier),Notes / Warnings,Error
+"G$ Token","GoodDollar ERC20 / Ethereum",ETHEREUM,0x67C5870b4A41D4Ebef24d2456547A03F1f3e094B,OK,quick (estimated),25022664,1989,568,YES,0,0.00040,0.000,0.00001,0.0020,0.0000,0.0000,0.0001,0.000,0.0000,,
+"G$ Token","GoodDollar SuperGoodDollar / Celo",CELO,0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A,OK,quick (estimated),66009401,3068,30550086,YES,9959,21.38506,6.971,0.20913,106.9253,0.0000,0.4277,3.3834,0.000,0.0000,,
+"G$ Token","GoodDollar SuperGoodDollar / XDC",XDC,0xEC2136843a983885AebF2feB3931F73A8eBEe50c,OK,quick (estimated),102206176,283,7764161,YES,27479,5.43491,19.235,0.57706,27.1746,0.0000,0.1087,1.3000,0.000,0.0000,,
+"SUBTOTAL — G$ Token",,,,,,,,38314815,,37438,26.82037,26.206,0.78619,134.1019,0.0000,0.5364,4.6835,0.000,0.0000,,
+
+"UBIScheme","UBIScheme / Celo",CELO,0x43d72Ff17701B2DA814620735C39C620Ce0ea4A1,OK,quick (estimated),66009413,2778,9514034,YES,3425,6.65982,2.397,0.07192,33.2991,0.0000,0.1332,1.0594,7.094,1.3301,,
+"UBIScheme","UBIScheme / XDC",XDC,0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf,OK,quick (estimated),102206181,161,2115884,YES,13140,1.48112,9.198,0.27593,7.4056,0.0000,0.0296,0.4539,3.146,0.5899,,
+"SUBTOTAL — UBIScheme",,,,,,,,11629918,,16564,8.14094,11.595,0.34785,40.7047,0.0000,0.1628,1.5133,10.240,1.9199,,
+
+"Invite","InviteContract / Celo",CELO,0x36829D1Cda92FFF5782d5d48991620664FC857d3,OK,quick (estimated),66009422,2750,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Invite","InviteContract / XDC",XDC,0x6bd698566632bf2e81e2278f1656CB24aAF06D2e,OK,quick (estimated),102206184,163,8967,YES,55,0.00628,0.038,0.00115,0.0314,0.0000,0.0001,0.0019,0.013,0.0025,,
+"SUBTOTAL — Invite",,,,,,,,8967,,55,0.00628,0.038,0.00115,0.0314,0.0000,0.0001,0.0019,0.013,0.0025,,
+
+"Identity","Identity / Ethereum",ETHEREUM,0x76e76e10Ac308A1D54a00f9df27EdCE4801F288b,OK,quick (estimated),25022666,1989,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Identity","Identity / Celo",CELO,0xC361A6E67822a0EDc17D899227dd9FC50BD62F42,OK,quick (estimated),66009425,3068,451825,YES,147,0.31628,0.103,0.00309,1.5814,0.0000,0.0063,0.0500,0.000,0.0000,,
+"Identity","Identity / XDC",XDC,0x27a4a02C9ed591E1a86e2e5D05870292c34622C9,OK,quick (estimated),102206186,283,246707,YES,873,0.17269,0.611,0.01834,0.8635,0.0000,0.0035,0.0413,0.000,0.0000,,
+"SUBTOTAL — Identity",,,,,,,,698532,,1020,0.48897,0.714,0.02143,2.4449,0.0000,0.0098,0.0913,0.000,0.0000,,
+
+"Mento / Reserve & DeFi","Mento contracts (shared address) / Celo",CELO,0x94A3240f484A04F5e3d524f528d02694c109463b,OK,quick (estimated),66009430,2663,15215,YES,6,0.01065,0.004,0.00012,0.0533,0.0000,0.0002,0.0017,0.000,0.0000,"⚠️ Docs show same address for Reserve + ExpansionController + ExchangeProvider + Broker — verify individual addresses before prod ingestion",
+"Mento / Reserve & DeFi","Mento contracts (shared address) / XDC",XDC,0x94A3240f484A04F5e3d524f528d02694c109463b,OK,quick (estimated),102206188,283,323,YES,1,0.00023,0.001,0.00002,0.0011,0.0000,0.0000,0.0001,0.000,0.0000,"⚠️ Docs show same address for Reserve + ExpansionController + ExchangeProvider + Broker — verify individual addresses before prod ingestion",
+"SUBTOTAL — Mento / Reserve & DeFi",,,,,,,,15538,,7,0.01088,0.005,0.00014,0.0544,0.0000,0.0002,0.0018,0.000,0.0000,,
+
+"Bridge","MessagePassingBridge / Ethereum",ETHEREUM,0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5,OK,quick (estimated),25022667,1531,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Bridge","MessagePassingBridge / Celo",CELO,0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5,OK,quick (estimated),66009434,2894,1654,YES,1,0.00116,0.000,0.00001,0.0058,0.0000,0.0000,0.0002,0.000,0.0000,,
+"Bridge","MessagePassingBridge / XDC",XDC,0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5,OK,quick (estimated),102206190,283,283,YES,1,0.00020,0.001,0.00002,0.0010,0.0000,0.0000,0.0000,0.000,0.0000,,
+"SUBTOTAL — Bridge",,,,,,,,1937,,2,0.00136,0.001,0.00003,0.0068,0.0000,0.0000,0.0002,0.000,0.0000,,
+
+"DAO","DAO Controller / Ethereum",ETHEREUM,0x95C0d9dCEA1E243ED696F34CAc5e6559C3c128a3,OK,quick (estimated),25022667,1989,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"DAO","DAO Controller / Celo",CELO,0x0be7C592374EE0bD0CcBFC76Be758a138BcaEc6E,OK,quick (estimated),66009438,3068,876,YES,0,0.00061,0.000,0.00001,0.0031,0.0000,0.0000,0.0001,0.000,0.0000,,
+"DAO","DAO Controller / XDC",XDC,0x75a8bE0C2dEaDEd8Fc9ECEB5F01ad0B979b7AD03,OK,quick (estimated),102206192,283,242,YES,1,0.00017,0.001,0.00002,0.0008,0.0000,0.0000,0.0000,0.000,0.0000,,
+"DAO","DAO Avatar / Ethereum",ETHEREUM,0x1ecFD1afb601C406fF0e13c3485f2d75699b6817,OK,quick (estimated),25022668,1989,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"DAO","DAO Avatar / Celo",CELO,0x495d133B938596C9984d462F007B676bDc57eCEC,OK,quick (estimated),66009442,3068,438,YES,0,0.00031,0.000,0.00000,0.0015,0.0000,0.0000,0.0000,0.000,0.0000,,
+"DAO","DAO Avatar / XDC",XDC,0x21eaC3fE218307BeE0463F77EBcA3b50F452C0Ce,OK,quick (estimated),102206194,283,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"SUBTOTAL — DAO",,,,,,,,1556,,1,0.00109,0.001,0.00003,0.0054,0.0000,0.0000,0.0002,0.000,0.0000,,
+
+"Utility","Faucet / Celo",CELO,0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84,OK,quick (estimated),66009444,3068,6476741,YES,2111,4.53372,1.478,0.04434,22.6686,0.0000,0.0907,0.7173,0.000,0.0000,,
+"Utility","Faucet / XDC",XDC,0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9,OK,quick (estimated),102206196,283,913406,YES,3233,0.63938,2.263,0.06789,3.1969,0.0000,0.0128,0.1529,0.000,0.0000,,
+"Utility","NameService / Ethereum",ETHEREUM,0xec6dcE387B1616a0c44fF2E4fA9E90E53Cf14eb0,OK,quick (estimated),25022668,1670,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Utility","NameService / Celo",CELO,0x0F5dB7a64A6a64052693676CA898EC7F7A94FF4e,OK,quick (estimated),66009452,3068,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Utility","NameService / XDC",XDC,0x1e5154Bf5e31FF56051bbd45958b879Fb7a290FE,OK,quick (estimated),102206199,283,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Utility","OneTimePayments / Celo",CELO,0xB27D247f5C2a61D2Cb6b6E67FEE51d839447e97d,OK,quick (estimated),66009454,3068,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"Utility","ContributionCalculation / Ethereum",ETHEREUM,0x8eEC64bb6807c0178f96277cCE6a334B4e565E5C,OK,quick (estimated),25022669,1989,0,YES,0,0.00000,0.000,0.00000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,,
+"SUBTOTAL — Utility",,,,,,,,7390147,,5344,5.17310,3.741,0.11222,25.8655,0.0000,0.1035,0.8702,0.000,0.0000,,
+
+"GRAND TOTAL",,,,,,,,58061410,,60431,40.64299,42.302,1.26906,203.2149,0.0000,0.8129,7.1625,10.253,0.0000 (after 1TB free tier applied),,
+
+ASSUMPTIONS & METHODOLOGY
+Run date,2026-05-04T15:56:08.742Z
+Run mode,quick (7-day rate + estimated historical)
+AVG_ROW_BYTES,700 — adjust if your rows are significantly wider or narrower
+Daily rate window,last 7 days
+L3 mart model,Partition-aware per-mart attribution (see estimate.ts L3_MARTS)
+Additive marts,daily_invite_metrics + daily_claim_activity + daily_invite_funnel — INSERT pattern — scan 1 day partition only
+Full-rebuild mart,invite_funnel_snapshot — CREATE OR REPLACE — scans full invite + UBIScheme L1 history daily
+BQ partition pruning,Applied: additive mart scans = dailyGrowthMB (1 day's partition), not full table
+BQ active storage rate,$0.02/GB/month (first 90 days)
+BQ long-term storage rate,$0.01/GB/month (after 90 days)
+BQ on-demand query rate,$6.25/TB
+BQ free query tier,1 TB/month
+BQ streaming insert rate,$5/GB — AVOID for backfill
+BQ Load Job rate,$0 — USE FOR ALL BACKFILL
+L2 views cost,L2 is all VIEWs — query cost flows through to L1 scans above
+Envio HyperSync cost,NOT INCLUDED — check your plan at envio.dev
+firstBlock estimates,Rows marked [~] in code use approximate deployment block — scan may start earlier than actual deployment

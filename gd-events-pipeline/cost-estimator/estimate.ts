@@ -375,7 +375,43 @@ const BQ_FREE_QUERY_TB_PER_MONTH = 1.0;  // first 1 TB/month is free
 const BQ_STREAMING_INSERT_PER_GB = 5.00; // $/GB — streaming inserts; AVOID for backfill
 // BQ Load Jobs (batch) are FREE — use them for any historical backfill.
 
-const L3_MART_COUNT = 4;   // current number of daily-rebuild L3 marts (warehouse/L3/)
+// ── L3 mart definitions ────────────────────────────────────────────────────
+// Each mart is modelled individually to correctly attribute:
+//   (a) which L1 contract groups it reads from
+//   (b) whether it is ADDITIVE (scans only today's partition) or
+//       FULL-REBUILD (scans all historical data every day)
+//
+// ADDITIVE  → INSERT pattern, scans 1 day's partition (~dailyGrowthMB)
+// FULL      → CREATE OR REPLACE, scans full L1 table every run
+//
+// L2 views have no independent cost — their query cost flows through to L1.
+
+const L3_MARTS: Array<{
+  name:        string;
+  sourceGroups: string[];   // contract groups whose L1 tables this mart reads
+  rebuildType: "additive" | "full";
+}> = [
+  {
+    name:         "daily_invite_metrics",
+    sourceGroups: ["Invite"],
+    rebuildType:  "additive",  // one new row per day per network appended via INSERT
+  },
+  {
+    name:         "invite_funnel_snapshot",
+    sourceGroups: ["Invite", "UBIScheme"],
+    rebuildType:  "full",      // point-in-time snapshot of ALL invitees — must rescan full history
+  },
+  {
+    name:         "daily_claim_activity",
+    sourceGroups: ["UBIScheme"],
+    rebuildType:  "additive",  // one new row per day appended via INSERT
+  },
+  {
+    name:         "daily_invite_funnel",   // future mart — placeholder
+    sourceGroups: ["Invite"],
+    rebuildType:  "additive",
+  },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HYPERSYNC HELPERS
@@ -388,11 +424,13 @@ function makeClient(url: string): any {
   });
 }
 
-/** Returns the current chain tip block number (latest confirmed block). */
+/** Returns the current chain tip block number (latest confirmed block).
+ *  Uses getHeight() — available in hypersync-client ≥ 0.6.4.
+ *  (Pre-0.6.4 used getStatus().headBlock, which was removed.)
+ */
 async function getChainTip(url: string): Promise<number> {
   const client = makeClient(url);
-  const status = await client.getStatus();
-  return status.headBlock as number;
+  return await client.getHeight() as number;
 }
 
 /**
@@ -531,11 +569,36 @@ function buildResult(
     yearStorageCumulativeUSD += runningStorageGB * rate;
   }
 
-  // Query cost: each L3 mart does a full L1 table scan once per day.
-  // L2 views pass through to L1 — no independent storage or query cost.
-  // Use mid-year projected L1 size (6 months of growth on top of today).
-  const projectedL1GB    = historicalSizeGB + monthlyGrowthGB * 6;
-  const dailyMartScanGB  = projectedL1GB * L3_MART_COUNT;
+  // ── Query cost — correct model ───────────────────────────────────────────
+  //
+  // Two key facts that the naive model ignores:
+  //
+  // 1. PARTITION PRUNING: L1 tables are partitioned by DATE(block_timestamp).
+  //    An ADDITIVE mart's INSERT only touches the latest partition (~1 day of
+  //    data). It does NOT scan the full table.
+  //
+  // 2. PER-MART SOURCE ATTRIBUTION: each mart only reads from its own L1
+  //    source tables — not from all contracts combined.
+  //
+  // We compute this contract's daily scan contribution per mart:
+  //   - ADDITIVE  → scans 1 day's worth: dailyGrowthMB / 1000 (GB)
+  //   - FULL      → scans full mid-year projected size (historicalSizeGB + 6mo growth)
+  //
+  // Mid-year projected size for FULL scans (conservative estimate):
+  const projectedL1GB = historicalSizeGB + monthlyGrowthGB * 6;
+
+  let dailyMartScanGB = 0;
+  for (const mart of L3_MARTS) {
+    if (!mart.sourceGroups.includes(spec.group)) continue; // mart doesn't touch this contract
+    if (mart.rebuildType === "additive") {
+      // Scans only today's partition — roughly one day of new data
+      dailyMartScanGB += dailyGrowthMB / 1_000;
+    } else {
+      // Full rebuild — scans entire projected table
+      dailyMartScanGB += projectedL1GB;
+    }
+  }
+
   const monthlyRawScanTB = (dailyMartScanGB * 30) / 1_000;
   const monthlyQueryCostRawUSD = monthlyRawScanTB * BQ_QUERY_COST_PER_TB;
 
@@ -758,13 +821,16 @@ function buildCsv(results: ContractResult[]): string {
   lines.push(`Run mode,${FULL_MODE ? "full historical scan" : "quick (7-day rate + estimated historical)"}`);
   lines.push(`AVG_ROW_BYTES,${AVG_ROW_BYTES} — adjust if your rows are significantly wider or narrower`);
   lines.push(`Daily rate window,last ${DAYS_SAMPLE} days`);
+  lines.push(`L3 mart model,Partition-aware per-mart attribution (see estimate.ts L3_MARTS)`);
+  lines.push(`Additive marts,daily_invite_metrics + daily_claim_activity + daily_invite_funnel — INSERT pattern — scan 1 day partition only`);
+  lines.push(`Full-rebuild mart,invite_funnel_snapshot — CREATE OR REPLACE — scans full invite + UBIScheme L1 history daily`);
+  lines.push(`BQ partition pruning,Applied: additive mart scans = dailyGrowthMB (1 day's partition), not full table`);
   lines.push(`BQ active storage rate,$${BQ_ACTIVE_STORAGE_PER_GB}/GB/month (first 90 days)`);
   lines.push(`BQ long-term storage rate,$${BQ_LONGTERM_STORAGE_PER_GB}/GB/month (after 90 days)`);
   lines.push(`BQ on-demand query rate,$${BQ_QUERY_COST_PER_TB}/TB`);
   lines.push(`BQ free query tier,${BQ_FREE_QUERY_TB_PER_MONTH} TB/month`);
   lines.push(`BQ streaming insert rate,$${BQ_STREAMING_INSERT_PER_GB}/GB — AVOID for backfill`);
   lines.push(`BQ Load Job rate,$0 — USE FOR ALL BACKFILL`);
-  lines.push(`L3 mart count,${L3_MART_COUNT} — each mart does one full L1 scan per daily rebuild`);
   lines.push(`L2 views cost,L2 is all VIEWs — query cost flows through to L1 scans above`);
   lines.push(`Envio HyperSync cost,NOT INCLUDED — check your plan at envio.dev`);
   lines.push(`firstBlock estimates,Rows marked [~] in code use approximate deployment block — scan may start earlier than actual deployment`);
