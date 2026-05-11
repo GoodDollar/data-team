@@ -1,0 +1,16 @@
+# Node dependencies
+node_modules/
+
+# Environment variables (CRITICAL - secrets)
+.env
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist
+gd-events-pipeline/invite_events.csv

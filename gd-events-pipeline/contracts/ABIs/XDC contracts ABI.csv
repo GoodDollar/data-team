@@ -1,0 +1,1057 @@
+Contract name,Proxy Contracts,ABI content
+ProxyFactory,0x5BE34022c26FA03a8d6926314a42414c7ca2dF51,
+GuardiansSafe,0xE0c5daa7CC6F88d29505f702a53bb5E67600e7Ec,
+CUSD,0xfA2958CB79b0491CC627c1557F441eF849Ca8eb1,
+USDC,0xfA2958CB79b0491CC627c1557F441eF849Ca8eb1,
+ReserveToken,0xfA2958CB79b0491CC627c1557F441eF849Ca8eb1,
+Identity,0x27a4a02C9ed591E1a86e2e5D05870292c34622C9,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AccountConnected(address indexed connected, address indexed to)
+  AccountDisconnected(address indexed disconnected, address indexed from)
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  BlacklistAdded(address indexed account)
+  BlacklistRemoved(address indexed account)
+  ContractAdded(address indexed account)
+  ContractRemoved(address indexed account)
+  Initialized(uint8 version)
+  Paused(address account)
+  RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole)
+  RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+  RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+  Unpaused(address account)
+  Upgraded(address indexed implementation)
+  WhitelistedAdded(address indexed account)
+  WhitelistedAuthenticated(address indexed account, uint256 timestamp)
+  WhitelistedRemoved(address indexed account)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  DEFAULT_ADMIN_ROLE() → bytes32 [view]
+  IDENTITY_ADMIN_ROLE() → bytes32 [view]
+  PAUSER_ROLE() → bytes32 [view]
+  TYPED_STRUCTURE() → string [view]
+  addrToDID(address account) → string did [view]
+  authenticationPeriod() → uint256 [view]
+  avatar() → address [view]
+  connectedAccounts(address —) → address [view]
+  dao() → address [view]
+  didHashToAddress(bytes32 —) → address [view]
+  getRoleAdmin(bytes32 role) → bytes32 [view]
+  getWhitelistedOnChainId(address account) → uint256 chainId [view]
+  getWhitelistedRoot(address account) → address whitelisted [view]
+  hasRole(bytes32 role, address account) → bool [view]
+  identities(address —) → uint256 dateAuthenticated, uint256 dateAdded, string did, uint256 whitelistedOnChainId, uint8 status, uint32 authCount [view]
+  isBlacklisted(address account) → bool [view]
+  isDAOContract(address account) → bool [view]
+  isRegistered() → bool [pure]
+  isWhitelisted(address account) → bool [view]
+  lastAuthenticated(address account) → uint256 [view]
+  nameService() → address [view]
+  nativeToken() → address [view]
+  oldIdentity() → address [view]
+  paused() → bool [view]
+  proxiableUUID() → bytes32 [view]
+  reverifyDaysOptions(uint256 —) → uint32 [view]
+  shouldReverify(address account, uint256 daysSinceAuth) → bool [view]
+  supportsInterface(bytes4 interfaceId) → bool [view]
+  whitelistedContracts() → uint256 [view]
+  whitelistedCount() → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addBlacklisted(address account)
+  addContract(address account)
+  addWhitelisted(address account)
+  addWhitelistedWithDID(address account, string did)
+  addWhitelistedWithDIDAndChain(address account, string did, uint256 orgChain, uint256 dateAuthenticated)
+  authenticate(address account)
+  authenticateWithTimestamp(address account, uint256 timestamp)
+  connectAccount(address account)
+  disconnectAccount(address connected)
+  grantRole(bytes32 role, address account)
+  initDAO(address _ns)
+  initialize(address _owner, address _oldIdentity)
+  pause(bool toPause)
+  removeBlacklisted(address account)
+  removeContract(address account)
+  removeWhitelisted(address account)
+  renounceRole(bytes32 role, address account)
+  renounceWhitelisted()
+  revokeRole(bytes32 role, address account)
+  setDID(address account, string did)
+  setReverifyDaysOptions(uint8[] options)
+  updateAvatar()
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]"
+DAOCreator,0xa2B9993D198904e4bdCE48379FDff65405607F42,
+FeeFormula,0xf4e9Af892A09F04B7408266777198206E7f80D46,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  getTxFees(uint256 _value, address _sender, address _recipient) → uint256, bool [view]
+  isOwner() → bool [view]
+  isRegistered() → bool [view]
+  isRegistered(address scheme) → bool [view]
+  owner() → address [view]
+  percentage() → uint256 [view]
+  senderPays() → bool [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  renounceOwnership()
+  setAvatar(address _avatar)
+  transferOwnership(address newOwner)"
+NameService,0x1e5154Bf5e31FF56051bbd45958b879Fb7a290FE,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AddressChanged(string name, address addr)
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  Initialized(uint8 version)
+  Upgraded(address indexed implementation)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  addresses(bytes32 —) → address [view]
+  dao() → address [view]
+  getAddress(string name) → address [view]
+  proxiableUUID() → bytes32 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  initialize(address _dao, bytes32[] _nameHashes, address[] _addresses)
+  setAddress(string name, address addr)
+  setAddresses(bytes32[] hash, address[] addrs)
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]"
+Avatar,0x21eaC3fE218307BeE0463F77EBcA3b50F452C0Ce,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  ExternalTokenApproval(address indexed _externalToken, address _spender, uint256 _value)
+  ExternalTokenTransfer(address indexed _externalToken, address indexed _to, uint256 _value)
+  ExternalTokenTransferFrom(address indexed _externalToken, address _from, address _to, uint256 _value)
+  GenericCall(address indexed _contract, bytes _data, uint256 _value, bool _success)
+  MetaData(string _metaData)
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  ReceiveEther(address indexed _sender, uint256 _value)
+  SendEther(uint256 _amountInWei, address indexed _to)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  isOwner() → bool [view]
+  nativeReputation() → address [view]
+  nativeToken() → address [view]
+  orgName() → string [view]
+  owner() → address [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  externalTokenApproval(address _externalToken, address _spender, uint256 _value) → bool
+  externalTokenTransfer(address _externalToken, address _to, uint256 _value) → bool
+  externalTokenTransferFrom(address _externalToken, address _from, address _to, uint256 _value) → bool
+  genericCall(address _contract, bytes _data, uint256 _value) → bool success, bytes returnValue
+  metaData(string _metaData) → bool
+  renounceOwnership()
+  sendEther(uint256 _amountInWei, address _to) → bool
+  transferOwnership(address newOwner)"
+GoodDollar,0xEC2136843a983885AebF2feB3931F73A8eBEe50c,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AgreementCreated(address indexed agreementClass, bytes32 id, bytes32[] data)
+  AgreementLiquidated(address indexed agreementClass, bytes32 id, address indexed penaltyAccount, address indexed rewardAccount, uint256 rewardAmount)
+  AgreementLiquidatedBy(address liquidatorAccount, address indexed agreementClass, bytes32 id, address indexed penaltyAccount, address indexed bondAccount, uint256 rewardAmount, uint256 bailoutAmount)
+  AgreementLiquidatedV2(address indexed agreementClass, bytes32 id, address indexed liquidatorAccount, address indexed targetAccount, address rewardAmountReceiver, uint256 rewardAmount, int256 targetAccountBalanceDelta, bytes liquidationTypeData)
+  AgreementStateUpdated(address indexed agreementClass, address indexed account, uint256 slotId)
+  AgreementTerminated(address indexed agreementClass, bytes32 id)
+  AgreementUpdated(address indexed agreementClass, bytes32 id, bytes32[] data)
+  Approval(address indexed owner, address indexed spender, uint256 value)
+  AuthorizedOperator(address indexed operator, address indexed tokenHolder)
+  Bailout(address indexed bailoutAccount, uint256 bailoutAmount)
+  Burned(address indexed operator, address indexed from, uint256 amount, bytes data, bytes operatorData)
+  CodeUpdated(bytes32 uuid, address codeAddress)
+  Initialized(uint8 version)
+  Minted(address indexed operator, address indexed to, uint256 amount, bytes data, bytes operatorData)
+  Paused(address account)
+  RevokedOperator(address indexed operator, address indexed tokenHolder)
+  RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole)
+  RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+  RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+  Sent(address indexed operator, address indexed from, address indexed to, uint256 amount, bytes data, bytes operatorData)
+  Transfer(address indexed from, address indexed to, uint256 value, bytes data)
+  Transfer(address indexed from, address indexed to, uint256 value)
+  TransferFee(address from, address to, uint256 amount, uint256 fee, bool senderPays)
+  Unpaused(address account)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  DEFAULT_ADMIN_ROLE() → bytes32 [view]
+  DOMAIN_SEPARATOR() → bytes32 [view]
+  MINTER_ROLE() → bytes32 [view]
+  PAUSER_ROLE() → bytes32 [view]
+  allowance(address account, address spender) → uint256 [view]
+  balanceOf(address account) → uint256 balance [view]
+  cap() → uint256 [view]
+  decimals() → uint8 [pure]
+  defaultOperators() → address[] [view]
+  disableHostOperations() → bool [view]
+  feeRecipient() → address [view]
+  formula() → address [view]
+  getAccountActiveAgreements(address account) → address[] [view]
+  getAgreementData(address agreementClass, bytes32 id, uint256 dataLength) → bytes32[] data [view]
+  getAgreementStateSlot(address agreementClass, address account, uint256 slotId, uint256 dataLength) → bytes32[] slotData [view]
+  getCodeAddress() → address codeAddress [view]
+  getFees(uint256 amount, address sender, address recipient) → uint256 fee, bool senderPays [view]
+  getFees(uint256 amount) → uint256 fee, bool senderPays [view]
+  getHost() → address host [view]
+  getRoleAdmin(bytes32 role) → bytes32 [view]
+  getRoleMember(bytes32 role, uint256 index) → address [view]
+  getRoleMemberCount(bytes32 role) → uint256 [view]
+  getUnderlyingToken() → address [view]
+  granularity() → uint256 [pure]
+  hasRole(bytes32 role, address account) → bool [view]
+  identity() → address [view]
+  isAccountCritical(address account, uint256 timestamp) → bool isCritical [view]
+  isAccountCriticalNow(address account) → bool isCritical [view]
+  isAccountSolvent(address account, uint256 timestamp) → bool isSolvent [view]
+  isAccountSolventNow(address account) → bool isSolvent [view]
+  isMinter(address _minter) → bool [view]
+  isOperatorFor(address operator, address tokenHolder) → bool [view]
+  isPauser(address _pauser) → bool [view]
+  name() → string [view]
+  nonces(address owner) → uint256 [view]
+  owner() → address [view]
+  paused() → bool [view]
+  poolAdminNFT() → address [view]
+  poolMemberNFT() → address [view]
+  proxiableUUID() → bytes32 [pure]
+  realtimeBalanceOf(address account, uint256 timestamp) → int256 availableBalance, uint256 deposit, uint256 owedDeposit [view]
+  realtimeBalanceOfNow(address account) → int256 availableBalance, uint256 deposit, uint256 owedDeposit, uint256 timestamp [view]
+  supportsInterface(bytes4 interfaceId) → bool [view]
+  symbol() → string [view]
+  totalSupply() → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addMinter(address _minter)
+  addPauser(address _pauser)
+  approve(address spender, uint256 amount) → bool
+  authorizeOperator(address operator)
+  burn(uint256 amount)
+  burn(uint256 amount, bytes data)
+  burnFrom(address account, uint256 amount)
+  castrate()
+  createAgreement(bytes32 id, bytes32[] data)
+  creditGasFees(address from, address feeRecipient, address gatewayFeeRecipient, address baseFeeRecipient, uint256 refund, uint256 tipTxFee, uint256 gatewayFee, uint256 baseTxFee)
+  debitGasFees(address from, uint256 value)
+  decreaseAllowance(address spender, uint256 subtractedValue) → bool
+  enableHostOperations(bool enabled)
+  grantRole(bytes32 role, address account)
+  increaseAllowance(address spender, uint256 addedValue) → bool
+  initialize(address underlyingToken, uint8 underlyingDecimals, string n, string s)
+  initialize(string n, string s, uint256 _cap, address _formula, address _identity, address _feeRecipient, address _owner)
+  makeLiquidationPayoutsV2(bytes32 id, bytes liquidationTypeData, address liquidatorAccount, bool useDefaultRewardAccount, address targetAccount, uint256 rewardAmount, int256 targetAccountBalanceDelta)
+  mint(address to, uint256 amount) → bool
+  operationApprove(address account, address spender, uint256 amount)
+  operationDecreaseAllowance(address account, address spender, uint256 subtractedValue)
+  operationIncreaseAllowance(address account, address spender, uint256 addedValue)
+  operationSend(address spender, address recipient, uint256 amount, bytes userData)
+  operationTransferFrom(address account, address spender, address recipient, uint256 amount)
+  operatorBurn(address account, uint256 amount, bytes data, bytes operatorData)
+  operatorSend(address sender, address recipient, uint256 amount, bytes data, bytes operatorData)
+  pause()
+  permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+  recover(address token)
+  renounceMinter()
+  renounceRole(bytes32 role, address account)
+  revokeOperator(address operator)
+  revokeRole(bytes32 role, address account)
+  selfApproveFor(address account, address spender, uint256 amount)
+  send(address recipient, uint256 amount, bytes data)
+  setFeeRecipient(address _feeRecipient)
+  setFormula(address _formula)
+  setIdentity(address _identity)
+  setNFTProxyContracts(address _poolAdminNFT, address _poolMemberNFT)
+  settleBalance(address account, int256 delta)
+  terminateAgreement(bytes32 id, uint256 dataLength)
+  transfer(address to, uint256 amount) → bool
+  transferAndCall(address to, uint256 amount, bytes data) → bool
+  transferFrom(address holder, address recipient, uint256 amount) → bool
+  transferOwnership(address _owner)
+  unpause()
+  updateAgreementData(bytes32 id, bytes32[] data)
+  updateAgreementStateSlot(address account, uint256 slotId, bytes32[] slotData)
+  updateCode(address newAddress)"
+Controller,0x75a8bE0C2dEaDEd8Fc9ECEB5F01ad0B979b7AD03,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AddGlobalConstraint(address indexed _globalConstraint, bytes32 _params, uint8 _when)
+  BurnReputation(address indexed _sender, address indexed _from, uint256 _amount)
+  MintReputation(address indexed _sender, address indexed _to, uint256 _amount)
+  MintTokens(address indexed _sender, address indexed _beneficiary, uint256 _amount)
+  RegisterScheme(address indexed _sender, address indexed _scheme)
+  RemoveGlobalConstraint(address indexed _globalConstraint, uint256 _index, bool _isPre)
+  UnregisterScheme(address indexed _sender, address indexed _scheme)
+  UpgradeController(address indexed _oldController, address _newController)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  avatar() → address [view]
+  getGlobalConstraintParameters(address _globalConstraint, address —) → bytes32 [view]
+  getNativeReputation(address _avatar) → address [view]
+  getSchemeParameters(address _scheme, address _avatar) → bytes32 [view]
+  getSchemePermissions(address _scheme, address _avatar) → bytes4 [view]
+  globalConstraintsCount(address _avatar) → uint256, uint256 [view]
+  globalConstraintsPost(uint256 —) → address gcAddress, bytes32 params [view]
+  globalConstraintsPre(uint256 —) → address gcAddress, bytes32 params [view]
+  globalConstraintsRegisterPost(address —) → bool isRegistered, uint256 index [view]
+  globalConstraintsRegisterPre(address —) → bool isRegistered, uint256 index [view]
+  isGlobalConstraintRegistered(address _globalConstraint, address _avatar) → bool [view]
+  isSchemeRegistered(address _scheme, address _avatar) → bool [view]
+  nativeReputation() → address [view]
+  nativeToken() → address [view]
+  newController() → address [view]
+  schemes(address —) → bytes32 paramsHash, bytes4 permissions [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addGlobalConstraint(address _globalConstraint, bytes32 _params, address _avatar) → bool
+  burnReputation(uint256 _amount, address _from, address _avatar) → bool
+  externalTokenApproval(address _externalToken, address _spender, uint256 _value, address _avatar) → bool
+  externalTokenTransfer(address _externalToken, address _to, uint256 _value, address _avatar) → bool
+  externalTokenTransferFrom(address _externalToken, address _from, address _to, uint256 _value, address _avatar) → bool
+  genericCall(address _contract, bytes _data, address _avatar, uint256 _value) → bool, bytes
+  metaData(string _metaData, address _avatar) → bool
+  mintReputation(uint256 _amount, address _to, address _avatar) → bool
+  mintTokens(uint256 _amount, address _beneficiary, address _avatar) → bool
+  registerScheme(address _scheme, bytes32 _paramsHash, bytes4 _permissions, address _avatar) → bool
+  removeGlobalConstraint(address _globalConstraint, address _avatar) → bool
+  sendEther(uint256 _amountInWei, address _to, address _avatar) → bool
+  unregisterScheme(address _scheme, address _avatar) → bool
+  unregisterSelf(address _avatar) → bool
+  upgradeController(address _newController, address _avatar) → bool"
+AdminWallet,0x66fc1bE551f752706130b6f54d84141F8c2Ae8Bb,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AdminChanged(address previousAdmin, address newAdmin)
+  AdminsAdded(address[] indexed admins)
+  AdminsRemoved(address[] indexed admins)
+  BeaconUpgraded(address indexed beacon)
+  GenericCall(address indexed _contract, bytes _data, uint256 _value, bool _success)
+  Initialized(uint8 version)
+  RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole)
+  RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+  RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+  Upgraded(address indexed implementation)
+  WalletTopped(address indexed user, uint256 amount)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  DEFAULT_ADMIN_ROLE() → bytes32 [view]
+  WALLET_ADMIN_ROLE() → bytes32 [view]
+  adminToppingAmount() → uint256 [view]
+  day() → uint64 [view]
+  gasPrice() → uint256 [view]
+  getIdentity() → address [view]
+  getRoleAdmin(bytes32 role) → bytes32 [view]
+  hasRole(bytes32 role, address account) → bool [view]
+  isAdmin(address _user) → bool [view]
+  lastGdBalance(address —) → uint256 [view]
+  maxDailyNewWallets() → uint64 [view]
+  nameService() → address [view]
+  proxiableUUID() → bytes32 [view]
+  supportsInterface(bytes4 interfaceId) → bool [view]
+  toppingAmount() → uint256 [view]
+  toppingTimes() → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addAdmins(address[] _admins)
+  blacklist(address _user)
+  genericCall(address _contract, bytes _data, uint256 _value) → bool success, bytes returnValue
+  genericCallBatch(address[] _contracts, bytes[] _datas, uint256[] _values) → bool success, bytes returnValue
+  grantRole(bytes32 role, address account)
+  initialize(address[] _admins, address _ns, address _owner, uint256 _gasPrice)
+  removeAdmins(address[] _admins)
+  removeBlacklist(address _user)
+  removeWhitelist(address _user)
+  renounceRole(bytes32 role, address account)
+  revokeRole(bytes32 role, address account)
+  setDefaults(uint256 _toppingAmount, uint256 _adminToppingAmount, uint256 _toppingTimes, uint256 _gasPrice)
+  topAdmins(uint256 startIndex, uint256 endIndex)
+  topAdmins(uint256 startIndex)
+  topWallet(address _user)
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]
+  whitelist(address _user, string _did)
+  whitelist(address _user, string _did, uint256 orgChain, uint256 dateAuthenticated)"
+Faucet,0x7344Da1Be296f03fbb8082aDaC5696058B5a9bd9,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  Initialized(uint8 version)
+  RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole)
+  RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+  RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+  Upgraded(address indexed implementation)
+  WalletTopped(address indexed account, uint256 amount, address whitelistedRoot, address indexed relayerOrWhitelisted)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  DEFAULT_ADMIN_ROLE() → bytes32 [view]
+  RELAYER_ROLE() → bytes32 [view]
+  bans(address —) → uint256 [view]
+  canTop(address _user) → bool [view]
+  currentDay() → uint256 [view]
+  dailyNewWalletsCount() → uint64 [view]
+  gasPrice() → uint64 [view]
+  gasRefund() → uint256 [view]
+  gasTopping() → uint256 [view]
+  getIdentity() → address [view]
+  getRoleAdmin(bytes32 role) → bytes32 [view]
+  getToppingAmount(address _user) → uint256 [view]
+  getToppingAmount() → uint256 [view]
+  goodDollar_unused() → address [view]
+  hasRole(bytes32 role, address account) → bool [view]
+  maxDailyNewWallets() → uint64 [view]
+  maxDailyToppings() → uint32 [view]
+  maxPerWeekMultiplier() → uint32 [view]
+  maxSwapAmount_unused() → uint32 [view]
+  minTopping() → uint8 [view]
+  nameService() → address [view]
+  notFirstTime(address —) → bool [view]
+  perDayRoughLimit() → uint256 [view]
+  proxiableUUID() → bytes32 [view]
+  startTime() → uint256 [view]
+  supportsInterface(bytes4 interfaceId) → bool [view]
+  toppings(uint256 —, address —) → uint256 [view]
+  version() → uint32 [view]
+  votingContract() → address [view]
+  wallets(address —) → uint128 lastDayTopped, uint32 dailyToppingCount, uint128 weeklyToppingSum, uint128 lastWeekTopped [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  banAddress(address _user)
+  grantRole(bytes32 role, address account)
+  initialize(address _ns, uint64 _gasPrice, address relayer, address owner)
+  onTokenTransfer(address _from, uint256 amount, bytes data) → bool
+  renounceRole(bytes32 role, address account)
+  revokeRole(bytes32 role, address account)
+  setGasPrice(uint64 _price)
+  setGasTopping(uint256 _gasUnits)
+  setMinTopping(uint8 _minTop)
+  setVotingContract(address _voting)
+  topWallet(address _user)
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]"
+Invites,0x6bd698566632bf2e81e2278f1656CB24aAF06D2e,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  Initialized(uint8 version)
+  InviteeJoined(address indexed inviter, address indexed invitee)
+  InviterBounty(address indexed inviter, address indexed invitee, uint256 bountyPaid, uint256 inviterLevel, bool earnedLevel)
+  Upgraded(address indexed implementation)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  active() → bool [view]
+  avatar() → address [view]
+  canCollectBountyFor(address _invitee) → bool [view]
+  codeToUser(bytes32 —) → address [view]
+  dao() → address [view]
+  getIdentity() → address [view]
+  getInvitees(address _inviter) → address[] [view]
+  getPendingBounties(address _inviter) → uint256 [view]
+  getPendingInvitees(address _inviter) → address[] [view]
+  goodDollar() → address [view]
+  levelExpirationEnabled() → bool [view]
+  levels(uint256 —) → uint256 toNext, uint256 bounty, uint256 daysToComplete [view]
+  minimumClaims() → uint8 [view]
+  minimumDays() → uint8 [view]
+  nameService() → address [view]
+  nativeToken() → address [view]
+  owner() → address [view]
+  proxiableUUID() → bytes32 [view]
+  stats() → uint256 totalApprovedInvites, uint256 totalBountiesPaid, uint256 totalInvited [view]
+  users(address —) → address invitedBy, bytes32 inviteCode, bool bountyPaid, uint256 level, uint256 levelStarted, uint256 totalApprovedInvites, uint256 totalEarned, uint256 joinedAt, uint256 bountyAtJoin [view]
+  version() → string [pure]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  bountyFor(address _invitee) → uint256 bounty
+  collectBounties()
+  end()
+  initialize(address _ns, uint256 _level0Bounty, address _owner)
+  join(bytes32 _myCode, bytes32 _inviterCode)
+  setActive(bool _active)
+  setCampaignCode(bytes32 _code)
+  setLevel(uint256 _lvl, uint256 _toNext, uint256 _bounty, uint256 _daysToComplete)
+  setLevelExpirationEnabled(bool _isEnabled)
+  setMinimums(uint8 _minClaims, uint8 _minDays)
+  setOwner(address _owner)
+  updateAvatar()
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]"
+UBIScheme,0x22867567E2D80f2049200E25C6F31CB6Ec2F0faf,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  CycleLengthSet(uint256 newCycleLength)
+  DaySet(uint256 newDay)
+  Initialized(uint8 version)
+  ShouldWithdrawFromDAOSet(bool ShouldWithdrawFromDAO)
+  UBICalculated(uint256 day, uint256 dailyUbi, uint256 blockNumber)
+  UBIClaimed(address indexed claimer, uint256 amount)
+  UBICycleCalculated(uint256 day, uint256 pool, uint256 cycleLength, uint256 dailyUBIPool)
+  Upgraded(address indexed implementation)
+  WithdrawFromDao(uint256 prevBalance, uint256 newBalance)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  avatar() → address [view]
+  checkEntitlement(address _member) → uint256 [view]
+  checkEntitlement() → uint256 [view]
+  claimDay(uint256 —) → uint256 amountOfClaimers, uint256 claimAmount [view]
+  currentCycleLength() → uint256 [view]
+  currentDay() → uint256 [view]
+  currentDayInCycle() → uint256 [view]
+  cycleLength() → uint256 [view]
+  dailyCyclePool() → uint256 [view]
+  dailyUBIHistory(uint256 —) → bool hasWithdrawn, uint256 openAmount [view]
+  dailyUbi() → uint256 [view]
+  dao() → address [view]
+  estimateNextDailyUBI() → uint256 [view]
+  getClaimAmount(uint256 day) → uint256 [view]
+  getClaimerCount(uint256 day) → uint256 [view]
+  getDailyStats() → uint256, uint256 [view]
+  hasClaimed(address account) → bool [view]
+  isNotNewUser(address _account) → bool [view]
+  lastClaimed(address —) → uint256 [view]
+  lastWithdrawDay() → uint256 [view]
+  minActiveUsers() → uint256 [view]
+  nameService() → address [view]
+  nativeToken() → address [view]
+  paused() → bool [view]
+  periodStart() → uint256 [view]
+  proxiableUUID() → bytes32 [view]
+  reserveFactor() → uint32 [view]
+  shouldWithdrawFromDAO() → bool [view]
+  startOfCycle() → uint256 [view]
+  totalClaimsPerUser(address —) → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  claim() → bool
+  initialize(address _ns, uint256 _minActiveUsers)
+  pause(bool _pause)
+  setCycleLength(uint256 _newLength)
+  setDay()
+  setNewClaimersReserveFactor(uint32 _reserveFactor)
+  setShouldWithdrawFromDAO(bool _shouldWithdraw)
+  updateAvatar()
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]
+  withdraw(uint256 _amount, address _recipient)"
+MpbBridge,0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  BridgeRequest(address indexed from, address indexed to, uint256 targetChainId, uint256 normalizedAmount, uint256 timestamp, uint8 bridge, uint256 indexed id)
+  ExecutedTransfer(address indexed from, address indexed to, uint256 normalizedAmount, uint256 fee, uint256 sourceChainId, uint8 bridge, uint256 indexed id)
+  FalseSender(uint256 sourceChainId, address sourceAddress)
+  Initialized(uint8 version)
+  MessageFailed(uint16 _srcChainId, bytes _srcAddress, uint64 _nonce, bytes _payload, bytes _reason)
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  RetryMessageSuccess(uint16 _srcChainId, bytes _srcAddress, uint64 _nonce, bytes32 _payloadHash)
+  SetMinDstGas(uint16 _dstChainId, uint16 _type, uint256 _minDstGas)
+  SetPrecrime(address precrime)
+  SetTrustedRemote(uint16 _remoteChainId, bytes _path)
+  SetTrustedRemoteAddress(uint16 _remoteChainId, bytes _remoteAddress)
+  Upgraded(address indexed implementation)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  DEFAULT_PAYLOAD_SIZE_LIMIT() → uint256 [view]
+  HOME_CHAIN_ID() → uint32 [view]
+  accountsDailyLimit(address —) → uint256 lastTransferReset, uint256 bridged24Hours [view]
+  approvedRequests(uint256 —) → bool [view]
+  avatar() → address [view]
+  bridgeDailyLimit() → uint256 lastTransferReset, uint256 bridged24Hours [view]
+  bridgeFees() → uint256 minFee, uint256 maxFee, uint256 fee [view]
+  bridgeLimits() → uint256 dailyLimit, uint256 txLimit, uint256 accountDailyLimit, uint256 minAmount, bool onlyWhitelisted [view]
+  canBridge(address from, uint256 amount) → bool isWithinLimit, string error [view]
+  currentId() → uint256 [view]
+  dao() → address [view]
+  disabledSourceBridges(bytes32 —) → bool [view]
+  estimateSendFee(uint16 _dstChainId, address _fromAddress, address _toAddress, uint256 _normalizedAmount, bool _useZro, bytes _adapterParams) → uint256 nativeFee, uint256 zroFee [view]
+  executedRequests(uint256 —) → bool [view]
+  failedMessages(uint16 —, bytes —, uint64 —) → bytes32 [view]
+  faucet() → address [view]
+  feeRecipient() → address [view]
+  fromAxelarChainId(string axlChainId) → uint256 chainId [pure]
+  fromLzChainId(uint16 lzChainId) → uint256 chainId [view]
+  gasService() → address [view]
+  gateway() → address [view]
+  getConfig(uint16 _version, uint16 _chainId, address —, uint256 _configType) → bytes [view]
+  getTrustedRemoteAddress(uint16 _remoteChainId) → bytes [view]
+  guardian() → address [view]
+  isClosed() → bool [view]
+  isTrustedRemote(uint16 _srcChainId, bytes _srcAddress) → bool [view]
+  lzChainIdsMapping(uint256 —) → uint16 [view]
+  lzChainToIdsMapping(uint16 —) → uint256 [view]
+  lzEndpoint() → address [view]
+  lzEndpoint_() → address [view]
+  minDstGasLookup(uint16 —, uint16 —) → uint256 [view]
+  nameService() → address [view]
+  nativeToken() → address [view]
+  owner() → address [view]
+  payloadSizeLimitLookup(uint16 —) → uint256 [view]
+  precrime() → address [view]
+  proxiableUUID() → bytes32 [view]
+  toAxelarChainId(uint256 chainId) → string axlChainId [pure]
+  toLzChainId(uint256 chainId) → uint16 lzChainId [view]
+  trustedRemoteLookup(uint16 —) → bytes [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addLzChainSupport(uint16 lzChainId, uint256 chainId, address remote)
+  approveRequest(uint256 id)
+  bridgeTo(address target, uint256 targetChainId, uint256 amount, uint8 bridge) [payable]
+  bridgeToWithAxelar(address target, uint256 targetChainId, uint256 amount, address gasRefundAddress) [payable]
+  bridgeToWithLz(address target, uint256 targetChainId, uint256 amount, bytes adapterParams) [payable]
+  execute(bytes32 commandId, string sourceChain, string sourceAddress, bytes payload)
+  executeWithToken(bytes32 commandId, string sourceChain, string sourceAddress, bytes payload, string tokenSymbol, uint256 amount)
+  forceResumeReceive(uint16 _srcChainId, bytes _srcAddress)
+  initialize(address nameService, tuple limits, tuple fees)
+  lzReceive(uint16 _srcChainId, bytes _srcAddress, uint64 _nonce, bytes _payload)
+  nonblockingLzReceive(uint16 _srcChainId, bytes _srcAddress, uint64 _nonce, bytes _payload)
+  pauseBridge(bool isPaused)
+  preventRequest(uint256 id)
+  renounceOwnership()
+  retryMessage(uint16 _srcChainId, bytes _srcAddress, uint64 _nonce, bytes _payload) [payable]
+  setBridgeFees(tuple fees)
+  setBridgeLimits(tuple limits)
+  setConfig(uint16 _version, uint16 _chainId, uint256 _configType, bytes _config)
+  setDisabledBridges(bytes32[] bridgeKeys, bool[] disabled)
+  setFaucet(address _faucet)
+  setFeeRecipient(address recipient)
+  setGuardian(address _guardian)
+  setMinDstGas(uint16 _dstChainId, uint16 _packetType, uint256 _minGas)
+  setPayloadSizeLimit(uint16 _dstChainId, uint256 _size)
+  setPrecrime(address _precrime)
+  setReceiveVersion(uint16 _version)
+  setSendVersion(uint16 _version)
+  setTrustedRemote(uint16 _srcChainId, bytes _path)
+  setTrustedRemoteAddress(uint16 _remoteChainId, bytes _remoteAddress)
+  transferOwnership(address newOwner)
+  updateAvatar()
+  upgrade()
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]
+  withdraw(address token, uint256 amount)"
+BulkWhitelist,0xe8861A20452Db53dF685F1d9e6B7017de3DB0E46,"═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  removeWhitelisted(address[] _user)
+  whitelist(address[] _user, string[] _did, uint256[] orgChain, uint256[] dateAuthenticated)"
+UniswapV3Router,0x3b9edecc4286ba33ea6e27119c2a4db99829839d,
+UniswapV3RouterOfficial,0xaa52bB8110fE38D0d2d2AF0B85C3A3eE622CA455,
+StaticOracle,0x725244458f011551Dde1104c9728746EEBEA19f9,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  OracleCreated(address oracle)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  CARDINALITY_PER_MINUTE() → uint8 [view]
+  UNISWAP_V3_FACTORY() → address [view]
+  getAllPoolsForPair(address _tokenA, address _tokenB) → address[] [view]
+  isPairSupported(address _tokenA, address _tokenB) → bool [view]
+  quoteAllAvailablePoolsWithTimePeriod(uint128 _baseAmount, address _baseToken, address _quoteToken, uint32 _period) → uint256 _quoteAmount, address[] _queriedPools [view]
+  quoteSpecificFeeTiersWithTimePeriod(uint128 _baseAmount, address _baseToken, address _quoteToken, uint24[] _feeTiers, uint32 _period) → uint256 _quoteAmount, address[] _queriedPools [view]
+  quoteSpecificPoolsWithTimePeriod(uint128 _baseAmount, address _baseToken, address _quoteToken, address[] _pools, uint32 _period) → uint256 _quoteAmount [view]
+  supportedFeeTiers() → uint24[] [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addNewFeeTier(uint24 _feeTier)
+  prepareAllAvailablePoolsWithCardinality(address _tokenA, address _tokenB, uint16 _cardinality) → address[] _preparedPools
+  prepareAllAvailablePoolsWithTimePeriod(address _tokenA, address _tokenB, uint32 _period) → address[] _preparedPools
+  prepareSpecificFeeTiersWithCardinality(address _tokenA, address _tokenB, uint24[] _feeTiers, uint16 _cardinality) → address[] _preparedPools
+  prepareSpecificFeeTiersWithTimePeriod(address _tokenA, address _tokenB, uint24[] _feeTiers, uint32 _period) → address[] _preparedPools
+  prepareSpecificPoolsWithCardinality(address[] _pools, uint16 _cardinality)
+  prepareSpecificPoolsWithTimePeriod(address[] _pools, uint32 _period)"
+WXDC,0x951857744785e80e2de051c32ee7b25f9c458c42,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  Approval(address indexed src, address indexed guy, uint256 wad)
+  Deposit(address indexed dst, uint256 wad)
+  Transfer(address indexed src, address indexed dst, uint256 wad)
+  Withdrawal(address indexed src, uint256 wad)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  allowance(address —, address —) → uint256 [view]
+  balanceOf(address —) → uint256 [view]
+  decimals() → uint8 [view]
+  name() → string [view]
+  symbol() → string [view]
+  totalSupply() → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  approve(address guy, uint256 wad) → bool
+  deposit() [payable]
+  transfer(address dst, uint256 wad) → bool
+  transferFrom(address src, address dst, uint256 wad) → bool
+  withdraw(uint256 wad)"
+MentoProxyAdmin,0x8471406C3Bff67Cc6538481C8550364bda6Ca691,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  getProxyAdmin(address proxy) → address [view]
+  getProxyImplementation(address proxy) → address [view]
+  owner() → address [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  changeProxyAdmin(address proxy, address newAdmin)
+  renounceOwnership()
+  transferOwnership(address newOwner)
+  upgrade(address proxy, address implementation)
+  upgradeAndCall(address proxy, address implementation, bytes data) [payable]"
+MentoExchangeProvider,0x2fFBB49055d487DdBBb0C052Cd7c2a02A7971e41,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AvatarUpdated(address indexed AVATAR)
+  BrokerUpdated(address indexed newBroker)
+  ExchangeCreated(bytes32 indexed exchangeId, address indexed reserveAsset, address indexed tokenAddress)
+  ExchangeDestroyed(bytes32 indexed exchangeId, address indexed reserveAsset, address indexed tokenAddress)
+  ExchangeUpdated(bytes32 indexed exchangeId, address indexed reserveAsset, address indexed tokenAddress)
+  ExitContributionSet(bytes32 indexed exchangeId, uint256 exitContribution)
+  ExpansionControllerUpdated(address indexed expansionController)
+  Initialized(uint8 version)
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  Paused(address account)
+  ReserveRatioUpdated(bytes32 indexed exchangeId, uint32 reserveRatio)
+  ReserveUpdated(address indexed newReserve)
+  Unpaused(address account)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  AVATAR() → address [view]
+  MAX_WEIGHT() → uint32 [view]
+  broker() → address [view]
+  currentPrice(bytes32 exchangeId) → uint256 price [view]
+  exchangeIds(uint256 —) → bytes32 [view]
+  exchanges(bytes32 —) → address reserveAsset, address tokenAddress, uint256 tokenSupply, uint256 reserveBalance, uint32 reserveRatio, uint32 exitContribution [view]
+  expansionController() → address [view]
+  getAmountIn(bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountOut) → uint256 amountIn [view]
+  getAmountOut(bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountIn) → uint256 amountOut [view]
+  getExchangeIds() → bytes32[] [view]
+  getExchanges() → tuple[] _exchanges [view]
+  getPoolExchange(bytes32 exchangeId) → tuple exchange [view]
+  owner() → address [view]
+  paused() → bool [view]
+  reserve() → address [view]
+  tokenPrecisionMultipliers(address —) → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  createExchange(tuple _exchange) → bytes32 exchangeId
+  destroyExchange(bytes32 exchangeId, uint256 exchangeIdIndex) → bool destroyed
+  init()
+  initialize(address _broker, address _reserve)
+  initialize(address _broker, address _reserve, address _expansionController, address _avatar)
+  mintFromExpansion(bytes32 exchangeId, uint256 reserveRatioScalar) → uint256 amountToMint
+  mintFromInterest(bytes32 exchangeId, uint256 reserveInterest) → uint256 amountToMint
+  pause()
+  renounceOwnership()
+  setAvatar(address _avatar)
+  setBroker(address _broker)
+  setExitContribution(bytes32 exchangeId, uint32 exitContribution)
+  setExpansionController(address _expansionController)
+  setReserve(address _reserve)
+  swapIn(bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountIn) → uint256 amountOut
+  swapOut(bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountOut) → uint256 amountIn
+  transferOwnership(address newOwner)
+  unpause()
+  updateExchange(bytes32 _exchangeId, tuple _exchange) → bool updated
+  updateRatioForReward(bytes32 exchangeId, uint256 reward, uint256 maxSlippagePercentage)"
+MentoExpansionController,0x5557E9dEF86ad6564462741a7A3f3679C1223f5d,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AvatarUpdated(address indexed avatar)
+  DistributionHelperUpdated(address indexed distributionHelper)
+  ExpansionConfigSet(bytes32 indexed exchangeId, uint64 expansionRate, uint32 expansionFrequency)
+  ExpansionUBIMinted(bytes32 indexed exchangeId, uint256 amount)
+  GoodDollarExchangeProviderUpdated(address indexed exchangeProvider)
+  Initialized(uint8 version)
+  InterestUBIMinted(bytes32 indexed exchangeId, uint256 amount)
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  ReserveUpdated(address indexed reserve)
+  RewardMinted(bytes32 indexed exchangeId, address indexed to, uint256 amount)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  AVATAR() → address [view]
+  BANCOR_MAX_WEIGHT() → uint32 [view]
+  EXPANSION_MAX_WEIGHT() → uint256 [view]
+  distributionHelper() → address [view]
+  exchangeExpansionConfigs(bytes32 exchangeId) → uint64 expansionRate, uint32 expansionFrequency, uint32 lastExpansion [view]
+  getExpansionConfig(bytes32 exchangeId) → tuple [view]
+  goodDollarExchangeProvider() → address [view]
+  owner() → address [view]
+  reserve() → address [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  initialize(address _goodDollarExchangeProvider, address _distributionHelper, address _reserve, address _avatar)
+  mintRewardFromReserveRatio(bytes32 exchangeId, address to, uint256 amount)
+  mintRewardFromReserveRatio(bytes32 exchangeId, address to, uint256 amount, uint256 maxSlippagePercentage)
+  mintUBIFromExpansion(bytes32 exchangeId) → uint256 amountMinted
+  mintUBIFromInterest(bytes32 exchangeId, uint256 reserveInterest) → uint256 amountMinted
+  mintUBIFromReserveBalance(bytes32 exchangeId) → uint256 amountMinted
+  renounceOwnership()
+  setAvatar(address _avatar)
+  setDistributionHelper(address _distributionHelper)
+  setExpansionConfig(bytes32 exchangeId, uint64 expansionRate, uint32 expansionFrequency)
+  setGoodDollarExchangeProvider(address _goodDollarExchangeProvider)
+  setReserve(address _reserve)
+  transferOwnership(address newOwner)"
+MentoReserve,0x94A3240f484A04F5e3d524f528d02694c109463b,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AssetAllocationSet(bytes32[] symbols, uint256[] weights)
+  CollateralAssetAdded(address collateralAsset)
+  CollateralAssetRemoved(address collateralAsset)
+  DailySpendingRatioForCollateralAssetSet(address collateralAsset, uint256 collateralAssetDailySpendingRatios)
+  DailySpendingRatioSet(uint256 ratio)
+  ExchangeSpenderAdded(address indexed exchangeSpender)
+  ExchangeSpenderRemoved(address indexed exchangeSpender)
+  OtherReserveAddressAdded(address indexed otherReserveAddress)
+  OtherReserveAddressRemoved(address indexed otherReserveAddress, uint256 index)
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  RegistrySet(address indexed registryAddress)
+  ReserveCollateralAssetsTransferred(address indexed spender, address indexed to, uint256 value, address token)
+  ReserveGoldTransferred(address indexed spender, address indexed to, uint256 value)
+  SpenderAdded(address indexed spender)
+  SpenderRemoved(address indexed spender)
+  TobinTaxReserveRatioSet(uint256 value)
+  TobinTaxSet(uint256 value)
+  TobinTaxStalenessThresholdSet(uint256 value)
+  TokenAdded(address indexed token)
+  TokenRemoved(address indexed token, uint256 index)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  assetAllocationSymbols(uint256 —) → bytes32 [view]
+  assetAllocationWeights(bytes32 —) → uint256 [view]
+  checkIsCollateralAsset(address collateralAsset) → bool [view]
+  collateralAssetLastSpendingDay(address —) → uint256 [view]
+  collateralAssetSpendingLimit(address —) → uint256 [view]
+  collateralAssets(uint256 —) → address [view]
+  exchangeSpenderAddresses(uint256 —) → address [view]
+  frozenReserveGoldDays() → uint256 [view]
+  frozenReserveGoldStartBalance() → uint256 [view]
+  frozenReserveGoldStartDay() → uint256 [view]
+  getAssetAllocationSymbols() → bytes32[] [view]
+  getAssetAllocationWeights() → uint256[] [view]
+  getDailySpendingRatio() → uint256 [view]
+  getDailySpendingRatioForCollateralAsset(address collateralAsset) → uint256 [view]
+  getExchangeSpenders() → address[] [view]
+  getFrozenReserveGoldBalance() → uint256 [view]
+  getOtherReserveAddresses() → address[] [view]
+  getOtherReserveAddressesGoldBalance() → uint256 [view]
+  getReserveAddressesCollateralAssetBalance(address collateralAsset) → uint256 [view]
+  getReserveGoldBalance() → uint256 [view]
+  getReserveRatio() → uint256 [view]
+  getTokens() → address[] [view]
+  getUnfrozenBalance() → uint256 [view]
+  getUnfrozenReserveGoldBalance() → uint256 [view]
+  getVersionNumber() → uint256, uint256, uint256, uint256 [pure]
+  initialized() → bool [view]
+  isCollateralAsset(address —) → bool [view]
+  isExchangeSpender(address —) → bool [view]
+  isOtherReserveAddress(address —) → bool [view]
+  isOwner() → bool [view]
+  isSpender(address —) → bool [view]
+  isStableAsset(address token) → bool [view]
+  isToken(address —) → bool [view]
+  lastSpendingDay() → uint256 [view]
+  otherReserveAddresses(uint256 —) → address [view]
+  owner() → address [view]
+  registry() → address [view]
+  spendingLimit() → uint256 [view]
+  tobinTax() → uint256 [view]
+  tobinTaxCache() → uint128 numerator, uint128 timestamp [view]
+  tobinTaxReserveRatio() → uint256 [view]
+  tobinTaxStalenessThreshold() → uint256 [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addCollateralAsset(address collateralAsset) → bool
+  addExchangeSpender(address spender)
+  addOtherReserveAddress(address reserveAddress) → bool
+  addSpender(address spender)
+  addToken(address token) → bool
+  getOrComputeTobinTax() → uint256, uint256
+  initialize(address registryAddress, uint256 _tobinTaxStalenessThreshold, uint256 _spendingRatioForCelo, uint256 _frozenGold, uint256 _frozenDays, bytes32[] _assetAllocationSymbols, uint256[] _assetAllocationWeights, uint256 _tobinTax, uint256 _tobinTaxReserveRatio, address[] _collateralAssets, uint256[] _collateralAssetDailySpendingRatios)
+  removeCollateralAsset(address collateralAsset, uint256 index) → bool
+  removeExchangeSpender(address spender, uint256 index)
+  removeOtherReserveAddress(address reserveAddress, uint256 index) → bool
+  removeSpender(address spender)
+  removeToken(address token, uint256 index) → bool
+  renounceOwnership()
+  setAssetAllocations(bytes32[] symbols, uint256[] weights)
+  setDailySpendingRatio(uint256 ratio)
+  setDailySpendingRatioForCollateralAssets(address[] _collateralAssets, uint256[] collateralAssetDailySpendingRatios)
+  setFrozenGold(uint256 frozenGold, uint256 frozenDays)
+  setRegistry(address registryAddress)
+  setTobinTax(uint256 value)
+  setTobinTaxReserveRatio(uint256 value)
+  setTobinTaxStalenessThreshold(uint256 value)
+  transferCollateralAsset(address collateralAsset, address to, uint256 value) → bool
+  transferExchangeCollateralAsset(address collateralAsset, address to, uint256 value) → bool
+  transferExchangeGold(address to, uint256 value) → bool
+  transferGold(address to, uint256 value) → bool
+  transferOwnership(address newOwner)"
+MentoBroker,0x88de45906D4F5a57315c133620cfa484cB297541,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  ExchangeProviderAdded(address indexed exchangeProvider)
+  ExchangeProviderRemoved(address indexed exchangeProvider)
+  OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  ReserveSet(address indexed newAddress, address indexed prevAddress)
+  Swap(address exchangeProvider, bytes32 indexed exchangeId, address indexed trader, address indexed tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut)
+  TradingLimitConfigured(bytes32 exchangeId, address token, tuple config)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  __deprecated0() → uint256 [view]
+  exchangeProviders(uint256 —) → address [view]
+  exchangeReserve(address —) → address [view]
+  getAmountIn(address exchangeProvider, bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountOut) → uint256 amountIn [view]
+  getAmountOut(address exchangeProvider, bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountIn) → uint256 amountOut [view]
+  getExchangeProviders() → address[] [view]
+  initialized() → bool [view]
+  isExchangeProvider(address —) → bool [view]
+  owner() → address [view]
+  tradingLimitsConfig(bytes32 —) → uint32 timestep0, uint32 timestep1, int48 limit0In, int48 limit0Out, int48 limit1In, int48 limit1Out, int48 limitGlobal, uint8 flags [view]
+  tradingLimitsState(bytes32 —) → uint32 lastUpdated0, uint32 lastUpdated1, int48 netflow0, int48 netflow1, int48 netflowGlobal [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addExchangeProvider(address exchangeProvider, address reserve) → uint256 index
+  burnStableTokens(address token, uint256 amount) → bool
+  configureTradingLimit(bytes32 exchangeId, address token, tuple config)
+  initialize(address[] _exchangeProviders, address[] _reserves)
+  removeExchangeProvider(address exchangeProvider, uint256 index)
+  renounceOwnership()
+  setReserves(address[] _exchangeProviders, address[] _reserves)
+  swapIn(address exchangeProvider, bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) → uint256 amountOut
+  swapOut(address exchangeProvider, bytes32 exchangeId, address tokenIn, address tokenOut, uint256 amountOut, uint256 amountInMax) → uint256 amountIn
+  transferOwnership(address newOwner)"
+DistributionHelper,0xB8A0d4b97327a0B6dD0705dC290AE26aA38a7d2b,"═══════════════════════════════════
+  EVENTS
+═══════════════════════════════════
+  AdminChanged(address previousAdmin, address newAdmin)
+  BeaconUpgraded(address indexed beacon)
+  BuyNativeFailed(string reason, uint256 amountToSell, uint256 amountOutMinimum)
+  Distribution(uint256 distributed, uint256 startingBalance, uint256 incomingAmount, tuple[] distributionRecipients, uint256 gdSoldForGas, uint256 nativeBoughtForGas)
+  Initialized(uint8 version)
+  RecipientAdded(tuple recipient, uint256 index)
+  RecipientUpdated(tuple recipient, uint256 index)
+  RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole)
+  RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+  RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+  Upgraded(address indexed implementation)
+
+═══════════════════════════════════
+  READ (view/pure)
+═══════════════════════════════════
+  DEFAULT_ADMIN_ROLE() → bytes32 [view]
+  GUARDIAN_ROLE() → bytes32 [view]
+  ROUTER() → address [view]
+  STATIC_ORACLE() → address [view]
+  avatar() → address [view]
+  calcGDToSell(uint256 maxAmountToSell) → uint256 gdToSell, uint256 minReceived [view]
+  dao() → address [view]
+  distributionRecipients(uint256 —) → uint32 bps, uint32 chainId, address addr, uint8 transferType [view]
+  feeSettings() → uint128 maxFee, uint128 minBalanceForFees, uint8 percentageToSellForFee, uint8 maxSlippage [view]
+  gasToken() → address [view]
+  getBridge() → address [view]
+  getRoleAdmin(bytes32 role) → bytes32 [view]
+  getRoleMember(bytes32 role, uint256 index) → address [view]
+  getRoleMemberCount(bytes32 role) → uint256 [view]
+  hasRole(bytes32 role, address account) → bool [view]
+  nameService() → address [view]
+  nativeToken() → address [view]
+  proxiableUUID() → bytes32 [view]
+  reserveToken() → address [view]
+  supportsInterface(bytes4 interfaceId) → bool [view]
+
+═══════════════════════════════════
+  WRITE
+═══════════════════════════════════
+  addOrUpdateRecipient(tuple _recipient)
+  grantRole(bytes32 role, address account)
+  initialize(address _ns, address _oracle, address _gasToken, address _reserveToken, address _router, tuple _feeData)
+  onDistribution(uint256 _amount)
+  renounceRole(bytes32 role, address account)
+  revokeRole(bytes32 role, address account)
+  setFeeSettings(tuple _feeData)
+  setReserveToken(address _reserveToken)
+  updateAvatar()
+  upgradeTo(address newImplementation)
+  upgradeToAndCall(address newImplementation, bytes data) [payable]"
+USDCEXchangeId,0xf8d028730f58a008390c265fca425bb912e4c7efa370d4cef756a06f5029acd2,
+},,

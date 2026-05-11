@@ -1,0 +1,21 @@
+{
+  "name": "gd-events-pipeline",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx index.ts",
+    "start": "ts-node src/main.ts"
+  },
+  "dependencies": {
+    "@envio-dev/hypersync-client": "^0.6.3",
+    "@google-cloud/bigquery": "^7.0.0",
+    "dotenv": "^17.4.2",
+    "viem": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  }
+}
