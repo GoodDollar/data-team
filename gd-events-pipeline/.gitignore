@@ -1,0 +1,18 @@
+# Local tooling state (may contain secrets)
+.claude/
+.vscode/
+
+# Node
+node_modules/
+*.log
+
+# Environment (secrets)
+.env
+.env.local
+
+# Big data exports — historical, do not version
+invite_events.csv
+
+# OS
+.DS_Store
+Thumbs.db
