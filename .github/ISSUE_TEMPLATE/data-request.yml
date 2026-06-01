@@ -1,0 +1,71 @@
+name: Data Request
+description: Ask for analysis, a query, a dashboard, or any data deliverable
+title: "[Data Request] "
+labels: ["data-request", "needs-scoping"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you want to know?
+      description: The question or problem you're trying to solve. Be as specific as you can.
+      placeholder: "e.g. How many unique wallets claimed UBI for the first time each week in 2025?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Why do you need this and what will you do with it?
+      description: What decision does this inform? Who uses the output? Context shapes the answer.
+      placeholder: "e.g. Evaluating Q1 user growth to present to investors."
+    validations:
+      required: true
+
+  - type: textarea
+    id: data_hints
+    attributes:
+      label: Where do you think the data lives?
+      description: "Chains, contracts, events, time range, existing dashboards or spreadsheets — any hint helps. Not sure? Just say so."
+      placeholder: "e.g. On-chain, Celo and Fuse, claim events, Jan–Mar 2025. Or: no idea, I just know it's blockchain data."
+
+  - type: textarea
+    id: processing
+    attributes:
+      label: Any calculations or transformations in mind?
+      description: "Filters, groupings, aggregations, exclusions, attributions — describe what you think needs to happen with the raw data. Not sure? Open to suggestions."
+      placeholder: "e.g. Exclude bot wallets, group by week, compare to previous period. Or: not sure, open to whatever makes sense."
+
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: What should I deliver and by when?
+      description: "Format (dashboard, chart, number, CSV, written answer), audience (internal / public), frequency (one-time or recurring), and any deadline."
+      placeholder: "e.g. A live Dune dashboard, public-facing, refreshes daily. Needed before the June governance call."
+    validations:
+      required: true
+
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else?
+      description: "Examples, edge cases, related existing work, screenshots, links, gut feelings — anything that helps me understand what you really need."
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - "Low — nice to have"
+        - "Medium — needed soon"
+        - "High — blocking work"
+        - "Urgent — time-sensitive deadline"
+      default: 1
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: bounty
+    attributes:
+      label: Bounty
+      options:
+        - label: "I'm willing to offer a bounty for this work"
