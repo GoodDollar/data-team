@@ -1,7 +1,98 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v4.0.5
- * New: Supply metrics (ETH, Fuse, Celo, XDC aggregated)
- * ========================================= *****/
+ * GOODDOLLAR DASHBOARD v4.1.1
+ * =========================================
+ *
+ * OVERVIEW
+ * --------
+ * This Google Apps Script fetches daily metrics from multiple data sources
+ * (Dune Analytics, Goldsky subgraphs, on-chain RPC, block explorer APIs),
+ * computes derived values, and writes everything into a Google Sheet
+ * ("Daily Facts") as a flat fact table: one row per (date, chain, metric).
+ *
+ * ARCHITECTURE
+ * ------------
+ * The pipeline has 5 layers, each in its own numbered section below:
+ *
+ *   0) CONFIG / CONSTANTS / REGISTRY
+ *      - CONFIG: spreadsheet IDs, timezone, genesis dates.
+ *      - CHAINS: which chains are enabled (CELO, XDC, ETH, FUSE).
+ *      - METRICS: the registry. Each metric declares its adapter, chains,
+ *        aggregation flag, and adapter-specific fetch parameters. The
+ *        registry drives the entire pipeline — add a new metric here and
+ *        buildRows() picks it up automatically.
+ *
+ *   1-4) UTILITY + DATA-SOURCE HELPERS
+ *      - Date parsing/formatting, sheet I/O, API clients.
+ *      - Each data source has its own helper section:
+ *          3)  Dune Analytics (SQL query results via REST API)
+ *          4a) XDC Subgraph (Goldsky — UBI, claims, P2P transactions)
+ *          4b) CELO Reserve Subgraph (Goldsky — G$ price, swap volumes)
+ *          4c) XDC Reserve Subgraph + On-chain RPC (G$ price, reserve balances)
+ *          4d) Supply helpers (Etherscan, Celo/Fuse explorers — token supply)
+ *
+ *   5) ADAPTERS
+ *      - Adapter objects that map metric specs to the right fetch function.
+ *      - Each adapter has a .fetch() method that returns [{date, value, source}].
+ *      - Processing order matters: Dune → Subgraph → Reserve → Computed →
+ *        Supply → SupplyComputed → XdcReserve → XdcReserveComputed.
+ *        Later adapters can depend on rows produced by earlier ones.
+ *
+ *   6) buildRows()
+ *      - Core orchestrator. Iterates the METRICS registry, routes each
+ *        metric to its adapter, collects rows, and deduplicates against
+ *        the existing facts index to avoid writing duplicate data.
+ *
+ *   7) writeFactsAndHealth()
+ *      - Writes rows to the "Daily Facts" sheet (upsert: updates existing
+ *        rows by date+chain+metric key, appends new ones).
+ *      - Also generates "AGG" (aggregate) rows by summing chain-specific
+ *        metrics that have `aggregate: true`.
+ *      - Writes health/audit records to the "Health Runs" sheet.
+ *
+ *   8) ORCHESTRATORS
+ *      - Entry points: runOneDaySinglePass() (daily cron), smartBackfill()
+ *        (fills gaps), backfillRange() (manual date range).
+ *
+ *   9-10) TEST / DEBUG functions (safe to run; they don't write data
+ *         unless noted).
+ *
+ * MULTI-CHAIN NAMING CONVENTION
+ * -----------------------------
+ * Metric keys are prefixed by chain: celo_*, xdc_*, eth_*, fuse_*, agg_*.
+ * This ensures no collisions and makes it trivial to filter by chain
+ * in the spreadsheet. Exception: gd_usd_price (CELO-only, legacy name).
+ *
+ * DATA FRESHNESS / TEMPORAL MODEL
+ * --------------------------------
+ * The script always reports data for YESTERDAY (T-1). This ensures a
+ * complete 24-hour window. Subgraph entities are day-keyed or timestamp-
+ * filtered (precise). Dune queries are pre-aggregated by day (precise).
+ *
+ * On-chain RPC reads (reserve liquidity, token supply) use `latest`
+ * block and label the result as yesterday. This means the value reflects
+ * the balance at script execution time (~01:00 UTC), not exactly at
+ * midnight. For most days this is fine because reserve changes are
+ * infrequent. XDC public RPC nodes do NOT support historical state
+ * queries (they prune trie data), so reading at a past block is not
+ * possible without an archive node.
+ *
+ * CHANGELOG v4.1.1
+ * -----------------
+ * - Added XDC reserve metrics: xdc_gd_price, xdc_reserve_liquidity_usd,
+ *   gd_price_spread, xdc_reserve_backing_ratio, xdc_daily_gd_minted,
+ *   xdc_reserve_growth_abs.
+ * - Price fetch filters by target day's UTC timestamp range with carry-forward
+ *   fallback for days with no swap activity (subgraph is timestamp-indexed,
+ *   so this is precise).
+ * - Fixed backfill bug: reserve_growth now uses findValue() (batch+facts)
+ *   instead of findInFacts() (facts-only) for yesterday lookup.
+ * - Reverted liquidity balance reads to `latest` — XDC public RPC nodes
+ *   prune historical state, so eth_call at past blocks fails with
+ *   "missing trie node". The `latest` approach has a known temporal
+ *   imprecision (reads now, labels as yesterday) but is the only option
+ *   without an archive node. See section 4c header for details.
+ * - Added comprehensive code documentation.
+ *****/
 
 /***** =========================================
  * 0) CONFIG / CONSTANTS / REGISTRY
