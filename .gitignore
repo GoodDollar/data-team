@@ -34,4 +34,11 @@ projects/dashboard-scripts/v6-implementation-plan.md
 projects/dashboard-scripts/v6-bugfix-27-May.md
 projects/dashboard-scripts/v6-planning-agent-prompt.md
 projects/dashboard-scripts/v6-audit-agent-prompt.md
+projects/dashboard-scripts/v6-audit-findings.md
+projects/dashboard-scripts/v6-master-reference.md
 projects/dashboard-scripts/handoff.md
+
+# Docs kept locally only
+docs/data-dictionary/
+docs/datasources/
+docs/other/

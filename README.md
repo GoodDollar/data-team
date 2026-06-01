@@ -19,10 +19,7 @@ data-team/
 ├── queries/
 │   └── dune/                 # Dune Analytics SQL queries
 └── docs/
-    ├── data-dictionary/      # Field definitions and data model notes
-    ├── datasources/          # Data source inventory and access notes
     ├── subgraph/             # GoodDollar subgraph schemas
-    ├── other/                # Design files and timeline
     └── dashboards.md         # Links to live dashboards
 ```
 
