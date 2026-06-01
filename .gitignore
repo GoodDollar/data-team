@@ -13,4 +13,25 @@ Thumbs.db
 
 # Build outputs
 dist
-gd-events-pipeline/invite_events.csv
+projects/gd-events-pipeline/invite_events.csv
+
+# Agent / editor local config (may contain tokens)
+.claude/
+*.local.json
+
+# n8n automations — obsolete, kept locally only
+projects/automations/
+
+# Private process files — kept locally, not published
+projects/dashboard-scripts/Logs/
+projects/dashboard-scripts/Diagnostics/
+projects/dashboard-scripts/Snapshots/
+projects/dashboard-scripts/archive/
+projects/dashboard-scripts/v5-archive/
+projects/dashboard-scripts/v6-build-log.md
+projects/dashboard-scripts/v6-fix-plan.md
+projects/dashboard-scripts/v6-implementation-plan.md
+projects/dashboard-scripts/v6-bugfix-27-May.md
+projects/dashboard-scripts/v6-planning-agent-prompt.md
+projects/dashboard-scripts/v6-audit-agent-prompt.md
+projects/dashboard-scripts/handoff.md
