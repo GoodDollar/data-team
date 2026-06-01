@@ -12,6 +12,8 @@ The central hub for GoodDollar's analytics and data work. This repo contains the
 data-team/
 ├── projects/
 │   ├── gd-events-pipeline/   # On-chain event pipeline (TypeScript, BigQuery)
+│   │   └── docs/
+│   │       └── layer2-entities/  # L2 invite entity reference
 │   ├── dashboard-scripts/    # GoodDollar main dashboard (Google Apps Script)
 │   └── automations/          # n8n automation flows (archived)
 ├── queries/
@@ -20,7 +22,6 @@ data-team/
     ├── data-dictionary/      # Field definitions and data model notes
     ├── datasources/          # Data source inventory and access notes
     ├── subgraph/             # GoodDollar subgraph schemas
-    ├── layer2-entities/      # L2 invite entity reference
     ├── other/                # Design files and timeline
     └── dashboards.md         # Links to live dashboards
 ```
