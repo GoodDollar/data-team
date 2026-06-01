@@ -2,7 +2,7 @@
 
 The central hub for GoodDollar's analytics and data work. This repo contains the active codebases, SQL queries, documentation, and data dictionary maintained by the data team.
 
-**Data team lead:** [@pending] | **Questions / requests:** [open an issue](../../issues/new/choose)
+**Data Team Lead:** [@thalescb](https://github.com/thalescb) | **Questions / requests:** [open an issue](../../issues/new/choose)
 
 ---
 
