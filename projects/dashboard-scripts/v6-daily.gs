@@ -106,7 +106,7 @@
 
 /** Pipeline settings */
 const CONFIG = {
-  DEST_SPREADSHEET_ID: '1QkXSU39x8UJeIP49mFUsFczxmiuSVB1La0lhE5ke3bw',
+  DEST_SPREADSHEET_ID: '1vZoUwOi9EKAABqy6TIeW1XWdChwvDPL71YJWlwy5AXo',
   SHEET_FACTS:  'Daily Facts',   // Main output: one row per (date, chain, metric)
   SHEET_HEALTH: 'Health Runs',   // Audit log: one row per (run, metric, status)
   VERBOSE: true,                 // Log every metric result (ok/error) during runs
@@ -3541,48 +3541,6 @@ function testDuneConnection() {
   } catch (e) {
     Logger.log('Error: ' + e.message);
   }
-}
-
-function previewSmartBackfill() {
-  ensureSheets();
-  
-  const yesterday = getYesterdayYMD();
-  const indexResult = getExistingFactsIndex();
-  const maxDates = indexResult.maxDates;
-  
-  Logger.log('=== SMART BACKFILL PREVIEW ===');
-  Logger.log('Target date: ' + yesterday);
-  
-  const metricKeys = Object.keys(METRICS);
-  for (var m = 0; m < metricKeys.length; m++) {
-    const metricKey = metricKeys[m];
-    const spec = METRICS[metricKey];
-    const chains = (spec.chains || []).filter(function(c) { return CHAINS[c]; });
-    
-    for (var c = 0; c < chains.length; c++) {
-      const chain = chains[c];
-      const chainMetricKey = chain + '|' + metricKey;
-      const lastDate = maxDates[chainMetricKey];
-      
-      var startFrom;
-      if (lastDate) {
-        startFrom = addDays(lastDate, 1);
-      } else {
-        startFrom = (chain === 'XDC') ? CONFIG.XDC_GENESIS : addDays(yesterday, -90);
-      }
-      
-      if (chain === 'XDC' && startFrom < CONFIG.XDC_GENESIS) {
-        startFrom = CONFIG.XDC_GENESIS;
-      }
-      
-      const daysNeeded = startFrom <= yesterday ? dateDiffDays(startFrom, yesterday) + 1 : 0;
-      
-      const status = daysNeeded === 0 ? 'up to date' : 'needs ' + daysNeeded + ' days (' + startFrom + ' to ' + yesterday + ')';
-      Logger.log(metricKey + '/' + chain + ': ' + status);
-    }
-  }
-  
-  Logger.log('=== END PREVIEW ===');
 }
 
 function backfillNewP2PMetrics() {
