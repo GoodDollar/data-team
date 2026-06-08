@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx index.ts",
-    "start": "ts-node src/main.ts"
+    "start": "tsx index.ts"
   },
   "dependencies": {
     "@envio-dev/hypersync-client": "^0.6.3",

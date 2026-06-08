@@ -223,8 +223,8 @@ async function insertWithRetry(rows: any[], tableId: string, retries = 3): Promi
 async function getChainTip(networkUrl: string, finalityBlocks: number): Promise<number | undefined> {
   try {
     const client = (HypersyncClient as any).new({ url: networkUrl, bearerToken: process.env.ENVIO_API_TOKEN || "" });
-    const status = await client.getStatus();
-    return Math.max(0, status.headBlock - finalityBlocks);
+    const height = await client.getHeight();
+    return Math.max(0, height - finalityBlocks);
   } catch (e: any) {
     console.warn(`Could not get chain tip: ${e.message}; fetching to latest`);
     return undefined;
@@ -415,20 +415,24 @@ async function main() {
   let grandTotal = 0;
 
   for (const key of contractKeys) {
-    const cfg = CONTRACT_CONFIGS[key];
-    console.log(`\n=== ${key.toUpperCase()} → ${DATASET_ID}.${cfg.tableId} ===`);
+    try {
+      const cfg = CONTRACT_CONFIGS[key];
+      console.log(`\n=== ${key.toUpperCase()} → ${DATASET_ID}.${cfg.tableId} ===`);
 
-    for (const network of cfg.networks) {
-      if (mode === "backfill") {
-        console.log(`\n--- BACKFILL: ${network.name} (chainId ${network.chainId}) from block ${network.firstBlock} ---`);
-        grandTotal += await syncEvents(cfg, network, network.firstBlock);
-      } else {
-        const lastBlock  = await getLastBlockForNetwork(cfg.tableId, network.name);
-        const startBlock = lastBlock > 0 ? lastBlock : network.firstBlock;
-        const safeTip    = await getChainTip(network.url, network.finalityBlocks);
-        console.log(`\n--- APPEND: ${network.name} (chainId ${network.chainId}) from block ${startBlock}${safeTip ? ` to ${safeTip}` : ""} ---`);
-        grandTotal += await syncEvents(cfg, network, startBlock, safeTip);
+      for (const network of cfg.networks) {
+        if (mode === "backfill") {
+          console.log(`\n--- BACKFILL: ${network.name} (chainId ${network.chainId}) from block ${network.firstBlock} ---`);
+          grandTotal += await syncEvents(cfg, network, network.firstBlock);
+        } else {
+          const lastBlock  = await getLastBlockForNetwork(cfg.tableId, network.name);
+          const startBlock = lastBlock > 0 ? lastBlock + 1 : network.firstBlock;
+          const safeTip    = await getChainTip(network.url, network.finalityBlocks);
+          console.log(`\n--- APPEND: ${network.name} (chainId ${network.chainId}) from block ${startBlock}${safeTip ? ` to ${safeTip}` : ""} ---`);
+          grandTotal += await syncEvents(cfg, network, startBlock, safeTip);
+        }
       }
+    } catch (e: any) {
+      console.error(`[${key}] Error processing contract: ${e.message}`);
     }
   }
 

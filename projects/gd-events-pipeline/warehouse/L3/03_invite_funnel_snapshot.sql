@@ -1,34 +1,82 @@
 -- L3: invite_funnel_snapshot (TABLE — full daily rebuild)
--- Source: Semantic.invitee_lifecycle
--- Grain: 6 rows (one per funnel stage)
+-- Source: Semantic.invitee
+-- Grain:  8 rows (one per funnel stage)
+-- Stages 7 and 8 use bounty_timestamp as the elapsed-time anchor (OQ1 confirmed 2026-06-05).
 -- See docs/02_DATA_MODEL.md §Marts.invite_funnel_snapshot
 
 CREATE OR REPLACE TABLE `gooddollar.Marts.invite_funnel_snapshot`
 AS
 
--- Eligibility computed at query time (changes with the calendar even when no
--- new chain events arrive). See docs/02_DATA_MODEL.md for rationale.
-WITH lifecycle_with_eligibility AS (
-  SELECT
-    *,
-    -- Met eligibility = 3+ claims AND 7+ days since signup. Includes already-paid users.
-    (total_claims_on_invite_network >= 3
-     AND TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), signup_timestamp, DAY) >= 7) AS met_eligibility_criteria
-  FROM `gooddollar.Semantic.invitee_lifecycle`
-),
+WITH stages AS (
+  SELECT 1 AS stage_order,
+         'Signed Up as Invitee'                        AS stage_label,
+         COUNT(*)                                       AS user_count
+  FROM `gooddollar.Semantic.invitee`
 
-stages AS (
-  SELECT 1 AS stage_order, 'Signed Up as Invitee'                          AS stage_label, COUNT(*)                                                                          AS user_count FROM lifecycle_with_eligibility
   UNION ALL
-  SELECT 2,                'Claimed at Least Once (Invite Chain)',                          COUNTIF(total_claims_on_invite_network >= 1)                                                FROM lifecycle_with_eligibility
+
+  SELECT 2,
+         'Claimed at Least Once (Invite Chain)',
+         COUNTIF(total_claims_on_invite_network >= 1)
+  FROM `gooddollar.Semantic.invitee`
+
   UNION ALL
-  SELECT 3,                'Claimed at Least Twice (Invite Chain)',                         COUNTIF(total_claims_on_invite_network >= 2)                                                FROM lifecycle_with_eligibility
+
+  SELECT 3,
+         'Claimed at Least Twice (Invite Chain)',
+         COUNTIF(total_claims_on_invite_network >= 2)
+  FROM `gooddollar.Semantic.invitee`
+
   UNION ALL
-  SELECT 4,                'Claimed 3+ Times (Invite Chain)',                               COUNTIF(total_claims_on_invite_network >= 3)                                                FROM lifecycle_with_eligibility
+
+  SELECT 4,
+         'Claimed 3+ Times (Invite Chain)',
+         COUNTIF(total_claims_on_invite_network >= 3)
+  FROM `gooddollar.Semantic.invitee`
+
   UNION ALL
-  SELECT 5,                'Met Eligibility Criteria (3 claims + 7 days)',                  COUNTIF(met_eligibility_criteria)                                                           FROM lifecycle_with_eligibility
+
+  SELECT 5,
+         'Met Eligibility Criteria (3 claims + 7 days)',
+         COUNTIF(
+           total_claims_on_invite_network >= 3
+           AND TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), signup_timestamp, DAY) >= 7
+         )
+  FROM `gooddollar.Semantic.invitee`
+
   UNION ALL
-  SELECT 6,                'Bounty Paid',                                                   COUNTIF(bounty_tx_hash IS NOT NULL)                                                         FROM lifecycle_with_eligibility
+
+  SELECT 6,
+         'Bounty Paid',
+         COUNTIF(bounty_tx_hash IS NOT NULL)
+  FROM `gooddollar.Semantic.invitee`
+
+  UNION ALL
+
+  -- Stage 7: retained if they claimed at least once in the 7 days after bounty payment,
+  -- AND the 7-day window has already elapsed (bounty paid >= 7 days ago).
+  -- Elapsed-time anchor: bounty_timestamp (OQ1 resolved).
+  SELECT 7,
+         'Retained (7 Days Post-Payout)',
+         COUNTIF(
+           bounty_tx_hash IS NOT NULL
+           AND post_payout_claims_7d >= 1
+           AND TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), bounty_timestamp, DAY) >= 7
+         )
+  FROM `gooddollar.Semantic.invitee`
+
+  UNION ALL
+
+  -- Stage 8: retained if they claimed at least once in the 30 days after bounty payment,
+  -- AND the 30-day window has already elapsed.
+  SELECT 8,
+         'Retained (30 Days Post-Payout)',
+         COUNTIF(
+           bounty_tx_hash IS NOT NULL
+           AND post_payout_claims_30d >= 1
+           AND TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), bounty_timestamp, DAY) >= 30
+         )
+  FROM `gooddollar.Semantic.invitee`
 )
 
 SELECT

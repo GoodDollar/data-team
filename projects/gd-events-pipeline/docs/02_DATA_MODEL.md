@@ -70,7 +70,7 @@ For naming conventions, partitioning rules, and layer responsibilities see [`01_
 |---|---|---|---|
 | `inviter` | STRING | both events | Lowercase hex. Sentinel values described below. |
 | `invitee` | STRING | both events | Lowercase hex. The user being invited (or joining as a future inviter). |
-| `bounty_paid` | STRING | InviterBounty | uint256 raw — total disbursed in the payout (inviter portion + invitee portion). |
+| `bounty_paid` | STRING | InviterBounty | uint256 raw — the **inviter's** bounty only, in 18-decimal token units. Divide by 10¹⁸ to get G$ face value. The invitee's G$500 is paid as a separate ERC20 transfer in the same transaction; it does not appear in this field. See `docs/04_CONTRACT_MECHANICS.md`. |
 | `inviter_level` | STRING | InviterBounty | Inviter's tier at time of payout |
 | `earned_level` | BOOL | InviterBounty | Whether this payout caused the inviter to level up |
 
@@ -141,9 +141,9 @@ The `LOWER(contract_address)` comparison makes the rule chain-agnostic — works
 | `invitee_address` | STRING | `LOWER(invitee)` |
 | `inviter_address` | STRING NULLABLE | NULL when `payout_origin = 'campaign'`, otherwise `LOWER(inviter)` |
 | `payout_origin` | STRING | `'referral'` or `'campaign'` |
-| `total_amount_g` | BIGNUMERIC | `SAFE_CAST(bounty_paid AS BIGNUMERIC) / 100` |
-| `invitee_amount_g` | BIGNUMERIC | always `500.00` (G$500 to invitee in both payout types) |
-| `inviter_amount_g` | BIGNUMERIC NULLABLE | `1000.00` for referral payouts, NULL for campaign payouts (the G$1000 inviter portion never leaves the contract on campaign payouts) |
+| `invitee_amount_g` | BIGNUMERIC | always `500.00` — the protocol-fixed base bounty paid to every invitee. Derived from the contract's `_level0Bounty` initialization parameter, not from an event field. |
+| `inviter_amount_g` | BIGNUMERIC NULLABLE | `SAFE_CAST(bounty_paid AS BIGNUMERIC) / 10^18` — chain-derived inviter payout; varies by inviter level. NULL for campaign payouts (no individual inviter). |
+| `total_amount_g` | BIGNUMERIC | `invitee_amount_g + COALESCE(inviter_amount_g, 0)`. G$500 for campaign payouts, G$1500+ for referral payouts at level 0. |
 | `inviter_level` | INT64 NULLABLE | `SAFE_CAST(inviter_level AS INT64)` |
 | `earned_level` | BOOL | passthrough |
 | `ingested_at` | TIMESTAMP | passthrough |
@@ -158,8 +158,9 @@ END
 ```
 
 **Bounty economics (verified against contract source — see assumption A1 in `specs/archive/GoodDollar_Invite_Analytics_Spec.md`):**
-- Referral payout: G$1500 total disbursed = G$1000 to inviter + G$500 to invitee
-- Campaign payout: G$500 total disbursed = G$500 to invitee. The G$1000 "inviter portion" is retained by the contract and never leaves.
+- Referral payout: G$1500 total = G$1000 to inviter (chain-derived from `bountyPaid`, level-0 rate) + G$500 to invitee (protocol constant)
+- Campaign payout: G$500 total = G$500 to invitee only. No individual inviter exists, so no inviter bounty is paid.
+- The invitee's G$500 is paid as a plain ERC20 transfer in the same transaction as `InviterBounty`. There is no dedicated on-chain event for it. See `docs/04_CONTRACT_MECHANICS.md §5` for the full explanation.
 
 ---
 
