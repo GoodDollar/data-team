@@ -904,7 +904,10 @@ function generateRunId() {
 
 function formatYMD(d) {
   if (d instanceof Date) {
-    return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+    var y  = d.getUTCFullYear();
+    var mo = d.getUTCMonth() + 1;
+    var dy = d.getUTCDate();
+    return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (dy < 10 ? '0' : '') + dy;
   }
   return String(d).slice(0, 10);
 }
@@ -2507,7 +2510,7 @@ const Adapters = {
  * reruns or overlapping backfills.
  *****/
 
-function buildRows(sinceYMD, untilYMD, indexResult) {
+function buildRows(sinceYMD, untilYMD, indexResult, scriptStartMs) {
   indexResult = indexResult || { index: {}, maxDates: {}, factsValueIndex: {} };
   var existingIndex = indexResult.index;
   
@@ -2551,9 +2554,9 @@ function buildRows(sinceYMD, untilYMD, indexResult) {
   
   Logger.log('Run ' + runIdStr + ' — window ' + sinceYMD + '..' + untilYMD);
   
-  var runStart = Date.now();
+  var runStart = scriptStartMs || Date.now();
   function checkBudget(adapterName) {
-    if (Date.now() - runStart > 320000) {  // 320s = 5m20s, leaves ~40s for write
+    if (Date.now() - runStart > 330000) {  // 330s wall-clock from script start, leaves ~30s for write
       Logger.log('Budget exceeded before ' + adapterName + ' — stopping buildRows');
       notifySlack('⚠️ GoodDollar v6: budget guard triggered on ' + untilYMD
                   + '. Adapter "' + adapterName + '" and later were skipped.');
@@ -2963,8 +2966,19 @@ function buildRows(sinceYMD, untilYMD, indexResult) {
     }
   }
   if (checkBudget('XDC_INVITES')) return { rows: rows, health: health, runId: runIdStr, batchByKey: batchByKey };
-  // Process XdcInvites metrics (reads from raw events sheet, not Hypersync directly).
-  // Runs last so it can stand on its own — no dependencies on prior adapters.
+  // Process XdcInvites metrics — reads raw events sheet, no Hypersync calls.
+  // Pre-load once: avoids repeating full sheet read + sort + aggregate 28 times.
+  var xdcInvitesCachedRows = null;
+  var xdcInvitesCacheError = null;
+  if (xdcInvitesMetrics.length > 0) {
+    try {
+      var invitesSince = sinceYMD < CONFIG.XDC_GENESIS ? CONFIG.XDC_GENESIS : sinceYMD;
+      xdcInvitesCachedRows = xdcInvitesAggregateRaw(invitesSince, untilYMD);
+    } catch (e) {
+      xdcInvitesCacheError = e;
+      Logger.log('XdcInvites raw load failed: ' + e.message);
+    }
+  }
   for (var i = 0; i < xdcInvitesMetrics.length; i++) {
     var item = xdcInvitesMetrics[i];
     var metricKey = item.metricKey;
@@ -2973,7 +2987,18 @@ function buildRows(sinceYMD, untilYMD, indexResult) {
     var t0 = Date.now();
 
     try {
-      var results = Adapters.XdcInvites.fetch(metricKey, chain, sinceYMD, untilYMD, spec.xdcInvites);
+      if (xdcInvitesCacheError) throw xdcInvitesCacheError;
+      var targetInviteKey = spec.xdcInvites.metricKey;
+      var results = [];
+      for (var k = 0; k < xdcInvitesCachedRows.length; k++) {
+        if (xdcInvitesCachedRows[k].metric_key === targetInviteKey) {
+          results.push({
+            date:   xdcInvitesCachedRows[k].date,
+            value:  xdcInvitesCachedRows[k].value,
+            source: xdcInvitesCachedRows[k].source
+          });
+        }
+      }
 
       var count = 0;
       for (var j = 0; j < results.length; j++) {
@@ -3244,12 +3269,13 @@ function writeFactsAndHealth(buildResult, indexResult) {
  *****/
 
 function runOneDaySinglePass(dateStr) {
+  var scriptStartMs = Date.now();
   const ymd = dateStr || getYesterdayYMD();
   
   ensureSheets();
   const indexResult = getExistingFactsIndex();
   
-  const result = buildRows(ymd, ymd, indexResult);
+  const result = buildRows(ymd, ymd, indexResult, scriptStartMs);
   writeFactsAndHealth(result, indexResult);
   
   // Also advance the XDC invites pipeline. This is fast on incremental
@@ -3268,9 +3294,36 @@ function runOneDaySinglePass(dateStr) {
 
 function smartBackfill() {
   var runStartMs = Date.now();
+  var yesterday = getYesterdayYMD();
   ensureSheets();
-  const yesterday = getYesterdayYMD();
-  
+
+  // --- Retry / timeout detection ---
+  // GAS timeouts are hard process kills — no exception is thrown.
+  // We pre-schedule a retry trigger before doing any work, then cancel it
+  // on success/explicit-error. If the process is killed by GAS, the trigger
+  // fires 8 minutes later and this block sees retryCount > 0.
+  var props = PropertiesService.getScriptProperties();
+  var retryCount = parseInt(props.getProperty('smartbackfill_retry_count') || '0', 10);
+  var MAX_RETRIES = 2;
+
+  deletePendingRetryTrigger_(props);
+
+  if (retryCount > 0) {
+    if (retryCount > MAX_RETRIES) {
+      notifySlack('🚨 GoodDollar v6 — giving up after ' + MAX_RETRIES + ' retries on ' + yesterday
+                  + '. Manual intervention required.');
+      props.setProperty('smartbackfill_retry_count', '0');
+      return;
+    }
+    notifySlack('🔁 GoodDollar v6 — retry ' + retryCount + '/' + MAX_RETRIES + ' for ' + yesterday
+                + ' (previous run timed out)');
+  }
+
+  // Increment counter and arm the safety-net trigger BEFORE doing any work.
+  // If the run completes (success or explicit throw), we cancel it below.
+  props.setProperty('smartbackfill_retry_count', String(retryCount + 1));
+  scheduleRetryTrigger_(props);
+
   try {
     const indexResult = getExistingFactsIndex();
     const index = indexResult.index;
@@ -3317,12 +3370,14 @@ function smartBackfill() {
     
     if (earliestNeeded > yesterday) {
       Logger.log('All metrics are up to date!');
+      deletePendingRetryTrigger_(props);
+      props.setProperty('smartbackfill_retry_count', '0');
       return;
     }
     
     Logger.log('Fetching data from ' + earliestNeeded + ' to ' + yesterday);
     
-    const result = buildRows(earliestNeeded, yesterday, indexResult);
+    const result = buildRows(earliestNeeded, yesterday, indexResult, runStartMs);
     writeFactsAndHealth(result, indexResult);
     
     // 11d: Compute summary from health rows
@@ -3351,6 +3406,10 @@ function smartBackfill() {
       healthSheet.getRange(healthSheet.getLastRow() + 1, 1, 1, 11).setValues([summaryRow]);
     }
     
+    // SUCCESS — cancel retry trigger and reset counter before Slack notification
+    deletePendingRetryTrigger_(props);
+    props.setProperty('smartbackfill_retry_count', '0');
+
     // 11e: Slack summary
     var emoji = errorCount > 0 ? '🚨' : warnCount > 0 ? '⚠️' : '✅';
     notifySlack(emoji + ' GoodDollar Dashboard v6 — ' + yesterday + '\n'
@@ -3362,6 +3421,10 @@ function smartBackfill() {
   } catch (e) {
     var elapsed = Math.round((Date.now() - runStartMs) / 1000);
     Logger.log('Smart Backfill FAILED: ' + e.message);
+    // EXPLICIT ERROR (not a timeout) — cancel the retry trigger and reset counter.
+    // Retries are only for timeouts; explicit errors need human attention.
+    deletePendingRetryTrigger_(props);
+    props.setProperty('smartbackfill_retry_count', '0');
     notifySlack('🚨 GoodDollar v6 PIPELINE FAILED — ' + yesterday
                 + '\nError: ' + e.message + '\nElapsed: ' + elapsed + 's');
     throw e;
@@ -3369,12 +3432,13 @@ function smartBackfill() {
 }
 
 function backfillRange(sinceYMD, untilYMD) {
+  var scriptStartMs = Date.now();
   ensureSheets();
   const indexResult = getExistingFactsIndex();
   
   Logger.log('Backfilling ' + sinceYMD + ' to ' + untilYMD);
   
-  const result = buildRows(sinceYMD, untilYMD, indexResult);
+  const result = buildRows(sinceYMD, untilYMD, indexResult, scriptStartMs);
   writeFactsAndHealth(result, indexResult);
   
   Logger.log('Backfill complete!');
@@ -4499,5 +4563,52 @@ function testComputedUsdMetrics() {
     
   } catch (e) {
     Logger.log('Error: ' + e.message);
+  }
+}
+
+/***** =========================================
+ * RETRY TRIGGER HELPERS
+ * =========================================
+ * Used by smartBackfill() to implement automatic retry on GAS timeout.
+ * GAS timeouts are hard process kills — no exception or finally block runs.
+ * The pattern: arm a one-time trigger before work starts, cancel it on
+ * completion. If the process is killed, the trigger fires 8 minutes later
+ * and smartBackfill() detects the retry via smartbackfill_retry_count in
+ * Script Properties.
+ *
+ * Both helpers are wrapped in try/catch. Trigger management failures are
+ * logged but never allowed to crash the data pipeline.
+ *****/
+
+function scheduleRetryTrigger_(props) {
+  try {
+    var trigger = ScriptApp.newTrigger('smartBackfill')
+      .timeBased()
+      .after(8 * 60 * 1000)  // 8 minutes — safely after the 6-min GAS hard limit
+      .create();
+    props.setProperty('smartbackfill_retry_trigger_id', trigger.getUniqueId());
+    Logger.log('Retry trigger scheduled: ' + trigger.getUniqueId());
+  } catch (e) {
+    Logger.log('Failed to schedule retry trigger: ' + e.message);
+    // Do NOT throw — trigger failure must never crash the data pipeline
+  }
+}
+
+function deletePendingRetryTrigger_(props) {
+  try {
+    var triggerId = props.getProperty('smartbackfill_retry_trigger_id');
+    if (!triggerId) return;
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getUniqueId() === triggerId) {
+        ScriptApp.deleteTrigger(triggers[i]);
+        Logger.log('Retry trigger deleted: ' + triggerId);
+        break;
+      }
+    }
+    props.deleteProperty('smartbackfill_retry_trigger_id');
+  } catch (e) {
+    Logger.log('Failed to delete retry trigger: ' + e.message);
+    // Do NOT throw
   }
 }
