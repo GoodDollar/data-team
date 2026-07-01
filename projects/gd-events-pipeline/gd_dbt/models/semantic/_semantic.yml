@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: claim_events
+    description: "Canonical business entity for claims. Every L3 model touching claims reads from here. Equivalent to gooddollar.Semantic.claim_events."
+    columns:
+      - name: tx_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: log_index
+        description: "Log index within the transaction."
+        tests:
+          - not_null
+      - name: claimer_address
+        description: "Lowercased claimer wallet address."
+        tests:
+          - not_null
+      - name: amount_g
+        description: "Claim amount in G$."
+        tests:
+          - not_null
+
+  - name: claimer_activity
+    description: "Per-(claimer, network) rollup of claim activity. Powers retention, cohort, engagement metrics. Equivalent to gooddollar.Semantic.claimer_activity."
+    columns:
+      - name: claimer_address
+        description: "Lowercased claimer wallet address."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (XDC, CELO, ETHEREUM)."
+        tests:
+          - not_null

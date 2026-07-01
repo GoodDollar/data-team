@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: daily_claim_activity
+    description: "Pre-aggregated daily claims by network. Grain: 1 row per (metric_date, network). Equivalent to gooddollar.Marts.daily_claim_activity."
+    columns:
+      - name: metric_date
+        description: "Calendar date of claims (DATE, partition key)."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (cluster key)."
+        tests:
+          - not_null
+      - name: daily_claims
+        description: "Count of claim events on this date for this network."
+        tests:
+          - not_null
+      - name: daily_total_g_claimed
+        description: "Total G$ claimed on this date for this network."
+        tests:
+          - not_null
+
+  - name: daily_invite_metrics
+    description: "Pre-aggregated daily invite metrics by network. Grain: 1 row per (metric_date, network). Equivalent to gooddollar.Marts.daily_invite_metrics."
+    columns:
+      - name: metric_date
+        description: "Calendar date of invite activity (DATE, partition key)."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (cluster key)."
+        tests:
+          - not_null
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - metric_date
+            - network
+
+  - name: invite_funnel_snapshot
+    description: "Invite funnel conversion snapshot. 6 rows, one per funnel stage. Equivalent to gooddollar.Marts.invite_funnel_snapshot."
+    columns:
+      - name: stage_order
+        description: "Funnel stage number (1–6)."
+        tests:
+          - not_null
+          - unique
+      - name: stage_label
+        description: "Human-readable funnel stage label."
+        tests:
+          - not_null
+      - name: user_count
+        description: "Number of users at this funnel stage."
+        tests:
+          - not_null

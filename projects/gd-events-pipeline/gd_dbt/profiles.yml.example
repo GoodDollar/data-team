@@ -1,0 +1,34 @@
+# dbt connection profile for gd-events-pipeline
+# Copy this file to ~/.dbt/profiles.yml and fill in your details.
+# This file is NEVER committed to the repo (profiles.yml is in .gitignore).
+
+gd_dbt:
+  target: dev    # default target — "dev" writes to dbt_dev dataset (safe for testing)
+  outputs:
+
+    # --- DEV (testing/development) ---
+    # All output goes to `gooddollar.dbt_dev` — a separate dataset
+    # that doesn't touch Semantic.* or Marts.* until parity is confirmed.
+    dev:
+      type: bigquery
+      method: oauth              # uses `gcloud auth application-default login` credentials
+      project: gooddollar        # GCP project ID
+      dataset: dbt_dev           # BigQuery dataset for dev output (auto-created on first run)
+      threads: 4                 # number of parallel models dbt can build
+      timeout_seconds: 300
+      location: US               # BigQuery dataset location
+
+    # --- PROD (after parity is confirmed) ---
+    # Run with `dbt run --target prod` to write to real production datasets.
+    # NOTE: per-layer schema routing (staging→Staging, semantic→Semantic, marts→Marts)
+    # requires a custom generate_schema_name macro — see macros/ for details.
+    # prod:
+    #   type: bigquery
+    #   method: oauth                          # for local runs
+    #   # method: service-account              # for CI/scheduled runs
+    #   # keyfile: /path/to/service-account.json
+    #   project: gooddollar
+    #   dataset: Semantic                      # default dataset (overridden per-model by custom schema)
+    #   threads: 4
+    #   timeout_seconds: 300
+    #   location: US

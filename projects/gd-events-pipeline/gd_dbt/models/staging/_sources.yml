@@ -1,0 +1,20 @@
+version: 2
+
+# Sources declare existing tables that dbt did NOT create.
+# The pipeline's TypeScript ingest writes these; dbt only reads them.
+# Reference in SQL: {{ source('blockchain_events', 'ClaimContractEvents') }}
+
+sources:
+  - name: blockchain_events
+    database: gooddollar            # GCP project
+    schema: BlockchainEvents        # BigQuery dataset
+    description: "Raw onchain event tables ingested by the TypeScript HyperSync pipeline."
+    freshness:
+      warn_after: {count: 36, period: hour}
+      error_after: {count: 72, period: hour}
+    loaded_at_field: ingested_at
+    tables:
+      - name: ClaimContractEvents
+        description: "Raw decoded claim contract events from all networks. Partitioned by block_timestamp, clustered on (network, claimer)."
+      - name: InviteContractEvents
+        description: "Raw decoded invite contract events from all networks. Partitioned by block_timestamp."

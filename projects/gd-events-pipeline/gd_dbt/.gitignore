@@ -1,0 +1,4 @@
+# dbt generated files — do not commit these
+target/
+dbt_packages/
+logs/

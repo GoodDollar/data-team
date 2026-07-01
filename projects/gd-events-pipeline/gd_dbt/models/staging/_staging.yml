@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: claim_contract_events
+    description: "Staged claim contract events: lowercased addresses, amount cast to BIGNUMERIC G$. One row per (tx_hash, log_index)."
+    columns:
+      - name: tx_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: log_index
+        description: "Log index within the transaction. Combined with tx_hash forms the dedup key."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (XDC, CELO, ETHEREUM)."
+        tests:
+          - not_null
+      - name: block_timestamp
+        description: "Block timestamp (TIMESTAMP). Source of all date partitioning."
+        tests:
+          - not_null
+      - name: claimer_address
+        description: "Lowercased claimer wallet address."
+        tests:
+          - not_null
+      - name: amount_g
+        description: "Claim amount in G$ (BIGNUMERIC, divided by 100 from raw uint256 string)."
+        tests:
+          - not_null
+
+  - name: invite_contract_events
+    description: "Staged invite contract events: lowercased addresses. One row per (tx_hash, log_index)."
+    columns:
+      - name: tx_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: log_index
+        description: "Log index within the transaction. Combined with tx_hash forms the dedup key."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (XDC, CELO, ETHEREUM)."
+        tests:
+          - not_null
+      - name: block_timestamp
+        description: "Block timestamp (TIMESTAMP). Source of all date partitioning."
+        tests:
+          - not_null
+      - name: event_name
+        description: "Contract event name (InviteeJoined, InviterBounty, etc.)."
+        tests:
+          - not_null
+      - name: invitee_address
+        description: "Lowercased invitee wallet address."
+        tests:
+          - not_null

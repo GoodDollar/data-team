@@ -1,0 +1,74 @@
+version: 2
+
+models:
+  - name: invite_signups
+    description: "Classifies every invite signup with signup_type (no_code | campaign | referral). One row per signup event. Equivalent to gooddollar.Semantic.invite_signups."
+    columns:
+      - name: tx_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: log_index
+        description: "Log index within the transaction."
+        tests:
+          - not_null
+      - name: user_address
+        description: "Lowercased invitee wallet address (the person who signed up)."
+        tests:
+          - not_null
+      - name: signup_type
+        description: "Classification: no_code | campaign | referral."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (XDC, CELO, ETHEREUM)."
+        tests:
+          - not_null
+
+  - name: invite_payouts
+    description: "Classifies every invite payout with payout_origin and normalizes amounts to G$. One row per payout event. Equivalent to gooddollar.Semantic.invite_payouts."
+    columns:
+      - name: tx_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: log_index
+        description: "Log index within the transaction."
+        tests:
+          - not_null
+      - name: invitee_address
+        description: "Lowercased invitee wallet address."
+        tests:
+          - not_null
+      - name: payout_origin
+        description: "Classification: campaign | referral."
+        tests:
+          - not_null
+      - name: total_amount_g
+        description: "Total bounty amount in G$."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain name (XDC, CELO, ETHEREUM)."
+        tests:
+          - not_null
+
+  - name: invitee_lifecycle
+    description: "Cross-domain join: for each invitee, joins signup → post-signup claims → payout. Core entity for funnel analysis. Equivalent to gooddollar.Semantic.invitee_lifecycle."
+    columns:
+      - name: invitee_address
+        description: "Lowercased invitee wallet address. Expected unique per invitee but may fan out if multiple bounty payouts exist."
+        tests:
+          - not_null
+      - name: signup_type
+        description: "Classification: campaign | referral (no_code excluded from lifecycle)."
+        tests:
+          - not_null
+      - name: signup_network
+        description: "Chain where the signup occurred."
+        tests:
+          - not_null
+      - name: signup_timestamp
+        description: "Timestamp of the signup event."
+        tests:
+          - not_null
