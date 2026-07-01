@@ -1,0 +1,73 @@
+name: dbt docs
+
+# Rebuilds the gd-events-pipeline dbt docs site and publishes it to the
+# gh-pages branch (served at https://gooddollar.github.io/data-team/).
+#
+# Runs on pushes to master that touch the dbt project, and on manual dispatch.
+# The docs are built with --empty-catalog, so NO BigQuery credentials are
+# needed — the lineage graph, model/column descriptions, tests, and compiled
+# SQL all come from the code, not the warehouse.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'projects/gd-events-pipeline/gd_dbt/**'
+      - '.github/workflows/dbt-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dbt-docs
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install "dbt-bigquery==1.9.*"
+
+      - name: Minimal profile (docs build needs no warehouse connection)
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<'YAML'
+          gd_dbt:
+            target: ci
+            outputs:
+              ci:
+                type: bigquery
+                method: oauth
+                project: gooddollar
+                dataset: dev_sandbox
+                threads: 4
+          YAML
+
+      - name: Build static docs
+        working-directory: projects/gd-events-pipeline/gd_dbt
+        run: |
+          dbt deps
+          dbt parse
+          dbt docs generate --static --empty-catalog --no-compile
+
+      - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tmp="$(mktemp -d)"
+          cp projects/gd-events-pipeline/gd_dbt/target/static_index.html "$tmp/index.html"
+          touch "$tmp/.nojekyll"
+          git -C "$tmp" init -q -b gh-pages
+          git -C "$tmp" config user.name "github-actions[bot]"
+          git -C "$tmp" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$tmp" add .
+          git -C "$tmp" commit -q -m "docs: publish dbt docs [skip ci]"
+          git -C "$tmp" push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
