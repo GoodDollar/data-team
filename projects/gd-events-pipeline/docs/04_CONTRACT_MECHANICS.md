@@ -3,7 +3,7 @@
 A plain-language guide to the invite contract mechanics, the blockchain events it emits, and
 why the warehouse transforms the data the way it does.
 
-Read this before touching `warehouse/L2/03_invite_payouts.sql` or any mart that involves
+Read this before touching `gd_dbt/models/semantic/invite_payouts.sql` or any mart that involves
 invite bounty amounts.
 
 ---
@@ -165,8 +165,8 @@ face value:               5      (= G$5)
 ```
 
 The UBIScheme contract uses only 2 decimal places. Same token, different contract, different
-precision choice by the protocol designers. This is why `warehouse/L2/04_claim_events.sql`
-divides by 100 while `warehouse/L2/03_invite_payouts.sql` divides by 10¹⁸.
+precision choice by the protocol designers. This is why `gd_dbt/models/staging/claim_contract_events.sql`
+divides by 100 while `gd_dbt/models/semantic/invite_payouts.sql` divides by 10¹⁸.
 
 > **Quick rule of thumb:** if a raw amount ends in 18+ zeros, it came from an 18-decimal
 > contract. If it ends in 2 zeros (or just looks like a small integer), it's likely a
@@ -336,16 +336,15 @@ level at query time. We don't use it in the warehouse because we already have th
 ### If the invitee bounty amount changes
 
 The invitee bounty is hardcoded as `CAST(500 AS BIGNUMERIC)` in one place:
-`warehouse/L2/03_invite_payouts.sql` — both in `invitee_amount_g` and in the `total_amount_g`
+`gd_dbt/models/semantic/invite_payouts.sql` — both in `invitee_amount_g` and in the `total_amount_g`
 `CASE` expressions.
 
 Steps:
 1. Confirm the new amount by reading `levels(0).bounty` from the contract on-chain, then
    dividing by 10¹⁸ to get the face value.
-2. Update both occurrences of `500` in `03_invite_payouts.sql`.
-3. Redeploy L2: `scripts/deploy-warehouse.ps1 L2`
-4. Rebuild L3 tables (they materialise from the updated view):
-   `scripts/refresh-marts.ps1`
+2. Update both occurrences of `500` in `invite_payouts.sql`.
+3. Rebuild with dbt — the Semantic view and every Mart downstream of it:
+   `cd gd_dbt && dbt run --select invite_payouts+`
 5. Note: **historical rows** already in the `daily_invite_metrics` table will reflect the old
    amount. If you need historical correction, run the full table migration procedure in
    `docs/03_OPERATIONS.md §Rebuilding L3 tables from scratch`.

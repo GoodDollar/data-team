@@ -41,7 +41,7 @@ The XDC invites campaign. Cross-joins invite signups with UBI claim activity to 
 | **Coding agent executing the MVP** | [`specs/MVP_IMPLEMENTATION_SPEC.md`](specs/MVP_IMPLEMENTATION_SPEC.md) |
 | **Operator running the pipeline / refreshing marts** | [`docs/03_OPERATIONS.md`](docs/03_OPERATIONS.md) |
 | **Engineer wanting to understand the architecture** | [`docs/00_VISION.md`](docs/00_VISION.md) → [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) → [`docs/02_DATA_MODEL.md`](docs/02_DATA_MODEL.md) |
-| **Analyst writing dashboard queries** | [`docs/02_DATA_MODEL.md`](docs/02_DATA_MODEL.md) (column reference) + [`warehouse/L3/`](warehouse/L3/) (mart shapes) |
+| **Analyst writing dashboard queries** | [`docs/02_DATA_MODEL.md`](docs/02_DATA_MODEL.md) (column reference) + [`gd_dbt/models/marts/`](gd_dbt/models/marts/) (mart shapes) |
 | **Adding a new contract or event** | [`docs/01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md) §"How to add a new contract" |
 
 ## Status

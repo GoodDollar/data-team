@@ -54,12 +54,13 @@ models:
           - not_null
 
   - name: invitee_lifecycle
-    description: "Cross-domain join: for each invitee, joins signup → post-signup claims → payout. Core entity for funnel analysis. Equivalent to gooddollar.Semantic.invitee_lifecycle."
+    description: "Cross-domain join: for each invitee, joins signup → post-signup claims → payout → post-payout retention. Core entity for funnel analysis. Materializes as gooddollar.Semantic.invitee (aliased) — 16 columns, matching production."
     columns:
       - name: invitee_address
-        description: "Lowercased invitee wallet address. Expected unique per invitee but may fan out if multiple bounty payouts exist."
+        description: "Lowercased invitee wallet address. One row per invitee (signups and payouts both deduped to earliest)."
         tests:
           - not_null
+          - unique
       - name: signup_type
         description: "Classification: campaign | referral (no_code excluded from lifecycle)."
         tests:
@@ -72,3 +73,7 @@ models:
         description: "Timestamp of the signup event."
         tests:
           - not_null
+      - name: post_payout_claims_7d
+        description: "Claims in the 7 days after bounty payment. NULL when no payout, 0/N when paid."
+      - name: post_payout_claims_30d
+        description: "Claims in the 30 days after bounty payment. NULL when no payout, 0/N when paid."

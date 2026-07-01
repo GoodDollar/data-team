@@ -3,17 +3,17 @@
 # This file is NEVER committed to the repo (profiles.yml is in .gitignore).
 
 gd_dbt:
-  target: dev    # default target — "dev" writes to dbt_dev dataset (safe for testing)
+  target: dev    # default target — "dev" writes to the dev_sandbox dataset (safe to break)
   outputs:
 
-    # --- DEV (testing/development) ---
-    # All output goes to `gooddollar.dbt_dev` — a separate dataset
-    # that doesn't touch Semantic.* or Marts.* until parity is confirmed.
+    # --- DEV (sandbox/testing) ---
+    # All output goes to `gooddollar.dev_sandbox` — a throwaway dataset
+    # for testing model changes without touching Staging/Semantic/Marts.
     dev:
       type: bigquery
       method: oauth              # uses `gcloud auth application-default login` credentials
       project: gooddollar        # GCP project ID
-      dataset: dbt_dev           # BigQuery dataset for dev output (auto-created on first run)
+      dataset: dev_sandbox       # BigQuery dataset for dev output (auto-created on first run)
       threads: 4                 # number of parallel models dbt can build
       timeout_seconds: 300
       location: US               # BigQuery dataset location

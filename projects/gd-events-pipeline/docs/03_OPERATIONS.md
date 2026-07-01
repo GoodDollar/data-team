@@ -95,58 +95,58 @@ npx tsx index.ts append
 
 ---
 
-## Deploying the warehouse (BQ datasets, views, marts)
+## Deploying the warehouse (datasets, views, marts)
 
-There are two ways. Use whichever is easier.
+Two layers, two tools.
 
-### Option A — PowerShell scripts (recommended once `bq` CLI is installed)
+### L1 raw tables — one-time bootstrap (PowerShell)
 
-```
-.\scripts\deploy-warehouse.ps1 L1     # creates the L1 tables (do this once)
-.\scripts\deploy-warehouse.ps1 L2     # creates Semantic dataset + 5 views
-.\scripts\deploy-warehouse.ps1 L3     # creates Marts dataset + 3 marts
-```
-
-Or all in one shot:
+The raw event tables (`BlockchainEvents.*`) are what the pipeline streams into. They are dbt
+*sources* (pipeline-written, dbt-read), not dbt models, so their DDL still lives in `warehouse/L1/`.
+Create them once:
 
 ```
-.\scripts\deploy-warehouse.ps1 all
+.\scripts\deploy-warehouse.ps1        # creates the L1 raw tables
 ```
 
-### Option B — BigQuery console (if you don't have `bq` CLI)
+### Staging, Semantic, Marts — dbt
 
-For each `.sql` file in `warehouse/L1/`, then `warehouse/L2/`, then `warehouse/L3/`, in numbered order:
+Everything above raw is managed by dbt. There are no numbered files to run by hand — dbt resolves
+execution order from `ref()`/`source()`. From `gd_dbt/`:
 
-1. Open <https://console.cloud.google.com/bigquery>
-2. Confirm the project selector at the top says `gooddollar`
-3. Click **+ Compose new query**
-4. Open the `.sql` file in a text editor, copy the full contents, paste into the BQ query editor
-5. Click **Run** — should see "Query complete"
-6. Repeat for the next file
+```
+cd gd_dbt
+dbt run          # builds Staging + Semantic + Marts in dependency order
+dbt test         # schema + data-quality checks
+```
 
-Files are numbered in execution order (`01_…`, `02_…`, etc.) — run them strictly in that order within each layer.
+First-time setup: copy `gd_dbt/profiles.yml.example` to `~/.dbt/profiles.yml`, then `dbt deps`.
+The default target is `dev` (writes to the `dev_sandbox` dataset); add `--target prod` to write to
+the real `Staging`/`Semantic`/`Marts` datasets.
 
 ---
 
 ## Refreshing marts after a new ingest
 
-L1 grows continuously as the pipeline runs. L2 views are always live (no action needed). L3 marts are pre-computed tables that need rebuild after each ingest.
+L1 grows continuously as the pipeline runs. Semantic views are always live (no action needed).
+Marts are tables that need a rebuild after each ingest:
 
 ```
-.\scripts\refresh-marts.ps1
+cd gd_dbt
+dbt run --select marts
 ```
-
-This re-runs every `warehouse/L3/*.sql` file. Takes < 1 minute at MVP volume.
 
 ---
 
 ## Verifying everything works
 
 ```
-.\scripts\verify.ps1
+cd gd_dbt
+dbt test
 ```
 
-Runs the validation queries from the spec and prints PASS/FAIL for each. Use this any time you want to sanity-check the warehouse end-to-end.
+Runs all schema + data-quality checks and exits non-zero if any fail. Browse the lineage graph and
+model/column docs with `dbt docs serve` (opens <http://localhost:8080>).
 
 ---
 
@@ -156,23 +156,24 @@ Runs the validation queries from the spec and prints PASS/FAIL for each. Use thi
 |---|---|---|
 | `ENVIO_API_TOKEN is missing` | `pipeline/.env` not created or empty | `cp pipeline/.env.example pipeline/.env` and fill in the token |
 | `Could not authenticate to Google` | gcloud ADC expired | `gcloud auth application-default login` again |
-| `Table not found: gooddollar.BlockchainEvents.…` | L1 DDL not run yet | `.\scripts\deploy-warehouse.ps1 L1` |
+| `Table not found: gooddollar.BlockchainEvents.…` | L1 DDL not run yet | `.\scripts\deploy-warehouse.ps1` |
 | `Insert failed: schema mismatch` | Pipeline writing fields not in the table schema | Re-run the L1 DDL — `CREATE OR REPLACE TABLE` will reset the schema |
 | `Request Entity Too Large` (HTTP 413) | Single insert batch over 10MB | Lower `BATCH_SIZE` in `pipeline/index.ts` |
-| `View … is invalid: Unrecognized name` | An L2 view references an L1 column that doesn't exist | Check the L1 schema matches `02_DATA_MODEL.md`; re-run L1 DDL if drift |
-| L3 mart numbers look wrong | Marts refreshed against stale L2 view? L2 always live so this shouldn't happen — likely L1 not fully backfilled. Re-run backfill. |  |
+| `Unrecognized name` during `dbt run` | A Semantic model references an L1 column that doesn't exist | Check the L1 schema matches `02_DATA_MODEL.md`; re-run L1 DDL if drift |
+| Mart numbers look wrong | Marts rebuilt before L1 fully backfilled. Re-run backfill, then `cd gd_dbt && dbt run --select marts`. |  |
 
 ---
 
 ## Cron / daily automation (post-MVP)
 
-For MVP, run the pipeline and refresh marts manually. Once validated:
+There is **no daily job set up yet** — the pipeline and dbt are run manually. When it's time to
+automate, the daily flow is two ordered steps: ingest first, then dbt.
 
 **Linux/macOS:**
 
 ```cron
 30 0 * * * cd /opt/gd-events-pipeline/pipeline && /usr/local/bin/npx tsx index.ts append >> /var/log/gd-events.log 2>&1
-45 0 * * * cd /opt/gd-events-pipeline && pwsh ./scripts/refresh-marts.ps1 >> /var/log/gd-events.log 2>&1
+45 0 * * * cd /opt/gd-events-pipeline/gd_dbt && /usr/local/bin/dbt run --select marts >> /var/log/gd-events.log 2>&1
 ```
 
 **Windows:** use Task Scheduler. Two tasks, both daily at 00:30 / 00:45 UTC.

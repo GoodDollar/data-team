@@ -1,21 +1,22 @@
 # deploy-warehouse.ps1
-# Deploys numbered .sql files in warehouse/<layer>/ in order via the bq CLI.
+# Creates the L1 raw event tables (BlockchainEvents.*) from the DDL in warehouse/L1/.
+# These are the tables the TypeScript pipeline streams into and dbt reads as sources —
+# they are NOT managed by dbt, so this bootstrap DDL still lives here.
+#
+# The Semantic (L2) and Marts (L3) layers are managed by dbt now — use `dbt run`, not this
+# script. See gd_dbt/ and docs/03_OPERATIONS.md.
 #
 # Usage:
-#   .\scripts\deploy-warehouse.ps1 L1
-#   .\scripts\deploy-warehouse.ps1 L2
-#   .\scripts\deploy-warehouse.ps1 L3
-#   .\scripts\deploy-warehouse.ps1 all
+#   .\scripts\deploy-warehouse.ps1        # creates/refreshes the L1 raw tables
 #
 # Requires:
 #   - Google Cloud SDK installed (provides the `bq` CLI)
 #   - `gcloud auth application-default login` already run
-#   - Project set to `gooddollar` (or override with --project_id arg below)
 
 param(
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet("L1", "L2", "L3", "all")]
-    [string]$Layer
+    [Parameter(Position = 0)]
+    [ValidateSet("L1")]
+    [string]$Layer = "L1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -75,13 +76,7 @@ function Deploy-Layer {
     Write-Host "$LayerName complete." -ForegroundColor Green
 }
 
-if ($Layer -eq "all") {
-    Deploy-Layer "L1"
-    Deploy-Layer "L2"
-    Deploy-Layer "L3"
-} else {
-    Deploy-Layer $Layer
-}
+Deploy-Layer $Layer
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green

@@ -207,7 +207,9 @@ END
 
 ---
 
-### `Semantic.invitee_lifecycle` (VIEW)
+### `Semantic.invitee` (VIEW)
+
+> Materializes as `gooddollar.Semantic.invitee` (dbt model: `invitee_lifecycle`, aliased).
 
 **Purpose:** the cross-domain join. For each invitee, joins their signup with their post-signup claim activity and any payout they've received. The core entity for funnel analysis.
 
@@ -231,6 +233,8 @@ END
 | `bounty_tx_hash` | STRING NULLABLE | from `invite_payouts.tx_hash` — NULL = bounty not yet paid |
 | `bounty_timestamp` | TIMESTAMP NULLABLE | from `invite_payouts.block_timestamp` |
 | `bounty_total_amount_g` | BIGNUMERIC NULLABLE | from `invite_payouts.total_amount_g` |
+| `post_payout_claims_7d` | INT64 NULLABLE | claims in the 7 days after bounty payment. NULL when unpaid, 0/N when paid |
+| `post_payout_claims_30d` | INT64 NULLABLE | claims in the 30 days after bounty payment. NULL when unpaid, 0/N when paid |
 
 **Computed at query time, NOT stored** (because they drift with calendar time):
 - `days_since_signup` = `TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), signup_timestamp, DAY)`
@@ -254,7 +258,7 @@ END
 **Refresh:** daily, full rebuild via `CREATE OR REPLACE TABLE`.
 **Partition:** `metric_date`. **Cluster:** `network`.
 
-**16 daily metrics + 8 cumulative + 2 dimensions = 26 columns total.** See [`warehouse/L3/02_daily_invite_metrics.sql`](../warehouse/L3/02_daily_invite_metrics.sql) for the full column list.
+**16 daily metrics + 8 cumulative + 2 dimensions = 26 columns total.** See [`gd_dbt/models/marts/daily_invite_metrics.sql`](../gd_dbt/models/marts/daily_invite_metrics.sql) for the full column list.
 
 Daily metrics cover:
 - Signups by type (total, referral, campaign, no_code)
@@ -273,7 +277,7 @@ Cumulative metrics: running totals for the same dimensions per network.
 
 **Grain:** 6 rows total — one per funnel stage. Whole table is a single snapshot, rebuilt daily.
 **Refresh:** daily, full rebuild.
-**Source:** `Semantic.invitee_lifecycle`.
+**Source:** `Semantic.invitee`.
 
 **Stages (in order):**
 1. Signed Up as Invitee

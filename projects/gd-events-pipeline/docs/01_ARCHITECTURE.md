@@ -5,8 +5,13 @@
 | Layer | BigQuery dataset | Owns | Cadence | Storage type |
 |---|---|---|---|---|
 | **L1** | `gooddollar.BlockchainEvents` | Raw decoded onchain events, one table per contract | Continuous (daily backfill + append) | Tables, partitioned by `DATE(block_timestamp)`, clustered on natural key |
-| **L2** | `gooddollar.Semantic` | Business-meaning entities reused across dashboards (signup classification, payout classification, lifecycle joins) | Live for views; daily for tables | Mostly **VIEWs** for MVP. Tables only when join cost is high. |
-| **L3** | `gooddollar.Marts` | Pre-aggregated, dashboard-ready datasets, one table per chart family | Daily rebuild | **TABLEs** with `CREATE OR REPLACE` |
+| **L2** | `gooddollar.Semantic` | Business-meaning entities reused across dashboards (signup classification, payout classification, lifecycle joins) | Live for views; daily for tables | **VIEWs**, managed by dbt |
+| **L3** | `gooddollar.Marts` | Pre-aggregated, dashboard-ready datasets, one table per chart family | Daily rebuild | **TABLEs**, materialized by dbt |
+
+> **Managed by dbt.** L2 (Semantic) and L3 (Marts) — plus a thin `Staging` layer between raw and
+> Semantic — are built and tested by the dbt project in [`gd_dbt/`](../gd_dbt/). L1 raw tables are
+> dbt *sources* (pipeline-written, not dbt-managed). See [`04_DBT_ADOPTION.md`](04_DBT_ADOPTION.md)
+> and [`03_OPERATIONS.md`](03_OPERATIONS.md).
 
 ## Layer responsibilities (and what does *not* belong)
 
@@ -57,9 +62,9 @@
 
 **Naming:** snake_case, prefix by family: `daily_invite_metrics`, `invite_funnel_snapshot`, `daily_claim_activity`. The grain (daily, snapshot, monthly) is in the name.
 
-**Storage:** all TABLEs. `CREATE OR REPLACE TABLE … AS …` at refresh time. Partition by `metric_date` (or whatever the time dimension is) to keep queries cheap.
+**Storage:** all TABLEs, materialized by dbt (`materialized='table'`) — a full rebuild on each `dbt run`. Partition by `metric_date` (or whatever the time dimension is) to keep queries cheap.
 
-**Cadence:** daily rebuild. For MVP this is manual; post-MVP it becomes a scheduled query.
+**Cadence:** rebuilt on each `dbt run`. Currently manual; no daily job is set up yet.
 
 **What does NOT belong in L3:** business definitions (those are in L2), reusable joins (also L2). If the same logic appears in two L3 marts, lift it into L2.
 
@@ -87,10 +92,10 @@
 ## How to add a new contract
 
 1. Add an entry to `CONTRACT_CONFIGS` in [`pipeline/index.ts`](../pipeline/index.ts).
-2. Create the L1 BigQuery table — a numbered SQL file in [`warehouse/L1/`](../warehouse/L1/).
+2. Create the L1 BigQuery table — a numbered SQL file in [`warehouse/L1/`](../warehouse/L1/) — and declare it as a dbt source in [`gd_dbt/models/staging/_sources.yml`](../gd_dbt/models/staging/_sources.yml).
 3. Run `npx tsx index.ts backfill <contract_key>`.
-4. (Optional) Add an L2 entity in [`warehouse/L2/`](../warehouse/L2/) for the new contract's business semantics.
-5. (Optional) Add an L3 mart in [`warehouse/L3/`](../warehouse/L3/) for the dashboards that depend on it.
+4. Add a staging model in [`gd_dbt/models/staging/`](../gd_dbt/models/staging/), then (optional) a Semantic model in [`gd_dbt/models/semantic/`](../gd_dbt/models/semantic/) for the new contract's business semantics.
+5. (Optional) Add a mart in [`gd_dbt/models/marts/`](../gd_dbt/models/marts/) for the dashboards that depend on it.
 
 ## How to add a new metric
 
