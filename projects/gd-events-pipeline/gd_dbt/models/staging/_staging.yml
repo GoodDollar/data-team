@@ -2,57 +2,91 @@ version: 2
 
 models:
   - name: claim_contract_events
-    description: "Staged claim contract events: lowercased addresses, amount cast to BIGNUMERIC G$. One row per (tx_hash, log_index)."
+    description: >
+      Staged claim contract events: lowercased addresses, raw amount cast to BIGNUMERIC G$.
+      One row per (tx_hash, log_index). Minimal cleaning layer — no business logic.
+      Reads from the raw BigQuery table written by the TypeScript HyperSync pipeline.
     columns:
+      - name: network
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        tests:
+          - not_null
+      - name: chain_id
+        description: "Numeric chain ID (e.g. 50 = XDC, 42220 = CELO, 1 = Ethereum)."
+      - name: block_number
+        description: "Block number where the claim event was emitted."
+      - name: block_timestamp
+        description: "Block timestamp (TIMESTAMP). Used for date partitioning downstream."
+        tests:
+          - not_null
       - name: tx_hash
-        description: "Transaction hash."
+        description: "Transaction hash (lowercased). Combined with log_index forms the dedup key."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. Combined with tx_hash forms the dedup key."
+        description: "Log index within the transaction. Combined with tx_hash = unique event."
         tests:
           - not_null
-      - name: network
-        description: "Chain name (XDC, CELO, ETHEREUM)."
-        tests:
-          - not_null
-      - name: block_timestamp
-        description: "Block timestamp (TIMESTAMP). Source of all date partitioning."
-        tests:
-          - not_null
+      - name: contract_address
+        description: "Lowercased address of the UBI claim contract that emitted this event."
       - name: claimer_address
-        description: "Lowercased claimer wallet address."
+        description: "Lowercased wallet address of the claimer."
         tests:
           - not_null
+      - name: amount_raw
+        description: "Raw uint256 amount string as stored on-chain (pre-division)."
       - name: amount_g
-        description: "Claim amount in G$ (BIGNUMERIC, divided by 100 from raw uint256 string)."
+        description: "Claim amount in G$ (BIGNUMERIC). Derived: SAFE_CAST(amount_raw) / 100."
         tests:
           - not_null
+      - name: ingested_at
+        description: "Timestamp when the TypeScript pipeline wrote this row to BigQuery."
 
   - name: invite_contract_events
-    description: "Staged invite contract events: lowercased addresses. One row per (tx_hash, log_index)."
+    description: >
+      Staged invite contract events: lowercased addresses, all event types in one model.
+      One row per (tx_hash, log_index). Minimal cleaning — event classification and
+      business logic live in the semantic layer (invite_signups, invite_payouts).
     columns:
+      - name: network
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        tests:
+          - not_null
+      - name: chain_id
+        description: "Numeric chain ID (e.g. 50 = XDC, 42220 = CELO, 1 = Ethereum)."
+      - name: block_number
+        description: "Block number where the invite event was emitted."
+      - name: block_timestamp
+        description: "Block timestamp (TIMESTAMP). Used for date partitioning downstream."
+        tests:
+          - not_null
       - name: tx_hash
-        description: "Transaction hash."
+        description: "Transaction hash (lowercased). Combined with log_index forms the dedup key."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. Combined with tx_hash forms the dedup key."
-        tests:
-          - not_null
-      - name: network
-        description: "Chain name (XDC, CELO, ETHEREUM)."
-        tests:
-          - not_null
-      - name: block_timestamp
-        description: "Block timestamp (TIMESTAMP). Source of all date partitioning."
+        description: "Log index within the transaction. Combined with tx_hash = unique event."
         tests:
           - not_null
       - name: event_name
-        description: "Contract event name (InviteeJoined, InviterBounty, etc.)."
+        description: "Contract event name — InviteeJoined (signup) or InviterBounty (payout)."
+        tests:
+          - not_null
+      - name: contract_address
+        description: "Lowercased address of the invite contract. Used for signup_type classification."
+      - name: inviter_address
+        description: "Lowercased inviter wallet. May be zero-address or contract-address (classified in semantic layer)."
         tests:
           - not_null
       - name: invitee_address
         description: "Lowercased invitee wallet address."
         tests:
           - not_null
+      - name: inviter_level
+        description: "Inviter's level in the invite tree (string from raw event). Cast to INT64 in semantic layer."
+      - name: bounty_paid
+        description: "Raw bounty_paid value from InviterBounty events (uint256 string, 18 decimals). NULL for signup events."
+      - name: earned_level
+        description: "Earned level from InviterBounty events. NULL for signup events."
+      - name: ingested_at
+        description: "Timestamp when the TypeScript pipeline wrote this row to BigQuery."

@@ -8,13 +8,72 @@ sources:
   - name: blockchain_events
     database: gooddollar            # GCP project
     schema: BlockchainEvents        # BigQuery dataset
-    description: "Raw onchain event tables ingested by the TypeScript HyperSync pipeline."
+    description: >
+      Raw on-chain event tables ingested by the TypeScript HyperSync pipeline.
+      These are the entry point for all data in the warehouse — decoded smart contract
+      events from GoodDollar's UBI claim and invite contracts across XDC, CELO, and Ethereum.
     freshness:
       warn_after: {count: 36, period: hour}
       error_after: {count: 72, period: hour}
     loaded_at_field: ingested_at
     tables:
       - name: ClaimContractEvents
-        description: "Raw decoded claim contract events from all networks. Partitioned by block_timestamp, clustered on (network, claimer)."
+        description: >
+          Raw decoded UBIScheme claim events from all networks. Each row = one UBI claim.
+          Partitioned by block_timestamp, clustered on (network, claimer).
+          Written by the HyperSync pipeline; dbt reads-only.
+        columns:
+          - name: network
+            description: "Network name (XDC, CELO, ETHEREUM)."
+          - name: chain_id
+            description: "Numeric chain ID."
+          - name: block_number
+            description: "Block number."
+          - name: block_timestamp
+            description: "Block timestamp (TIMESTAMP). Partition key."
+          - name: tx_hash
+            description: "Transaction hash."
+          - name: log_index
+            description: "Log index within transaction."
+          - name: claimer
+            description: "Claimer wallet address (raw casing from chain)."
+          - name: contract_address
+            description: "UBI claim contract address."
+          - name: amount
+            description: "Raw uint256 amount (divide by 100 for G$)."
+          - name: ingested_at
+            description: "Pipeline ingestion timestamp. Used for freshness checks."
       - name: InviteContractEvents
-        description: "Raw decoded invite contract events from all networks. Partitioned by block_timestamp."
+        description: >
+          Raw decoded invite contract events (InviteeJoined + InviterBounty) from all networks.
+          Each row = one invite-related event. Partitioned by block_timestamp.
+          Written by the HyperSync pipeline; dbt reads-only.
+        columns:
+          - name: network
+            description: "Network name (XDC, CELO, ETHEREUM)."
+          - name: chain_id
+            description: "Numeric chain ID."
+          - name: block_number
+            description: "Block number."
+          - name: block_timestamp
+            description: "Block timestamp (TIMESTAMP). Partition key."
+          - name: tx_hash
+            description: "Transaction hash."
+          - name: log_index
+            description: "Log index within transaction."
+          - name: event_name
+            description: "Contract event name (InviteeJoined or InviterBounty)."
+          - name: inviter
+            description: "Inviter wallet address (raw casing). May be zero-address or contract."
+          - name: invitee
+            description: "Invitee wallet address (raw casing)."
+          - name: contract_address
+            description: "Invite contract address."
+          - name: inviter_level
+            description: "Inviter's level in invite tree."
+          - name: bounty_paid
+            description: "Bounty amount (uint256 string, 18 decimals). Present for InviterBounty events."
+          - name: earned_level
+            description: "Earned level. Present for InviterBounty events."
+          - name: ingested_at
+            description: "Pipeline ingestion timestamp. Used for freshness checks."

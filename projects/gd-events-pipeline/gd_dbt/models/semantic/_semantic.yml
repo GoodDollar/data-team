@@ -2,33 +2,69 @@ version: 2
 
 models:
   - name: claim_events
-    description: "Canonical business entity for claims. Every L3 model touching claims reads from here. Equivalent to gooddollar.Semantic.claim_events."
+    description: >
+      Canonical business entity for claims. Every downstream model touching claims reads
+      from here — never from staging or raw. One row per claim event (tx_hash + log_index).
+      Passes through all staging columns without transformation.
     columns:
+      - name: network
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        tests:
+          - not_null
+      - name: chain_id
+        description: "Numeric chain ID (e.g. 50 = XDC, 42220 = CELO, 1 = Ethereum)."
+      - name: block_number
+        description: "Block number where the claim event was emitted."
+      - name: block_timestamp
+        description: "Timestamp of the block (TIMESTAMP). Source for all date-based partitioning."
+        tests:
+          - not_null
       - name: tx_hash
-        description: "Transaction hash."
+        description: "Transaction hash (lowercased). Part of the dedup key."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction."
+        description: "Log index within the transaction. tx_hash + log_index = unique event."
         tests:
           - not_null
+      - name: contract_address
+        description: "Lowercased address of the UBI claim contract."
       - name: claimer_address
-        description: "Lowercased claimer wallet address."
+        description: "Lowercased wallet address of the user who claimed."
         tests:
           - not_null
+      - name: amount_raw
+        description: "Raw uint256 amount as stored on-chain (pre-division)."
       - name: amount_g
-        description: "Claim amount in G$."
+        description: "Claim amount in G$ (BIGNUMERIC). Derived by dividing amount_raw by 100."
         tests:
           - not_null
+      - name: ingested_at
+        description: "Timestamp when the pipeline ingested this event into BigQuery."
 
   - name: claimer_activity
-    description: "Per-(claimer, network) rollup of claim activity. Powers retention, cohort, engagement metrics. Equivalent to gooddollar.Semantic.claimer_activity."
+    description: >
+      Per-(claimer, network) rollup of claim activity. One row per unique claimer per network.
+      Powers retention analysis, cohort metrics, and engagement dashboards without
+      re-aggregating raw events every time.
     columns:
       - name: claimer_address
         description: "Lowercased claimer wallet address."
         tests:
           - not_null
       - name: network
-        description: "Chain name (XDC, CELO, ETHEREUM)."
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
         tests:
           - not_null
+      - name: chain_id
+        description: "Numeric chain ID for this network."
+      - name: first_claim_timestamp
+        description: "Timestamp of this claimer's first-ever claim on this network."
+      - name: latest_claim_timestamp
+        description: "Timestamp of this claimer's most recent claim on this network."
+      - name: total_claims
+        description: "Total number of claim events for this claimer on this network."
+      - name: total_amount_g
+        description: "Lifetime G$ claimed by this wallet on this network (BIGNUMERIC)."
+      - name: active_days
+        description: "Count of distinct calendar days on which this wallet claimed."

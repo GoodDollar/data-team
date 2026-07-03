@@ -2,36 +2,89 @@ version: 2
 
 models:
   - name: daily_claim_activity
-    description: "Pre-aggregated daily claims by network. Grain: 1 row per (metric_date, network). Equivalent to gooddollar.Marts.daily_claim_activity."
+    description: >
+      Pre-aggregated daily claims by network. Grain: 1 row per (metric_date, network).
+      Powers the main claiming dashboard. Partitioned by metric_date, clustered by network.
     columns:
       - name: metric_date
-        description: "Calendar date of claims (DATE, partition key)."
+        description: "Calendar date of claims (DATE). Partition key."
         tests:
           - not_null
       - name: network
-        description: "Chain name (cluster key)."
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM. Cluster key."
         tests:
           - not_null
       - name: daily_claims
-        description: "Count of claim events on this date for this network."
+        description: "Count of individual claim transactions on this date/network."
         tests:
           - not_null
       - name: daily_total_g_claimed
-        description: "Total G$ claimed on this date for this network."
+        description: "Sum of G$ claimed on this date/network (BIGNUMERIC)."
         tests:
           - not_null
 
   - name: daily_invite_metrics
-    description: "Pre-aggregated daily invite metrics by network. Grain: 1 row per (metric_date, network). Equivalent to gooddollar.Marts.daily_invite_metrics."
+    description: >
+      Pre-aggregated daily invite metrics by network. Grain: 1 row per (metric_date, network).
+      Tracks daily signup volume, bounty payouts, and cumulative totals for the invite program.
+      Partitioned by metric_date, clustered by network.
     columns:
       - name: metric_date
-        description: "Calendar date of invite activity (DATE, partition key)."
+        description: "Calendar date of invite activity (DATE). Partition key."
         tests:
           - not_null
       - name: network
-        description: "Chain name (cluster key)."
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM. Cluster key."
         tests:
           - not_null
+      - name: daily_total_signups
+        description: "Total new invite signups on this date/network (all types combined)."
+      - name: daily_referral_signups
+        description: "Signups where a human inviter referred the user."
+      - name: daily_campaign_signups
+        description: "Signups attributed to the invite contract's campaign mechanism."
+      - name: daily_no_code_signups
+        description: "Signups with no invite code (organic joins via invite contract)."
+      - name: daily_unique_inviters_joined
+        description: "Distinct wallets that signed up without a code on this date."
+      - name: daily_unique_referral_invitees
+        description: "Distinct wallets that signed up via referral on this date."
+      - name: daily_unique_campaign_invitees
+        description: "Distinct wallets that signed up via campaign on this date."
+      - name: daily_total_bounties
+        description: "Count of bounty payout events on this date/network."
+      - name: daily_referral_bounties
+        description: "Bounty payouts triggered by referral invites."
+      - name: daily_campaign_bounties
+        description: "Bounty payouts triggered by campaign invites."
+      - name: daily_total_expenditure_g
+        description: "Total G$ disbursed in bounties on this date/network (invitee + inviter portions)."
+      - name: daily_paid_to_invitees_g
+        description: "G$ paid to invitees (fixed G$500 per payout)."
+      - name: daily_paid_to_inviters_g
+        description: "G$ paid to inviters (level-based, varies per payout)."
+      - name: daily_notional_campaign_retained_g
+        description: "Notional G$1000 retained by contract per campaign payout (never disbursed to a human)."
+      - name: daily_unique_invitees_paid
+        description: "Distinct invitee wallets that received a bounty on this date."
+      - name: daily_unique_inviters_paid
+        description: "Distinct inviter wallets that received a bounty on this date."
+      - name: cumulative_total_signups
+        description: "Running total of all signups from genesis to this date, per network."
+      - name: cumulative_referral_signups
+        description: "Running total of referral signups from genesis to this date, per network."
+      - name: cumulative_campaign_signups
+        description: "Running total of campaign signups from genesis to this date, per network."
+      - name: cumulative_no_code_signups
+        description: "Running total of no-code signups from genesis to this date, per network."
+      - name: cumulative_total_bounties
+        description: "Running total of all bounties paid from genesis to this date, per network."
+      - name: cumulative_total_expenditure_g
+        description: "Running total of G$ disbursed from genesis to this date, per network."
+      - name: cumulative_paid_to_invitees_g
+        description: "Running total of G$ paid to invitees from genesis to this date, per network."
+      - name: cumulative_paid_to_inviters_g
+        description: "Running total of G$ paid to inviters from genesis to this date, per network."
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
@@ -39,18 +92,29 @@ models:
             - network
 
   - name: invite_funnel_snapshot
-    description: "Invite funnel conversion snapshot. 6 rows, one per funnel stage. Equivalent to gooddollar.Marts.invite_funnel_snapshot."
+    description: >
+      Invite funnel conversion snapshot. 6 rows, one per funnel stage — from signup
+      through eligibility to bounty payment. Rebuilt on every dbt run with current data.
+      Used by Looker dashboard for invite program health monitoring.
     columns:
+      - name: snapshot_timestamp
+        description: "Timestamp when this snapshot was generated (CURRENT_TIMESTAMP at query time)."
+      - name: funnel_name
+        description: "Funnel identifier — always 'invite_funnel'."
       - name: stage_order
-        description: "Funnel stage number (1–6)."
+        description: "Funnel stage number (1–6). 1 = widest (all signups), 6 = narrowest (paid)."
         tests:
           - not_null
           - unique
       - name: stage_label
-        description: "Human-readable funnel stage label."
+        description: >
+          Human-readable stage name: Signed Up as Invitee → Claimed at Least Once →
+          Claimed at Least Twice → Claimed 3+ Times → Met Eligibility Criteria → Bounty Paid.
         tests:
           - not_null
       - name: user_count
-        description: "Number of users at this funnel stage."
+        description: "Number of invitees who reached this funnel stage."
         tests:
           - not_null
+      - name: pct_of_top
+        description: "user_count as a percentage of stage 1 (all signups). Measures drop-off rate."

@@ -2,78 +2,140 @@ version: 2
 
 models:
   - name: invite_signups
-    description: "Classifies every invite signup with signup_type (no_code | campaign | referral). One row per signup event. Equivalent to gooddollar.Semantic.invite_signups."
+    description: >
+      Classifies every invite signup with signup_type (no_code | campaign | referral).
+      One row per signup event. Core semantic entity for the invite program — all
+      downstream invite models read from here.
     columns:
+      - name: network
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        tests:
+          - not_null
+      - name: chain_id
+        description: "Numeric chain ID for this network."
+      - name: block_number
+        description: "Block number where the InviteeJoined event was emitted."
+      - name: block_timestamp
+        description: "Timestamp of the signup event (TIMESTAMP)."
+        tests:
+          - not_null
       - name: tx_hash
-        description: "Transaction hash."
+        description: "Transaction hash (lowercased). Part of the dedup key."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction."
+        description: "Log index within the transaction. tx_hash + log_index = unique event."
         tests:
           - not_null
       - name: user_address
-        description: "Lowercased invitee wallet address (the person who signed up)."
+        description: "Lowercased wallet address of the invitee (the person who signed up)."
         tests:
           - not_null
+      - name: inviter_address
+        description: "Lowercased wallet of the human inviter. NULL for no_code and campaign signups."
       - name: signup_type
-        description: "Classification: no_code | campaign | referral."
+        description: >
+          Classification: no_code (zero-address inviter) | campaign (contract-address inviter) |
+          referral (human inviter).
         tests:
           - not_null
-      - name: network
-        description: "Chain name (XDC, CELO, ETHEREUM)."
-        tests:
-          - not_null
+      - name: inviter_level
+        description: "Inviter's level in the invite tree (INT64). Determines bonus multiplier for payout."
+      - name: ingested_at
+        description: "Timestamp when the pipeline ingested this event into BigQuery."
 
   - name: invite_payouts
-    description: "Classifies every invite payout with payout_origin and normalizes amounts to G$. One row per payout event. Equivalent to gooddollar.Semantic.invite_payouts."
+    description: >
+      Classifies every invite bounty payout with payout_origin and normalizes amounts to G$.
+      One row per InviterBounty event. Contains both the invitee's fixed G$500 and the
+      inviter's level-based payout derived from on-chain bounty_paid.
     columns:
+      - name: network
+        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        tests:
+          - not_null
+      - name: chain_id
+        description: "Numeric chain ID for this network."
+      - name: block_number
+        description: "Block number where the InviterBounty event was emitted."
+      - name: block_timestamp
+        description: "Timestamp of the payout event (TIMESTAMP)."
+        tests:
+          - not_null
       - name: tx_hash
-        description: "Transaction hash."
+        description: "Transaction hash (lowercased). Part of the dedup key."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction."
+        description: "Log index within the transaction. tx_hash + log_index = unique event."
         tests:
           - not_null
       - name: invitee_address
-        description: "Lowercased invitee wallet address."
+        description: "Lowercased wallet of the invitee whose onboarding triggered this payout."
         tests:
           - not_null
+      - name: inviter_address
+        description: "Lowercased wallet of the human inviter receiving the bounty. NULL for campaign payouts."
       - name: payout_origin
-        description: "Classification: campaign | referral."
+        description: "Classification: campaign (contract-as-inviter) | referral (human inviter)."
         tests:
           - not_null
+      - name: invitee_amount_g
+        description: "Fixed G$500 paid to the invitee (protocol constant _level0Bounty)."
+      - name: inviter_amount_g
+        description: "G$ paid to the inviter, derived from on-chain bounty_paid / 10^18. NULL for campaign."
       - name: total_amount_g
-        description: "Total bounty amount in G$."
+        description: "Total bounty disbursed: invitee_amount_g + COALESCE(inviter_amount_g, 0)."
         tests:
           - not_null
-      - name: network
-        description: "Chain name (XDC, CELO, ETHEREUM)."
-        tests:
-          - not_null
+      - name: ingested_at
+        description: "Timestamp when the pipeline ingested this event into BigQuery."
 
   - name: invitee_lifecycle
-    description: "Cross-domain join: for each invitee, joins signup → post-signup claims → payout → post-payout retention. Core entity for funnel analysis. Materializes as gooddollar.Semantic.invitee (aliased) — 16 columns, matching production."
+    description: >
+      Cross-domain join: for each invitee, joins signup → post-signup claims → payout →
+      post-payout retention. The core entity for funnel analysis. Grain: 1 row per
+      invitee_address (signups and payouts deduped to earliest). Scoped to referral
+      and campaign signups only (no_code excluded). Materializes as gooddollar.Semantic.invitee.
     columns:
       - name: invitee_address
-        description: "Lowercased invitee wallet address. One row per invitee (signups and payouts both deduped to earliest)."
+        description: "Lowercased invitee wallet address. Primary key — one row per invitee."
         tests:
           - not_null
           - unique
+      - name: inviter_address
+        description: "Lowercased wallet of the human inviter. NULL for campaign signups."
       - name: signup_type
         description: "Classification: campaign | referral (no_code excluded from lifecycle)."
         tests:
           - not_null
       - name: signup_network
-        description: "Chain where the signup occurred."
+        description: "Blockchain network where the signup occurred."
         tests:
           - not_null
+      - name: signup_chain_id
+        description: "Numeric chain ID of the signup network."
+      - name: signup_tx_hash
+        description: "Transaction hash of the signup event."
       - name: signup_timestamp
         description: "Timestamp of the signup event."
         tests:
           - not_null
+      - name: first_claim_timestamp
+        description: "Timestamp of the invitee's first claim on their signup network (after signup). NULL if never claimed."
+      - name: latest_claim_timestamp
+        description: "Timestamp of the invitee's most recent claim on their signup network. NULL if never claimed."
+      - name: total_claims_on_invite_network
+        description: "Count of claims on the same network as signup (post-signup). 0 if never claimed."
+      - name: total_claims_all_networks
+        description: "Count of claims across ALL networks (post-signup). 0 if never claimed."
+      - name: bounty_tx_hash
+        description: "Transaction hash of the bounty payout. NULL if not yet paid."
+      - name: bounty_timestamp
+        description: "Timestamp when bounty was paid. NULL if not yet paid."
+      - name: bounty_total_amount_g
+        description: "Total G$ bounty amount paid (invitee + inviter). NULL if not yet paid."
       - name: post_payout_claims_7d
-        description: "Claims in the 7 days after bounty payment. NULL when no payout, 0/N when paid."
+        description: "Claims in the 7 days after bounty payment. NULL if no payout, 0 if paid but no claims in window."
       - name: post_payout_claims_30d
-        description: "Claims in the 30 days after bounty payment. NULL when no payout, 0/N when paid."
+        description: "Claims in the 30 days after bounty payment. NULL if no payout, 0 if paid but no claims in window."
