@@ -3,139 +3,225 @@ version: 2
 models:
   - name: invite_signups
     description: >
-      Classifies every invite signup with signup_type (no_code | campaign | referral).
-      One row per signup event. Core semantic entity for the invite program — all
-      downstream invite models read from here.
+      **What this is:** Every person who joined GoodDollar through the invite program,
+      classified by how they joined (referral, campaign, or organic).
+
+
+      **Business context:** This answers: "How many people signed up through invites?",
+      "What percentage came from referrals vs. campaigns?", "Who invited them?"
+
+      The three signup types:
+
+      - **referral** — A real person invited them (the inviter gets a bounty if the invitee completes onboarding)
+
+      - **campaign** — They joined through a marketing campaign link (no human inviter)
+
+      - **no_code** — They found the invite contract organically (no invite code at all)
+
+
+      **Technical:** Filters invite_contract_events to `event_name = 'InviteeJoined'` and
+      classifies signup_type based on the inviter field (contract address = campaign,
+      zero address = no_code, anything else = referral). Grain: one row per signup event.
+    config:
+      tags: ['invite']
     columns:
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        description: "Which blockchain (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: chain_id
-        description: "Numeric chain ID for this network."
+        description: "Numeric blockchain identifier."
       - name: block_number
-        description: "Block number where the InviteeJoined event was emitted."
+        description: "Block number of the signup."
       - name: block_timestamp
-        description: "Timestamp of the signup event (TIMESTAMP)."
+        description: "When this person signed up. Used for daily signup trend charts."
         tests:
           - not_null
       - name: tx_hash
-        description: "Transaction hash (lowercased). Part of the dedup key."
+        description: "Unique transaction ID on the blockchain."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. tx_hash + log_index = unique event."
+        description: "Position within transaction (technical dedup key)."
         tests:
           - not_null
       - name: user_address
-        description: "Lowercased wallet address of the invitee (the person who signed up)."
+        description: "The wallet of the person who signed up (the invitee)."
         tests:
           - not_null
       - name: inviter_address
-        description: "Lowercased wallet of the human inviter. NULL for no_code and campaign signups."
+        description: >
+          Who invited this person. Only populated for 'referral' signups — the actual
+          human wallet that shared the invite link. NULL for campaign and no_code signups.
       - name: signup_type
         description: >
-          Classification: no_code (zero-address inviter) | campaign (contract-address inviter) |
-          referral (human inviter).
+          How this person joined the invite program:
+
+          - 'referral': invited by a real person (inviter earns a bounty if invitee qualifies)
+
+          - 'campaign': joined via a marketing campaign (no human inviter)
+
+          - 'no_code': found the program organically (no invite code used)
         tests:
           - not_null
       - name: inviter_level
-        description: "Inviter's level in the invite tree (INT64). Determines bonus multiplier for payout."
+        description: >
+          The inviter's level in the invite tree (1, 2, 3...). Higher levels earn bigger bounties.
+          Only relevant for referral signups.
       - name: ingested_at
-        description: "Timestamp when the pipeline ingested this event into BigQuery."
+        description: "When our pipeline captured this event."
 
   - name: invite_payouts
     description: >
-      Classifies every invite bounty payout with payout_origin and normalizes amounts to G$.
-      One row per InviterBounty event. Contains both the invitee's fixed G$500 and the
-      inviter's level-based payout derived from on-chain bounty_paid.
+      **What this is:** Every bounty payout from the invite program — the G$ reward
+      paid when an invitee completes their onboarding requirements.
+
+
+      **Business context:** This answers: "How much G$ has the invite program spent?",
+      "How many people successfully completed onboarding?", "What's the split between
+      invitee rewards and inviter rewards?"
+
+      Each payout has two parts:
+
+      - **Invitee** always receives a fixed G$500 (the welcome bonus)
+
+      - **Inviter** receives a variable amount based on their level (referral only — campaigns have no human inviter)
+
+
+      **Technical:** Filters invite_contract_events to `event_name = 'InviterBounty'`.
+      Normalizes the on-chain bounty amount (18 decimals) to G$. Classifies payout_origin
+      using the same logic as signup_type. Grain: one row per payout event.
+    config:
+      tags: ['invite']
     columns:
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        description: "Which blockchain (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: chain_id
-        description: "Numeric chain ID for this network."
+        description: "Numeric blockchain identifier."
       - name: block_number
-        description: "Block number where the InviterBounty event was emitted."
+        description: "Block number of the payout."
       - name: block_timestamp
-        description: "Timestamp of the payout event (TIMESTAMP)."
+        description: "When this bounty was paid out."
         tests:
           - not_null
       - name: tx_hash
-        description: "Transaction hash (lowercased). Part of the dedup key."
+        description: "Unique transaction ID on the blockchain."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. tx_hash + log_index = unique event."
+        description: "Position within transaction (technical dedup key)."
         tests:
           - not_null
       - name: invitee_address
-        description: "Lowercased wallet of the invitee whose onboarding triggered this payout."
+        description: "The wallet of the person whose onboarding triggered this payout."
         tests:
           - not_null
       - name: inviter_address
-        description: "Lowercased wallet of the human inviter receiving the bounty. NULL for campaign payouts."
+        description: "The wallet of the human inviter who earned a bounty. NULL for campaign payouts."
       - name: payout_origin
-        description: "Classification: campaign (contract-as-inviter) | referral (human inviter)."
+        description: >
+          What triggered this payout:
+
+          - 'referral': a human inviter referred this person
+
+          - 'campaign': this person joined via a marketing campaign
         tests:
           - not_null
       - name: invitee_amount_g
-        description: "Fixed G$500 paid to the invitee (protocol constant _level0Bounty)."
+        description: "G$500 paid to the invitee (fixed amount, set by the protocol)."
       - name: inviter_amount_g
-        description: "G$ paid to the inviter, derived from on-chain bounty_paid / 10^18. NULL for campaign."
+        description: >
+          G$ paid to the inviter. Varies by inviter level (higher level = bigger bonus).
+          NULL for campaign payouts (no human inviter to pay).
       - name: total_amount_g
-        description: "Total bounty disbursed: invitee_amount_g + COALESCE(inviter_amount_g, 0)."
+        description: "Total G$ disbursed in this payout (invitee portion + inviter portion combined)."
         tests:
           - not_null
       - name: ingested_at
-        description: "Timestamp when the pipeline ingested this event into BigQuery."
+        description: "When our pipeline captured this event."
 
   - name: invitee_lifecycle
     description: >
-      Cross-domain join: for each invitee, joins signup → post-signup claims → payout →
-      post-payout retention. The core entity for funnel analysis. Grain: 1 row per
-      invitee_address (signups and payouts deduped to earliest). Scoped to referral
-      and campaign signups only (no_code excluded). Materializes as gooddollar.Semantic.invitee.
+      **What this is:** The complete journey of each invitee — from signup through claiming
+      activity to bounty payout and beyond. One row per person.
+
+
+      **Business context:** This is the core model for the invite funnel. It answers:
+      "Of everyone who signed up, how many started claiming?", "How many met the eligibility
+      requirements?", "How many got paid?", "Did they keep claiming after getting paid?"
+
+      The lifecycle stages:
+
+      1. **Signed up** — joined via the invite program (all rows have this)
+
+      2. **Started claiming** — made at least one UBI claim after signup
+
+      3. **Met eligibility** — claimed 3+ times AND 7+ days since signup
+
+      4. **Got paid** — received their bounty (G$500 + inviter's share)
+
+      5. **Retained** — kept claiming after payout (measured at 7d and 30d)
+
+
+      Only includes referral and campaign signups (organic/no_code excluded since they
+      have no inviter relationship to track).
+
+
+      **Technical:** Cross-domain join of invite_signups + claim_events + invite_payouts.
+      Deduped to one row per invitee (earliest signup, earliest payout). Claims counted
+      only on the signup network and after signup timestamp. Materializes as
+      `gooddollar.Semantic.invitee` (alias preserves backward compatibility with dashboards).
+    config:
+      tags: ['invite']
     columns:
       - name: invitee_address
-        description: "Lowercased invitee wallet address. Primary key — one row per invitee."
+        description: "The invitee's wallet. One row per person — this is the primary key."
         tests:
           - not_null
           - unique
       - name: inviter_address
-        description: "Lowercased wallet of the human inviter. NULL for campaign signups."
+        description: "Who invited them. NULL for campaign signups."
       - name: signup_type
-        description: "Classification: campaign | referral (no_code excluded from lifecycle)."
+        description: "How they joined: 'referral' (human invited them) or 'campaign' (marketing link)."
         tests:
           - not_null
       - name: signup_network
-        description: "Blockchain network where the signup occurred."
+        description: "Which blockchain they signed up on."
         tests:
           - not_null
       - name: signup_chain_id
-        description: "Numeric chain ID of the signup network."
+        description: "Numeric blockchain identifier of their signup network."
       - name: signup_tx_hash
-        description: "Transaction hash of the signup event."
+        description: "Transaction hash of their signup event."
       - name: signup_timestamp
-        description: "Timestamp of the signup event."
+        description: "When they signed up. The starting point for their lifecycle timeline."
         tests:
           - not_null
       - name: first_claim_timestamp
-        description: "Timestamp of the invitee's first claim on their signup network (after signup). NULL if never claimed."
+        description: "When they first claimed UBI after signing up. NULL if they never claimed."
       - name: latest_claim_timestamp
-        description: "Timestamp of the invitee's most recent claim on their signup network. NULL if never claimed."
+        description: "Their most recent claim. NULL if they never claimed."
       - name: total_claims_on_invite_network
-        description: "Count of claims on the same network as signup (post-signup). 0 if never claimed."
+        description: >
+          How many times they claimed on their signup network (after signing up).
+          3+ claims is one of the eligibility requirements for bounty payout.
       - name: total_claims_all_networks
-        description: "Count of claims across ALL networks (post-signup). 0 if never claimed."
+        description: "Total claims across ALL networks after signup (broader activity signal)."
       - name: bounty_tx_hash
-        description: "Transaction hash of the bounty payout. NULL if not yet paid."
+        description: "Transaction hash of their bounty payout. NULL if not yet paid."
       - name: bounty_timestamp
-        description: "Timestamp when bounty was paid. NULL if not yet paid."
+        description: "When they received their bounty. NULL if not yet paid."
       - name: bounty_total_amount_g
-        description: "Total G$ bounty amount paid (invitee + inviter). NULL if not yet paid."
+        description: "Total G$ they received as bounty (invitee + inviter portions). NULL if not yet paid."
       - name: post_payout_claims_7d
-        description: "Claims in the 7 days after bounty payment. NULL if no payout, 0 if paid but no claims in window."
+        description: >
+          How many times they claimed in the 7 days AFTER getting paid.
+          Measures short-term retention: did they stick around after the incentive?
+          NULL if no payout yet. 0 if paid but didn't claim in that window.
       - name: post_payout_claims_30d
-        description: "Claims in the 30 days after bounty payment. NULL if no payout, 0 if paid but no claims in window."
+        description: >
+          How many times they claimed in the 30 days AFTER getting paid.
+          Measures longer-term retention. NULL if no payout yet.
+          0 if paid but didn't claim in that window.

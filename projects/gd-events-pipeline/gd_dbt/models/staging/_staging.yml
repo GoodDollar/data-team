@@ -3,79 +3,107 @@ version: 2
 models:
   - name: claim_contract_events
     description: >
-      Staged claim contract events: lowercased addresses, raw amount cast to BIGNUMERIC G$.
-      One row per (tx_hash, log_index). Minimal cleaning layer — no business logic.
-      Reads from the raw BigQuery table written by the TypeScript HyperSync pipeline.
+      **What this is:** Every UBI claim event from the blockchain, cleaned and ready for analysis.
+      Each row represents one person collecting their daily G$ Universal Basic Income.
+
+
+      **Business context:** This is the raw material for all claiming dashboards and metrics.
+      When someone opens the GoodDollar app and taps "Claim," the transaction lands here.
+      Currently covers XDC network; Celo and Ethereum will be added post-MVP.
+
+
+      **Technical:** Reads from `gooddollar.BlockchainEvents.ClaimContractEvents` (written by
+      the HyperSync pipeline). Lowercases addresses, casts amount to BIGNUMERIC / 100 for G$.
+      Grain: one row per (tx_hash, log_index). No business logic — that lives in the semantic layer.
+    config:
+      tags: ['claim']
     columns:
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        description: "Which blockchain this claim happened on (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: chain_id
-        description: "Numeric chain ID (e.g. 50 = XDC, 42220 = CELO, 1 = Ethereum)."
+        description: "Numeric blockchain identifier (50 = XDC, 42220 = CELO, 1 = Ethereum)."
       - name: block_number
-        description: "Block number where the claim event was emitted."
+        description: "The block number on the blockchain where this claim was recorded."
       - name: block_timestamp
-        description: "Block timestamp (TIMESTAMP). Used for date partitioning downstream."
+        description: "When this claim happened (date and time). Used for all time-based analysis."
         tests:
           - not_null
       - name: tx_hash
-        description: "Transaction hash (lowercased). Combined with log_index forms the dedup key."
+        description: "Unique transaction identifier on the blockchain. Can be looked up on a block explorer."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. Combined with tx_hash = unique event."
+        description: "Position within the transaction (technical dedup key — most users can ignore this)."
         tests:
           - not_null
       - name: contract_address
-        description: "Lowercased address of the UBI claim contract that emitted this event."
+        description: "Address of the UBI claim contract on this network."
       - name: claimer_address
-        description: "Lowercased wallet address of the claimer."
+        description: "The wallet address of the person who claimed their UBI."
         tests:
           - not_null
       - name: amount_raw
-        description: "Raw uint256 amount string as stored on-chain (pre-division)."
+        description: "Raw on-chain amount before conversion. Technical — use amount_g instead."
       - name: amount_g
-        description: "Claim amount in G$ (BIGNUMERIC). Derived: SAFE_CAST(amount_raw) / 100."
+        description: "How many G$ were claimed in this transaction. This is the human-readable amount."
         tests:
           - not_null
       - name: ingested_at
-        description: "Timestamp when the TypeScript pipeline wrote this row to BigQuery."
+        description: "When our pipeline captured this event from the blockchain."
 
   - name: invite_contract_events
     description: >
-      Staged invite contract events: lowercased addresses, all event types in one model.
-      One row per (tx_hash, log_index). Minimal cleaning — event classification and
-      business logic live in the semantic layer (invite_signups, invite_payouts).
+      **What this is:** Every event from the GoodDollar invite contract — both signups
+      (InviteeJoined) and bounty payouts (InviterBounty) — cleaned and ready for analysis.
+
+
+      **Business context:** The invite program incentivizes user acquisition. When someone
+      joins via an invite link OR earns their bounty for onboarding activity, the event
+      lands here. This is the raw material for all invite program analytics.
+
+
+      **Technical:** Reads from `gooddollar.BlockchainEvents.InviteContractEvents`.
+      Lowercases addresses, passes all columns through. Does NOT filter by event type —
+      that happens in the semantic layer (invite_signups and invite_payouts).
+      Grain: one row per (tx_hash, log_index).
+    config:
+      tags: ['invite']
     columns:
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        description: "Which blockchain this event happened on (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: chain_id
-        description: "Numeric chain ID (e.g. 50 = XDC, 42220 = CELO, 1 = Ethereum)."
+        description: "Numeric blockchain identifier (50 = XDC, 42220 = CELO, 1 = Ethereum)."
       - name: block_number
-        description: "Block number where the invite event was emitted."
+        description: "The block number on the blockchain where this event was recorded."
       - name: block_timestamp
-        description: "Block timestamp (TIMESTAMP). Used for date partitioning downstream."
+        description: "When this event happened (date and time)."
         tests:
           - not_null
       - name: tx_hash
-        description: "Transaction hash (lowercased). Combined with log_index forms the dedup key."
+        description: "Unique transaction identifier. Can be looked up on a block explorer."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. Combined with tx_hash = unique event."
+        description: "Position within the transaction (technical dedup key)."
         tests:
           - not_null
       - name: event_name
-        description: "Contract event name — InviteeJoined (signup) or InviterBounty (payout)."
+        description: >
+          What happened: 'InviteeJoined' means someone signed up through the invite program.
+          'InviterBounty' means a bounty was paid out for successful onboarding.
         tests:
           - not_null
       - name: contract_address
-        description: "Lowercased address of the invite contract. Used for signup_type classification."
+        description: "Address of the invite contract. Used internally to detect campaign signups."
       - name: inviter_address
-        description: "Lowercased inviter wallet. May be zero-address or contract-address (classified in semantic layer)."
+        description: >
+          Who invited this person. Three cases: a real wallet (human referral),
+          the contract's own address (campaign/marketing signup), or the zero address
+          (organic signup with no code). Classification happens in the semantic layer.
         tests:
           - not_null
       - name: invitee_address

@@ -23,9 +23,12 @@ models:
     staging:
       +materialized: view
       +schema: Staging
+      +tags: ['staging']
     semantic:
       +materialized: view
       +schema: Semantic
+      +tags: ['semantic']
     marts:
       +materialized: table
       +schema: Marts
+      +tags: ['mart']

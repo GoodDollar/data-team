@@ -3,68 +3,90 @@ version: 2
 models:
   - name: claim_events
     description: >
-      Canonical business entity for claims. Every downstream model touching claims reads
-      from here — never from staging or raw. One row per claim event (tx_hash + log_index).
-      Passes through all staging columns without transformation.
+      **What this is:** The single source of truth for all UBI claims. Every dashboard,
+      metric, or analysis that involves claiming reads from this model — never from raw data directly.
+
+
+      **Business context:** Each row is one person collecting their daily G$ UBI.
+      Use this to answer: "How many claims happened on date X?", "How much G$ was distributed?",
+      "Which wallets are actively claiming?"
+
+
+      **Technical:** Currently a 1:1 passthrough from staging (claim_contract_events).
+      Exists as a named semantic entity so downstream models always have a stable reference
+      point, even if staging logic changes. Grain: one row per claim event (tx_hash + log_index).
+    config:
+      tags: ['claim']
     columns:
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        description: "Which blockchain (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: chain_id
-        description: "Numeric chain ID (e.g. 50 = XDC, 42220 = CELO, 1 = Ethereum)."
+        description: "Numeric blockchain identifier."
       - name: block_number
-        description: "Block number where the claim event was emitted."
+        description: "Block number on the blockchain."
       - name: block_timestamp
-        description: "Timestamp of the block (TIMESTAMP). Source for all date-based partitioning."
+        description: "When this claim happened. The basis for all daily/weekly/monthly aggregations."
         tests:
           - not_null
       - name: tx_hash
-        description: "Transaction hash (lowercased). Part of the dedup key."
+        description: "Unique transaction ID on the blockchain."
         tests:
           - not_null
       - name: log_index
-        description: "Log index within the transaction. tx_hash + log_index = unique event."
+        description: "Position within transaction (technical dedup key)."
         tests:
           - not_null
       - name: contract_address
-        description: "Lowercased address of the UBI claim contract."
+        description: "Address of the UBI claim contract."
       - name: claimer_address
-        description: "Lowercased wallet address of the user who claimed."
+        description: "The wallet that claimed. This is how we identify individual users."
         tests:
           - not_null
       - name: amount_raw
-        description: "Raw uint256 amount as stored on-chain (pre-division)."
+        description: "Raw on-chain amount (technical — use amount_g)."
       - name: amount_g
-        description: "Claim amount in G$ (BIGNUMERIC). Derived by dividing amount_raw by 100."
+        description: "G$ amount claimed. This is the human-readable value for dashboards."
         tests:
           - not_null
       - name: ingested_at
-        description: "Timestamp when the pipeline ingested this event into BigQuery."
+        description: "When our pipeline captured this event."
 
   - name: claimer_activity
     description: >
-      Per-(claimer, network) rollup of claim activity. One row per unique claimer per network.
-      Powers retention analysis, cohort metrics, and engagement dashboards without
-      re-aggregating raw events every time.
+      **What this is:** A summary of each claimer's activity — one row per person per network.
+      Shows when they first claimed, when they last claimed, how many times, and how much total.
+
+
+      **Business context:** Use this to answer: "How many active claimers do we have?",
+      "What's the retention pattern?", "Who are the power users?", "How many people
+      claimed only once and never came back?"
+
+
+      **Technical:** Aggregates claim_events by (claimer_address, network). Materialized as a
+      view — always fresh, recalculated on every query. No historical snapshots; shows
+      current cumulative state.
+    config:
+      tags: ['claim']
     columns:
       - name: claimer_address
-        description: "Lowercased claimer wallet address."
+        description: "The wallet address. One row per wallet per network."
         tests:
           - not_null
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM."
+        description: "Which blockchain this activity is on."
         tests:
           - not_null
       - name: chain_id
-        description: "Numeric chain ID for this network."
+        description: "Numeric blockchain identifier."
       - name: first_claim_timestamp
-        description: "Timestamp of this claimer's first-ever claim on this network."
+        description: "When this person first ever claimed on this network. Useful for cohort analysis."
       - name: latest_claim_timestamp
-        description: "Timestamp of this claimer's most recent claim on this network."
+        description: "When this person most recently claimed. Stale = inactive user."
       - name: total_claims
-        description: "Total number of claim events for this claimer on this network."
+        description: "Total number of times this person has claimed on this network."
       - name: total_amount_g
-        description: "Lifetime G$ claimed by this wallet on this network (BIGNUMERIC)."
+        description: "Lifetime G$ earned by this wallet on this network."
       - name: active_days
-        description: "Count of distinct calendar days on which this wallet claimed."
+        description: "Number of distinct days this person claimed. Measures engagement consistency."

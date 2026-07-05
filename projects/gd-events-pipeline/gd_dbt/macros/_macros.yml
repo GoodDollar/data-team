@@ -1,0 +1,25 @@
+version: 2
+
+macros:
+  - name: generate_schema_name
+    description: >
+      Routes models to the correct BigQuery dataset based on the deployment target.
+
+
+      **In production** (`dbt run --target prod`): each model goes to the dataset defined by its
+      `+schema` config — Staging, Semantic, or Marts. This is how the live warehouse is organized.
+
+
+      **In development** (`dbt run --target dev`): all models go to the `dev_sandbox` dataset
+      regardless of their schema config. This keeps experiments isolated from production.
+    arguments:
+      - name: custom_schema_name
+        type: string
+        description: >
+          The schema name defined in `dbt_project.yml` for this model's layer
+          (e.g., 'Staging', 'Semantic', 'Marts'). Passed automatically by dbt.
+      - name: node
+        type: object
+        description: >
+          The dbt node object for the model being built. Contains model metadata.
+          Passed automatically by dbt.

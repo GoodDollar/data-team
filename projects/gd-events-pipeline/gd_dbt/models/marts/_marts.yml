@@ -3,88 +3,138 @@ version: 2
 models:
   - name: daily_claim_activity
     description: >
-      Pre-aggregated daily claims by network. Grain: 1 row per (metric_date, network).
-      Powers the main claiming dashboard. Partitioned by metric_date, clustered by network.
+      **What this is:** Daily summary of UBI claiming — how many claims happened each day,
+      how much G$ was distributed, and how many unique people claimed.
+
+
+      **Business context:** This powers the main claiming dashboard. One row per day per network.
+      Use this to answer: "Is claiming growing or shrinking?", "How much G$ do we distribute daily?",
+      "Are we gaining new claimers?"
+
+
+      **Technical:** Aggregates claim_events by DATE(block_timestamp) and network.
+      Materialized as a BigQuery table (not a view) for fast dashboard queries.
+      Partitioned by metric_date, clustered by network.
+    config:
+      tags: ['claim', 'mart']
     columns:
       - name: metric_date
-        description: "Calendar date of claims (DATE). Partition key."
+        description: "The calendar date (e.g., 2026-05-15). One row per date per network."
         tests:
           - not_null
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM. Cluster key."
+        description: "Which blockchain (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: daily_claims
-        description: "Count of individual claim transactions on this date/network."
+        description: "How many individual claim transactions happened on this day."
         tests:
           - not_null
+      - name: daily_unique_claimers
+        description: "How many distinct wallets claimed on this day (same person claiming twice = counted once)."
       - name: daily_total_g_claimed
-        description: "Sum of G$ claimed on this date/network (BIGNUMERIC)."
+        description: "Total G$ distributed on this day across all claimers."
         tests:
           - not_null
+      - name: avg_claim_amount_g
+        description: "Average G$ per claim on this day."
+      - name: cumulative_claims
+        description: "Running total of all claims from the beginning of time up to this date."
+      - name: cumulative_total_g_claimed
+        description: "Running total of all G$ distributed from the beginning of time up to this date."
+      - name: cumulative_unique_claimers_approx
+        description: >
+          Approximate running total of unique claimers. Note: this overcounts because it sums
+          daily uniques (a person claiming on two different days is counted twice). Use for
+          trend visualization only, not for exact unique user counts.
 
   - name: daily_invite_metrics
     description: >
-      Pre-aggregated daily invite metrics by network. Grain: 1 row per (metric_date, network).
-      Tracks daily signup volume, bounty payouts, and cumulative totals for the invite program.
-      Partitioned by metric_date, clustered by network.
+      **What this is:** Daily summary of the invite program — signups, bounty payouts,
+      and G$ expenditure, broken down by type (referral vs. campaign).
+
+
+      **Business context:** This powers the invite program dashboard. One row per day per network.
+      Use this to answer: "How many people are signing up daily?", "How much are we spending
+      on bounties?", "Is referral or campaign driving more signups?", "What's the cumulative
+      program cost?"
+
+
+      **Key metrics explained:**
+
+      - **daily_total_signups** — everyone who joined the invite program today (all types combined)
+
+      - **daily_total_bounties** — how many people completed onboarding and got paid today
+
+      - **daily_total_expenditure_g** — total G$ paid out in bounties today
+
+      - **cumulative_*** — running totals from program launch to this date
+
+
+      **Technical:** Joins daily aggregations of invite_signups and invite_payouts on
+      (metric_date, network). Uses a date spine to ensure days with signups but no payouts
+      (or vice versa) still appear. Materialized as a BigQuery table. Partitioned by metric_date.
+    config:
+      tags: ['invite', 'mart']
     columns:
       - name: metric_date
-        description: "Calendar date of invite activity (DATE). Partition key."
+        description: "The calendar date. One row per date per network."
         tests:
           - not_null
       - name: network
-        description: "Blockchain network name — XDC, CELO, or ETHEREUM. Cluster key."
+        description: "Which blockchain (XDC, CELO, or ETHEREUM)."
         tests:
           - not_null
       - name: daily_total_signups
-        description: "Total new invite signups on this date/network (all types combined)."
+        description: "Total new invite signups today (referral + campaign + no_code combined)."
       - name: daily_referral_signups
-        description: "Signups where a human inviter referred the user."
+        description: "Signups where a real person invited them (human referral)."
       - name: daily_campaign_signups
-        description: "Signups attributed to the invite contract's campaign mechanism."
+        description: "Signups from marketing campaign links."
       - name: daily_no_code_signups
-        description: "Signups with no invite code (organic joins via invite contract)."
+        description: "Organic signups with no invite code."
       - name: daily_unique_inviters_joined
-        description: "Distinct wallets that signed up without a code on this date."
+        description: "Distinct wallets that signed up without a code today."
       - name: daily_unique_referral_invitees
-        description: "Distinct wallets that signed up via referral on this date."
+        description: "Distinct wallets that signed up via referral today."
       - name: daily_unique_campaign_invitees
-        description: "Distinct wallets that signed up via campaign on this date."
+        description: "Distinct wallets that signed up via campaign today."
       - name: daily_total_bounties
-        description: "Count of bounty payout events on this date/network."
+        description: "How many bounties were paid out today (= people who completed onboarding)."
       - name: daily_referral_bounties
-        description: "Bounty payouts triggered by referral invites."
+        description: "Bounties paid for referral invites today."
       - name: daily_campaign_bounties
-        description: "Bounty payouts triggered by campaign invites."
+        description: "Bounties paid for campaign invites today."
       - name: daily_total_expenditure_g
-        description: "Total G$ disbursed in bounties on this date/network (invitee + inviter portions)."
+        description: "Total G$ spent on bounties today (invitee + inviter portions combined)."
       - name: daily_paid_to_invitees_g
-        description: "G$ paid to invitees (fixed G$500 per payout)."
+        description: "G$ paid to invitees today (G$500 × number of payouts)."
       - name: daily_paid_to_inviters_g
-        description: "G$ paid to inviters (level-based, varies per payout)."
+        description: "G$ paid to inviters today (variable per payout, depends on inviter level)."
       - name: daily_notional_campaign_retained_g
-        description: "Notional G$1000 retained by contract per campaign payout (never disbursed to a human)."
+        description: >
+          G$1000 per campaign payout that stays in the contract (never paid to a human).
+          This is a bookkeeping line — the contract allocates it but doesn't disburse it.
       - name: daily_unique_invitees_paid
-        description: "Distinct invitee wallets that received a bounty on this date."
+        description: "Distinct invitees who received a bounty today."
       - name: daily_unique_inviters_paid
-        description: "Distinct inviter wallets that received a bounty on this date."
+        description: "Distinct inviters who received a bounty today."
       - name: cumulative_total_signups
-        description: "Running total of all signups from genesis to this date, per network."
+        description: "Running total: all signups from program launch to this date."
       - name: cumulative_referral_signups
-        description: "Running total of referral signups from genesis to this date, per network."
+        description: "Running total: referral signups from program launch to this date."
       - name: cumulative_campaign_signups
-        description: "Running total of campaign signups from genesis to this date, per network."
+        description: "Running total: campaign signups from program launch to this date."
       - name: cumulative_no_code_signups
-        description: "Running total of no-code signups from genesis to this date, per network."
+        description: "Running total: no-code signups from program launch to this date."
       - name: cumulative_total_bounties
-        description: "Running total of all bounties paid from genesis to this date, per network."
+        description: "Running total: bounties paid from program launch to this date."
       - name: cumulative_total_expenditure_g
-        description: "Running total of G$ disbursed from genesis to this date, per network."
+        description: "Running total: G$ spent on the invite program from launch to this date."
       - name: cumulative_paid_to_invitees_g
-        description: "Running total of G$ paid to invitees from genesis to this date, per network."
+        description: "Running total: G$ paid to invitees from program launch to this date."
       - name: cumulative_paid_to_inviters_g
-        description: "Running total of G$ paid to inviters from genesis to this date, per network."
+        description: "Running total: G$ paid to inviters from program launch to this date."
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
@@ -93,28 +143,56 @@ models:
 
   - name: invite_funnel_snapshot
     description: >
-      Invite funnel conversion snapshot. 6 rows, one per funnel stage — from signup
-      through eligibility to bounty payment. Rebuilt on every dbt run with current data.
-      Used by Looker dashboard for invite program health monitoring.
+      **What this is:** A snapshot of the invite program funnel — how many people are at
+      each stage of the onboarding journey, right now.
+
+
+      **Business context:** This is the "health check" for the invite program. It shows
+      conversion rates at each stage:
+
+      1. **Signed Up** (1,283) — everyone who joined
+
+      2. **Claimed ≥1 time** (650) — started engaging with UBI
+
+      3. **Claimed ≥2 times** (587) — showed repeated engagement
+
+      4. **Claimed 3+ times** (532) — met the claim count requirement
+
+      5. **Met Eligibility** (532) — met BOTH requirements (3+ claims AND 7+ days since signup)
+
+      6. **Bounty Paid** (571) — received their payout
+
+
+      The `pct_of_top` column shows what percentage of Stage 1 made it to each stage.
+      Rebuilt fresh on every `dbt run` — numbers reflect current state.
+
+
+      **Note:** Stage 6 can exceed Stage 5 because the contract's eligibility check differs
+      slightly from our measurement (some users were paid before our 7-day window elapsed).
+      This is a known pattern, not a bug.
+
+
+      **Technical:** Reads from invitee_lifecycle, computes each stage as a COUNTIF,
+      adds pct_of_top as a window function. Materialized as a table (6 rows, always full-refresh).
+    config:
+      tags: ['invite', 'mart']
     columns:
       - name: snapshot_timestamp
-        description: "Timestamp when this snapshot was generated (CURRENT_TIMESTAMP at query time)."
+        description: "When this snapshot was generated (updates on every dbt run)."
       - name: funnel_name
-        description: "Funnel identifier — always 'invite_funnel'."
+        description: "Always 'invite_funnel'. Allows for future additional funnels."
       - name: stage_order
-        description: "Funnel stage number (1–6). 1 = widest (all signups), 6 = narrowest (paid)."
+        description: "Stage number (1–6). 1 = top of funnel (widest), 6 = bottom (narrowest)."
         tests:
           - not_null
           - unique
       - name: stage_label
-        description: >
-          Human-readable stage name: Signed Up as Invitee → Claimed at Least Once →
-          Claimed at Least Twice → Claimed 3+ Times → Met Eligibility Criteria → Bounty Paid.
+        description: "Human-readable stage name (e.g., 'Signed Up as Invitee', 'Bounty Paid')."
         tests:
           - not_null
       - name: user_count
-        description: "Number of invitees who reached this funnel stage."
+        description: "How many people reached this stage."
         tests:
           - not_null
       - name: pct_of_top
-        description: "user_count as a percentage of stage 1 (all signups). Measures drop-off rate."
+        description: "This stage's user_count as a percentage of Stage 1. Shows the drop-off rate."
