@@ -57,6 +57,57 @@ Documentation contracts, business glossary, and AI-readiness gates that every mo
 
 ---
 
+## How It Works — The 2-Minute Version
+
+### Data Flow (end to end)
+
+```
+Blockchain → Pipeline (L0) → BigQuery raw tables → dbt Staging (L1) → dbt Semantic (L2) → dbt Marts (L3) → Dashboards
+```
+
+1. **Pipeline ingests raw events** from the blockchain into BigQuery (`BlockchainEvents.*` tables). This is the only component that talks to the chain.
+2. **dbt transforms everything above raw.** One command (`dbt run`) rebuilds Staging → Semantic → Marts in the correct order, automatically.
+3. **Dashboards read from Marts only.** Pre-aggregated, tested, documented — what you see is what was defined in code.
+
+### Who Owns What
+
+| Concern | Where it lives | Key files |
+|---|---|---|
+| **Chain connection & event decoding** | Pipeline (TypeScript) | `pipeline/index.ts` |
+| **Raw table schemas (DDL)** | `warehouse/L1/` | `01_ClaimContractEvents.sql`, etc. |
+| **Data cleaning & normalization** | dbt Staging models (L1) | `gd_dbt/models/staging/` |
+| **Business logic** (what is a signup, what is a payout) | dbt Semantic models (L2) | `gd_dbt/models/semantic/` |
+| **Dashboard-ready metrics** (daily counts, funnels, KPIs) | dbt Marts (L3) | `gd_dbt/models/marts/` |
+| **Tests & data quality** | dbt schema YAML + custom tests | `gd_dbt/models/*/_*.yml` |
+| **Documentation** | dbt YAML (column/model descriptions) + `/docs` | Auto-published to [GitHub Pages](https://gooddollar.github.io/data-team/) |
+| **Business glossary & term definitions** | `docs/06_BUSINESS_GLOSSARY_AND_AI_DISAMBIGUATION.md` | Single source of truth for "what does X mean" |
+
+### Adding a New Contract / Event
+
+Short version (full guide in [`01_ARCHITECTURE.md`](docs/01_ARCHITECTURE.md)):
+
+1. Register the contract (ABI + config) in the pipeline
+2. Create the L1 raw table DDL and declare it as a dbt source
+3. Run the pipeline to backfill historical events
+4. Add a dbt staging model (normalization) → optional semantic model (business logic) → optional mart (dashboard metrics)
+5. Add glossary entries for any new terms
+
+Each layer only reads from the layer directly below it. Logic flows up, never sideways.
+
+### Operating the System
+
+| Task | Command | When |
+|---|---|---|
+| Ingest new events from chain | `cd pipeline && npx tsx index.ts` | Daily / on-demand |
+| Rebuild all warehouse layers | `cd gd_dbt && dbt run` | After ingestion |
+| Run data quality tests | `cd gd_dbt && dbt test` | After any `dbt run` |
+| Browse data catalog + lineage | Visit [gooddollar.github.io/data-team](https://gooddollar.github.io/data-team/) | Anytime |
+| Add/modify a model | Edit SQL in `gd_dbt/models/`, run `dbt run --select model_name` | Development |
+
+The pipeline and dbt are independent — the pipeline writes raw tables, dbt reads them. They run in sequence (ingest first, then transform), not as a single coupled process.
+
+---
+
 ## What's Live
 
 | Component | Status | Scope |
