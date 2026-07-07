@@ -24,3 +24,4 @@ SELECT
   SAFE_CAST(amount AS BIGNUMERIC) / 100 AS amount_g,
   ingested_at
 FROM {{ source('blockchain_events', 'ClaimContractEvents') }}
+WHERE DATE(block_timestamp) <= {{ latest_closed_date() }}

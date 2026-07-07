@@ -20,7 +20,7 @@ WITH lifecycle_with_eligibility AS (
     *,
     -- Met eligibility = 3+ claims AND 7+ days since signup. Includes already-paid users.
     (total_claims_on_invite_network >= 3
-     AND TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), signup_timestamp, DAY) >= 7) AS met_eligibility_criteria
+     AND TIMESTAMP_DIFF({{ latest_closed_as_of_timestamp() }}, signup_timestamp, DAY) >= 7) AS met_eligibility_criteria
   FROM {{ ref('invitee_lifecycle') }}
 ),
 

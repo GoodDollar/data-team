@@ -14,6 +14,7 @@ models:
 
       **Technical:** Reads from `gooddollar.BlockchainEvents.ClaimContractEvents` (written by
       the HyperSync pipeline). Lowercases addresses, casts amount to BIGNUMERIC / 100 for G$.
+      Filters to the latest closed day so business-facing dbt layers exclude the current partial day.
       Grain: one row per (tx_hash, log_index). No business logic — that lives in the semantic layer.
     config:
       tags: ['claim']
@@ -67,6 +68,7 @@ models:
       **Technical:** Reads from `gooddollar.BlockchainEvents.InviteContractEvents`.
       Lowercases addresses, passes all columns through. Does NOT filter by event type —
       that happens in the semantic layer (invite_signups and invite_payouts).
+      Filters to the latest closed day so business-facing dbt layers exclude the current partial day.
       Grain: one row per (tx_hash, log_index).
     config:
       tags: ['invite']

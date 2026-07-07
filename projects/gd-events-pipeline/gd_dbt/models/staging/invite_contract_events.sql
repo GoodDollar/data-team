@@ -27,3 +27,4 @@ SELECT
   earned_level,
   ingested_at
 FROM {{ source('blockchain_events', 'InviteContractEvents') }}
+WHERE DATE(block_timestamp) <= {{ latest_closed_date() }}

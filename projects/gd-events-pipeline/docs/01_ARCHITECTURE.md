@@ -91,16 +91,20 @@
 
 ## How to add a new contract
 
-1. Add an entry to `CONTRACT_CONFIGS` in [`pipeline/index.ts`](../pipeline/index.ts).
-2. Create the L1 BigQuery table — a numbered SQL file in [`warehouse/L1/`](../warehouse/L1/) — and declare it as a dbt source in [`gd_dbt/models/staging/_sources.yml`](../gd_dbt/models/staging/_sources.yml).
-3. Run `npx tsx index.ts backfill <contract_key>`.
-4. Add a staging model in [`gd_dbt/models/staging/`](../gd_dbt/models/staging/), then (optional) a Semantic model in [`gd_dbt/models/semantic/`](../gd_dbt/models/semantic/) for the new contract's business semantics.
-5. (Optional) Add a mart in [`gd_dbt/models/marts/`](../gd_dbt/models/marts/) for the dashboards that depend on it.
+1. Create the contract/event registry entry required by [`05_ANALYTICS_DOCUMENTATION_CONTRACT.md`](05_ANALYTICS_DOCUMENTATION_CONTRACT.md).
+2. Add an entry to `CONTRACT_CONFIGS` in [`pipeline/index.ts`](../pipeline/index.ts).
+3. Create the L1 BigQuery table — a numbered SQL file in [`warehouse/L1/`](../warehouse/L1/) — and declare it as a dbt source in [`gd_dbt/models/staging/_sources.yml`](../gd_dbt/models/staging/_sources.yml).
+4. Run `npx tsx index.ts backfill <contract_key>`.
+5. Add a staging model in [`gd_dbt/models/staging/`](../gd_dbt/models/staging/), then (optional) a Semantic model in [`gd_dbt/models/semantic/`](../gd_dbt/models/semantic/) for the new contract's business semantics.
+6. Add or update glossary entries in [`06_BUSINESS_GLOSSARY_AND_AI_DISAMBIGUATION.md`](06_BUSINESS_GLOSSARY_AND_AI_DISAMBIGUATION.md) for every user-facing entity, metric, or ambiguous term.
+7. (Optional) Add a mart in [`gd_dbt/models/marts/`](../gd_dbt/models/marts/) for the dashboards that depend on it.
 
 ## How to add a new metric
 
 If the metric can be derived from existing L2 entities → add a column or table to L3.
 If the metric requires new business logic → add an L2 entity first, then a column/table in L3.
 If the metric requires raw data not in L1 → add an event to the pipeline first.
+
+Every user-facing metric must have a glossary entry and satisfy the metric contract in [`05_ANALYTICS_DOCUMENTATION_CONTRACT.md`](05_ANALYTICS_DOCUMENTATION_CONTRACT.md) before it is exposed to dashboards or AI self-service.
 
 Logic flows up the layers, never sideways. This is the single rule that keeps the system coherent as it scales.

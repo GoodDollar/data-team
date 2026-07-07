@@ -23,3 +23,15 @@ macros:
         description: >
           The dbt node object for the model being built. Contains model metadata.
           Passed automatically by dbt.
+
+  - name: latest_closed_date
+    description: >
+      Returns the latest complete business date available to analytics: yesterday in UTC.
+      Business-facing dbt models must exclude the current partial day unless a model is
+      explicitly documented as partial/intraday.
+
+  - name: latest_closed_as_of_timestamp
+    description: >
+      Returns the timestamp boundary for closed-day analytics: midnight UTC at the start
+      of the current day. Use this for as-of calculations, such as eligibility windows,
+      so results are consistent with the latest_closed_date contract.
