@@ -42,3 +42,9 @@ projects/dashboard-scripts/handoff.md
 docs/data-dictionary/
 docs/datasources/
 docs/other/
+
+# Local working files — not published
+CLAUDE.md
+**/CLAUDE.md
+**/run-log.md
+**/specs/
