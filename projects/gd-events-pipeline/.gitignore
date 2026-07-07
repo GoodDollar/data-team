@@ -10,6 +10,14 @@ node_modules/
 .env
 .env.local
 
+# Internal process artifacts (kept locally for AI context enrichment)
+specs/
+future/
+cost-estimator/
+docs/layer2-entities/
+docs/04_DBT_ADOPTION.md
+docs/research-ai-self-service-analytics.md
+
 # Big data exports — historical, do not version
 invite_events.csv
 
