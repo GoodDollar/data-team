@@ -43,8 +43,21 @@ docs/data-dictionary/
 docs/datasources/
 docs/other/
 
-# Local working files — not published
+# Agent context & process files — local only, never published
+# This is a public repo: instructions files of any kind do not belong here,
+# only working code and reader-facing documentation. Keep this list ahead of
+# anything an agent might try to commit.
 CLAUDE.md
 **/CLAUDE.md
-**/run-log.md
+**/AGENTS.md
+**/copilot-instructions.md
+**/*.instructions.md
+**/*.prompt.md
+**/run-log*.md
+**/handoff*.md
+**/*-agent-prompt.md
+**/brief.md
+**/architecture.md
+**/plan.md
+**/audit.md
 **/specs/
