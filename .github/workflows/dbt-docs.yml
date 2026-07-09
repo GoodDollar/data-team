@@ -1,7 +1,8 @@
 name: dbt docs
 
-# Rebuilds the gd-events-pipeline dbt docs site and publishes it to the
-# gh-pages branch (served at https://gooddollar.github.io/data-team/).
+# Rebuilds the onchain-analytics dbt docs site and publishes it to the
+# gh-pages branch under /onchain-analytics/
+# (served at https://gooddollar.github.io/data-team/onchain-analytics/).
 #
 # Runs on pushes to master that touch the dbt project, and on manual dispatch.
 # The docs are built with --empty-catalog, so NO BigQuery credentials are
@@ -12,7 +13,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'projects/gd-events-pipeline/gd_dbt/**'
+      - 'projects/onchain-analytics/gd_dbt/**'
       - '.github/workflows/dbt-docs.yml'
   workflow_dispatch:
 
@@ -28,6 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-current
+
+      - uses: actions/checkout@v4
+        with:
+          path: source
 
       - uses: actions/setup-python@v5
         with:
@@ -52,7 +60,7 @@ jobs:
           YAML
 
       - name: Build static docs
-        working-directory: projects/gd-events-pipeline/gd_dbt
+        working-directory: source/projects/onchain-analytics/gd_dbt
         run: |
           dbt deps
           dbt parse
@@ -63,7 +71,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tmp="$(mktemp -d)"
-          cp projects/gd-events-pipeline/gd_dbt/target/static_index.html "$tmp/index.html"
+          # Preserve existing gh-pages content (other tools like utm-builder)
+          if [ -d gh-pages-current ]; then
+            cp -r gh-pages-current/* "$tmp/" 2>/dev/null || true
+            rm -rf "$tmp/.git"
+          fi
+          # Deploy dbt docs into /onchain-analytics/ subfolder
+          mkdir -p "$tmp/onchain-analytics"
+          cp source/projects/onchain-analytics/gd_dbt/target/static_index.html "$tmp/onchain-analytics/index.html"
           touch "$tmp/.nojekyll"
           git -C "$tmp" init -q -b gh-pages
           git -C "$tmp" config user.name "github-actions[bot]"
