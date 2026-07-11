@@ -1,19 +1,19 @@
-name: dbt docs
+name: publish site
 
-# Rebuilds the onchain-analytics dbt docs site and publishes it to the
-# gh-pages branch under /onchain-analytics/
-# (served at https://gooddollar.github.io/data-team/onchain-analytics/).
+# Rebuilds and deploys all tools/docs to GitHub Pages:
+#   - dbt docs  → /onchain-analytics/  (gooddollar.github.io/data-team/onchain-analytics/)
+#   - UTM builder → /utm-builder/      (gooddollar.github.io/data-team/utm-builder/)
 #
-# Runs on pushes to master that touch the dbt project, and on manual dispatch.
-# The docs are built with --empty-catalog, so NO BigQuery credentials are
-# needed — the lineage graph, model/column descriptions, tests, and compiled
-# SQL all come from the code, not the warehouse.
+# Runs on pushes to master that touch either the dbt project or the UTM builder,
+# and on manual dispatch. The dbt docs build uses --empty-catalog so NO BigQuery
+# credentials are needed — lineage, descriptions, and compiled SQL come from code.
 
 on:
   push:
     branches: [master]
     paths:
       - 'projects/onchain-analytics/gd_dbt/**'
+      - 'tools/utm-builder/**'
       - '.github/workflows/dbt-docs.yml'
   workflow_dispatch:
 
@@ -79,10 +79,14 @@ jobs:
           # Deploy dbt docs into /onchain-analytics/ subfolder
           mkdir -p "$tmp/onchain-analytics"
           cp source/projects/onchain-analytics/gd_dbt/target/static_index.html "$tmp/onchain-analytics/index.html"
+          # Deploy UTM builder tool into /utm-builder/ subfolder
+          mkdir -p "$tmp/utm-builder"
+          cp source/tools/utm-builder/index.html "$tmp/utm-builder/index.html"
+          cp source/tools/utm-builder/config.json "$tmp/utm-builder/config.json"
           touch "$tmp/.nojekyll"
           git -C "$tmp" init -q -b gh-pages
           git -C "$tmp" config user.name "github-actions[bot]"
           git -C "$tmp" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$tmp" add .
-          git -C "$tmp" commit -q -m "docs: publish dbt docs [skip ci]"
+          git -C "$tmp" commit -q -m "docs: publish site [skip ci]"
           git -C "$tmp" push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
