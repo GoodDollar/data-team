@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoodDollar UTM Builder</title>
+  <style>
+    :root {
+      --gd-green: #00B0A0;
+      --gd-green-dark: #00D4C0;
+      --gd-green-light: rgba(0, 176, 160, 0.1);
+      --text: #e4e4e7;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --border: #2e2e38;
+      --bg: #0f0f14;
+      --card-bg: #1a1a24;
+      --input-bg: #12121a;
+      --error: #f87171;
+      --radius: 10px;
+      --success: #34d399;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+
+    header h1 span {
+      color: var(--gd-green);
+    }
+
+    header p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    header a {
+      color: var(--gd-green-dark);
+      text-decoration: none;
+    }
+
+    header a:hover {
+      text-decoration: underline;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+
+    .card-header h2 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.75px;
+      color: var(--text-secondary);
+    }
+
+    .card-header .badge {
+      font-size: 0.65rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: var(--gd-green-light);
+      color: var(--gd-green-dark);
+      font-weight: 500;
+    }
+
+    .tooltip-trigger {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      cursor: help;
+    }
+
+    .tooltip-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--border);
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      font-weight: 700;
+      margin-left: 0.4rem;
+      flex-shrink: 0;
+    }
+
+    .tooltip-content {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2a2a36;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+      width: 260px;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s, visibility 0.15s;
+      z-index: 50;
+      line-height: 1.4;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .tooltip-content::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #2a2a36;
+    }
+
+    .tooltip-trigger:hover .tooltip-content {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .field {
+      margin-bottom: 1rem;
+    }
+
+    .field:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: var(--text);
+    }
+
+    label .hint {
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-left: 0.4rem;
+    }
+
+    select, input[type="text"], input[type="url"] {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.88rem;
+      color: var(--text);
+      background: var(--input-bg);
+      transition: border-color 0.15s;
+    }
+
+    select:focus, input:focus {
+      outline: none;
+      border-color: var(--gd-green);
+      box-shadow: 0 0 0 3px rgba(0, 176, 160, 0.12);
+    }
+
+    select { cursor: pointer; }
+
+    select option {
+      background: var(--card-bg);
+      color: var(--text);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 500px) {
+      .row { grid-template-columns: 1fr; }
+    }
+
+    .campaign-preview {
+      margin-top: 0.75rem;
+      padding: 0.55rem 0.75rem;
+      background: var(--gd-green-light);
+      border: 1px solid rgba(0, 176, 160, 0.2);
+      border-radius: 6px;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.78rem;
+      color: var(--gd-green-dark);
+      word-break: break-all;
+    }
+
+    .output-url {
+      width: 100%;
+      padding: 0.75rem;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.78rem;
+      word-break: break-all;
+      min-height: 70px;
+      color: var(--gd-green-dark);
+      resize: vertical;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .btn {
+      padding: 0.65rem 1.5rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--gd-green);
+      color: #0f0f14;
+    }
+
+    .btn-primary:hover {
+      background: var(--gd-green-dark);
+    }
+
+    .btn-primary:disabled {
+      background: #2e2e38;
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.04);
+      border-color: var(--text-muted);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--success);
+      color: #0f0f14;
+      padding: 0.65rem 1.5rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 100;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .error-msg {
+      color: var(--error);
+      font-size: 0.75rem;
+      margin-top: 0.3rem;
+      display: none;
+    }
+
+    .error-msg.visible {
+      display: block;
+    }
+
+    /* Reference section */
+    .reference {
+      margin-top: 2rem;
+    }
+
+    .reference summary {
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      padding: 0.75rem 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      list-style: none;
+    }
+
+    .reference summary::-webkit-details-marker { display: none; }
+
+    .reference summary::before {
+      content: '+ ';
+      color: var(--gd-green);
+      font-weight: 700;
+    }
+
+    .reference[open] summary::before {
+      content: '- ';
+    }
+
+    .reference[open] summary {
+      border-radius: var(--radius) var(--radius) 0 0;
+      border-bottom: none;
+    }
+
+    .reference .ref-content {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--radius) var(--radius);
+      padding: 1.25rem;
+    }
+
+    .ref-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 500px) {
+      .ref-grid { grid-template-columns: 1fr; }
+    }
+
+    .ref-group h3 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    .ref-group ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .ref-group li {
+      font-size: 0.76rem;
+      padding: 0.2rem 0;
+      color: var(--text-secondary);
+    }
+
+    .ref-group li code {
+      background: var(--input-bg);
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.7rem;
+      color: var(--gd-green-dark);
+      margin-right: 0.35rem;
+      border: 1px solid var(--border);
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      line-height: 1.8;
+    }
+
+    footer a {
+      color: var(--gd-green-dark);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>GoodDollar <span>UTM Builder</span></h1>
+      <p>Generate tagged campaign URLs following the <a href="https://github.com/GoodDollar/data-team/blob/master/tools/utm-builder/UTM_STANDARD.md">UTM Master Standard</a>.</p>
+    </header>
+
+    <!-- Destination URL -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Destination</h2>
+      </div>
+      <div class="field">
+        <label for="url">
+          Page URL
+          <span class="tooltip-trigger">
+            <span class="tooltip-icon">?</span>
+            <span class="tooltip-content">The page you want people to land on. Usually goodwallet.xyz, gooddapp.org, or ai-credits-web.vercel.app. Must start with https://</span>
+          </span>
+        </label>
+        <input type="url" id="url" placeholder="https://goodwallet.xyz">
+        <div class="error-msg" id="url-error">Enter a valid URL starting with https://</div>
+      </div>
+    </div>
+
+    <!-- Source & Medium -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Source &amp; Medium</h2>
+        <span class="badge">Required</span>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="source">
+            Source
+            <span class="tooltip-trigger">
+              <span class="tooltip-icon">?</span>
+              <span class="tooltip-content">Where is the traffic coming from? Pick the platform or partner that will display the link. E.g. if you're posting on Telegram, select "Telegram".</span>
+            </span>
+          </label>
+          <select id="source" required>
+            <option value="">Select source...</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="medium">
+            Medium
+            <span class="tooltip-trigger">
+              <span class="tooltip-icon">?</span>
+              <span class="tooltip-content">What type of channel is this? "Social" for organic posts, "Email" for newsletters, "Partner" for app integrations. This groups traffic into categories for reporting.</span>
+            </span>
+          </label>
+          <select id="medium" required>
+            <option value="">Select medium...</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" id="custom-source-field" style="display:none; margin-top:1rem;">
+        <label for="custom-source">Custom source name <span class="hint">(lowercase, e.g. partner_kipu)</span></label>
+        <input type="text" id="custom-source" placeholder="partner_name">
+      </div>
+    </div>
+
+    <!-- Campaign -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Campaign</h2>
+        <span class="badge">Required</span>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="initiative">
+            Initiative
+            <span class="tooltip-trigger">
+              <span class="tooltip-icon">?</span>
+              <span class="tooltip-content">Which project or product area does this campaign promote? Select the one that best fits. Use "General" if it's a broad GoodDollar campaign not tied to a specific product.</span>
+            </span>
+          </label>
+          <select id="initiative" required>
+            <option value="">Select initiative...</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="goal">
+            Goal
+            <span class="tooltip-trigger">
+              <span class="tooltip-icon">?</span>
+              <span class="tooltip-content"><strong>Awareness</strong> = people learn we exist. <strong>Acquisition</strong> = new signups. <strong>Activation</strong> = existing users try a feature. <strong>Retention</strong> = bring back inactive users. <strong>Revenue</strong> = drive purchases.</span>
+            </span>
+          </label>
+          <select id="goal" required>
+            <option value="">Select goal...</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:1rem;">
+        <div class="field">
+          <label for="date">
+            Date
+            <span class="tooltip-trigger">
+              <span class="tooltip-icon">?</span>
+              <span class="tooltip-content">When this campaign launches. Auto-filled to the current month. Change it only if scheduling for a different month.</span>
+            </span>
+          </label>
+          <input type="text" id="date" placeholder="2026_07">
+        </div>
+        <div class="field">
+          <label for="name">
+            Campaign name
+            <span class="tooltip-trigger">
+              <span class="tooltip-icon">?</span>
+              <span class="tooltip-content">A short, specific name for this campaign. Use underscores between words, no spaces. Examples: launch_announcement, weekly_thread, claim_day_promo</span>
+            </span>
+          </label>
+          <input type="text" id="name" placeholder="launch_announcement" required>
+          <div class="error-msg" id="name-error">Use lowercase letters, numbers, and underscores only</div>
+        </div>
+      </div>
+      <div class="campaign-preview" id="campaign-preview">
+        <em style="color: var(--text-muted);">Campaign tag will appear here as you type...</em>
+      </div>
+    </div>
+
+    <!-- Content (optional) -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Content</h2>
+        <span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted);">Optional</span>
+      </div>
+      <div class="field">
+        <label for="content">
+          Variant / placement
+          <span class="tooltip-trigger">
+            <span class="tooltip-icon">?</span>
+            <span class="tooltip-content">Use this when you share multiple links for the same campaign. For example: thread_01, thread_02, thread_03 for a Twitter thread. Or banner_top vs cta_bottom for email links.</span>
+          </span>
+        </label>
+        <input type="text" id="content" placeholder="e.g. thread_01, banner_top, cta_blue">
+      </div>
+    </div>
+
+    <!-- Output -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Generated URL</h2>
+      </div>
+      <textarea class="output-url" id="output" readonly placeholder="Fill in the fields above to generate your tagged URL..."></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="copy-btn" disabled>Copy to clipboard</button>
+        <button class="btn btn-secondary" id="reset-btn">Reset</button>
+      </div>
+    </div>
+
+    <!-- Reference (collapsible) -->
+    <details class="reference" id="reference-section">
+      <summary>Show all valid values (quick reference)</summary>
+      <div class="ref-content">
+        <div class="ref-grid" id="ref-grid"></div>
+      </div>
+    </details>
+
+    <footer>
+      <p>
+        Read the full <a href="https://github.com/GoodDollar/data-team/blob/master/tools/utm-builder/UTM_STANDARD.md">UTM Master Standard</a> for rules and governance.
+      </p>
+      <p>
+        Need a new option? <a href="https://github.com/GoodDollar/data-team/issues/new">Open a data request</a> on the data-team repo.
+      </p>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast">Copied!</div>
+
+  <script>
+    // Config inlined so it works locally (file://) and on GH Pages.
+    // On GH Pages, config.json is also fetched as an override.
+    const CONFIG = {
+      "sources": [
+        { "value": "twitter", "label": "Twitter / X" },
+        { "value": "telegram", "label": "Telegram" },
+        { "value": "linkedin", "label": "LinkedIn" },
+        { "value": "facebook", "label": "Facebook" },
+        { "value": "discord", "label": "Discord" },
+        { "value": "email", "label": "Email" },
+        { "value": "minipay", "label": "MiniPay" },
+        { "value": "valora", "label": "Valora" },
+        { "value": "fonbnk", "label": "Fonbnk" },
+        { "value": "antseed", "label": "AntSeed" },
+        { "value": "gooddapp", "label": "GoodDapp" },
+        { "value": "goodwallet", "label": "GoodWallet" },
+        { "value": "community", "label": "Community / UGC" }
+      ],
+      "mediums": [
+        { "value": "social", "label": "Organic Social" },
+        { "value": "paid_social", "label": "Paid Social" },
+        { "value": "email", "label": "Email" },
+        { "value": "referral", "label": "Referral" },
+        { "value": "partner", "label": "Partner" },
+        { "value": "cpc", "label": "Paid Search (CPC)" },
+        { "value": "banner", "label": "Display / Banner" },
+        { "value": "push", "label": "Push Notification" },
+        { "value": "sms", "label": "SMS" },
+        { "value": "in_app", "label": "In-App" }
+      ],
+      "initiatives": [
+        { "value": "ubi", "label": "UBI" },
+        { "value": "antseed", "label": "AntSeed / AI Credits" },
+        { "value": "builders", "label": "GoodBuilders" },
+        { "value": "governance", "label": "Governance" },
+        { "value": "general", "label": "General" },
+        { "value": "minipay", "label": "MiniPay" },
+        { "value": "superfluid", "label": "Superfluid" }
+      ],
+      "goals": [
+        { "value": "awareness", "label": "Awareness" },
+        { "value": "acquisition", "label": "Acquisition" },
+        { "value": "activation", "label": "Activation" },
+        { "value": "retention", "label": "Retention" },
+        { "value": "revenue", "label": "Revenue" }
+      ]
+    };
+
+    (async function() {
+      // Try fetch for GH Pages; fall back to inline for local
+      let config = CONFIG;
+      try {
+        const resp = await fetch('config.json');
+        if (resp.ok) config = await resp.json();
+      } catch (e) { /* use inline */ }
+
+      // Populate dropdowns
+      const sourceSelect = document.getElementById('source');
+      const mediumSelect = document.getElementById('medium');
+      const initiativeSelect = document.getElementById('initiative');
+      const goalSelect = document.getElementById('goal');
+
+      config.sources.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.value;
+        opt.textContent = s.label;
+        sourceSelect.appendChild(opt);
+      });
+      const customOpt = document.createElement('option');
+      customOpt.value = '__custom__';
+      customOpt.textContent = 'Other (custom)...';
+      sourceSelect.appendChild(customOpt);
+
+      config.mediums.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        mediumSelect.appendChild(opt);
+      });
+
+      config.initiatives.forEach(i => {
+        const opt = document.createElement('option');
+        opt.value = i.value;
+        opt.textContent = i.label;
+        initiativeSelect.appendChild(opt);
+      });
+
+      config.goals.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.value;
+        opt.textContent = g.label;
+        goalSelect.appendChild(opt);
+      });
+
+      // Default date
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      document.getElementById('date').value = yyyy + '_' + mm;
+
+      // Build reference grid
+      const refGrid = document.getElementById('ref-grid');
+      const groups = [
+        { title: 'Sources (utm_source)', items: config.sources },
+        { title: 'Mediums (utm_medium)', items: config.mediums },
+        { title: 'Initiatives', items: config.initiatives },
+        { title: 'Goals', items: config.goals }
+      ];
+      groups.forEach(function(group) {
+        const div = document.createElement('div');
+        div.className = 'ref-group';
+        let html = '<h3>' + group.title + '</h3><ul>';
+        group.items.forEach(function(item) {
+          html += '<li><code>' + item.value + '</code> ' + item.label + '</li>';
+        });
+        html += '</ul>';
+        div.innerHTML = html;
+        refGrid.appendChild(div);
+      });
+
+      // Custom source toggle
+      sourceSelect.addEventListener('change', function() {
+        var customField = document.getElementById('custom-source-field');
+        customField.style.display = sourceSelect.value === '__custom__' ? 'block' : 'none';
+        update();
+      });
+
+      function validateName(val) {
+        return /^[a-z0-9_]*$/.test(val);
+      }
+
+      function validateUrl(val) {
+        try {
+          var url = new URL(val);
+          return url.protocol === 'https:' || url.protocol === 'http:';
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function getSource() {
+        if (sourceSelect.value === '__custom__') {
+          return document.getElementById('custom-source').value.trim().toLowerCase().replace(/\s+/g, '_');
+        }
+        return sourceSelect.value;
+      }
+
+      function update() {
+        var url = document.getElementById('url').value.trim();
+        var source = getSource();
+        var medium = mediumSelect.value;
+        var initiative = initiativeSelect.value;
+        var goal = goalSelect.value;
+        var date = document.getElementById('date').value.trim();
+        var nameRaw = document.getElementById('name').value.trim();
+        var name = nameRaw.toLowerCase().replace(/\s+/g, '_');
+        var contentRaw = document.getElementById('content').value.trim();
+        var content = contentRaw.toLowerCase().replace(/\s+/g, '_');
+
+        // Campaign preview
+        var preview = document.getElementById('campaign-preview');
+        if (initiative && goal && date && name) {
+          preview.innerHTML = '<strong>utm_campaign</strong> = ' + initiative + '-' + goal + '-' + date + '-' + name;
+        } else {
+          preview.innerHTML = '<em style="color: var(--text-muted);">Campaign tag will appear here as you type...</em>';
+        }
+
+        // Validate name
+        var nameError = document.getElementById('name-error');
+        if (nameRaw && !validateName(name)) {
+          nameError.classList.add('visible');
+        } else {
+          nameError.classList.remove('visible');
+        }
+
+        // Validate URL
+        var urlError = document.getElementById('url-error');
+        if (url && !validateUrl(url)) {
+          urlError.classList.add('visible');
+        } else {
+          urlError.classList.remove('visible');
+        }
+
+        // Generate output
+        var output = document.getElementById('output');
+        var copyBtn = document.getElementById('copy-btn');
+
+        if (!url || !source || !medium || !initiative || !goal || !name) {
+          output.value = '';
+          copyBtn.disabled = true;
+          return;
+        }
+
+        if (!validateUrl(url) || (nameRaw && !validateName(name))) {
+          output.value = '';
+          copyBtn.disabled = true;
+          return;
+        }
+
+        var campaign = initiative + '-' + goal + '-' + date + '-' + name;
+        var params = new URLSearchParams();
+        params.set('utm_source', source);
+        params.set('utm_medium', medium);
+        params.set('utm_campaign', campaign);
+        if (content && validateName(content)) {
+          params.set('utm_content', content);
+        }
+
+        var separator = url.includes('?') ? '&' : '?';
+        output.value = url + separator + params.toString();
+        copyBtn.disabled = false;
+      }
+
+      // Attach listeners
+      var inputs = document.querySelectorAll('input, select');
+      for (var i = 0; i < inputs.length; i++) {
+        inputs[i].addEventListener('input', update);
+        inputs[i].addEventListener('change', update);
+      }
+
+      // Copy
+      document.getElementById('copy-btn').addEventListener('click', function() {
+        var output = document.getElementById('output');
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(output.value).then(function() {
+            showToast('Copied to clipboard!');
+          });
+        } else {
+          output.select();
+          document.execCommand('copy');
+          showToast('Copied!');
+        }
+      });
+
+      // Reset
+      document.getElementById('reset-btn').addEventListener('click', function() {
+        document.getElementById('url').value = '';
+        sourceSelect.value = '';
+        mediumSelect.value = '';
+        initiativeSelect.value = '';
+        goalSelect.value = '';
+        document.getElementById('name').value = '';
+        document.getElementById('content').value = '';
+        document.getElementById('custom-source').value = '';
+        document.getElementById('custom-source-field').style.display = 'none';
+        document.getElementById('date').value = yyyy + '_' + mm;
+        update();
+      });
+
+      function showToast(msg) {
+        var toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(function() { toast.classList.remove('show'); }, 2000);
+      }
+    })();
+  </script>
+</body>
+</html>

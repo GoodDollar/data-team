@@ -1,0 +1,45 @@
+{
+  "sources": [
+    { "value": "twitter", "label": "Twitter / X" },
+    { "value": "telegram", "label": "Telegram" },
+    { "value": "linkedin", "label": "LinkedIn" },
+    { "value": "facebook", "label": "Facebook" },
+    { "value": "discord", "label": "Discord" },
+    { "value": "email", "label": "Email" },
+    { "value": "minipay", "label": "MiniPay" },
+    { "value": "valora", "label": "Valora" },
+    { "value": "fonbnk", "label": "Fonbnk" },
+    { "value": "antseed", "label": "AntSeed" },
+    { "value": "gooddapp", "label": "GoodDapp" },
+    { "value": "goodwallet", "label": "GoodWallet" },
+    { "value": "community", "label": "Community / UGC" }
+  ],
+  "mediums": [
+    { "value": "social", "label": "Organic Social" },
+    { "value": "paid_social", "label": "Paid Social" },
+    { "value": "email", "label": "Email" },
+    { "value": "referral", "label": "Referral" },
+    { "value": "partner", "label": "Partner" },
+    { "value": "cpc", "label": "Paid Search (CPC)" },
+    { "value": "banner", "label": "Display / Banner" },
+    { "value": "push", "label": "Push Notification" },
+    { "value": "sms", "label": "SMS" },
+    { "value": "in_app", "label": "In-App" }
+  ],
+  "initiatives": [
+    { "value": "ubi", "label": "UBI" },
+    { "value": "antseed", "label": "AntSeed / AI Credits" },
+    { "value": "builders", "label": "GoodBuilders" },
+    { "value": "governance", "label": "Governance" },
+    { "value": "general", "label": "General" },
+    { "value": "minipay", "label": "MiniPay" },
+    { "value": "superfluid", "label": "Superfluid" }
+  ],
+  "goals": [
+    { "value": "awareness", "label": "Awareness" },
+    { "value": "acquisition", "label": "Acquisition" },
+    { "value": "activation", "label": "Activation" },
+    { "value": "retention", "label": "Retention" },
+    { "value": "revenue", "label": "Revenue" }
+  ]
+}
