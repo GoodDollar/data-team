@@ -56,6 +56,6 @@ Fill out the template. The more detail you provide, the faster and more accurate
 
 ---
 
-## Contribute / Bounties
+## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute and how the bounty program works.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
