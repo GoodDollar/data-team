@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodDollar SUP Rewards -- Season 6</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-secondary: #1a1d2e;
+            --bg-card: #222538;
+            --text-primary: #e8eaed;
+            --text-secondary: #9aa0b0;
+            --accent: #00b0ff;
+            --accent-dim: rgba(0, 176, 255, 0.15);
+            --success: #4caf50;
+            --warning: #ff9800;
+            --border: #2d3148;
+            --radius: 12px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 40px 32px;
+            text-align: center;
+            margin-bottom: 32px;
+            box-shadow: var(--shadow);
+        }
+        .hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+        .hero .subtitle { color: var(--text-secondary); font-size: 1rem; margin-bottom: 24px; }
+        .demo-badge { display: inline-block; background: var(--warning); color: #000; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; vertical-align: middle; margin-left: 8px; }
+
+        .hero-stats { display: flex; justify-content: center; gap: 48px; flex-wrap: wrap; margin-bottom: 24px; }
+        .hero-stat { text-align: center; }
+        .hero-stat .value { font-size: 1.75rem; font-weight: 700; color: var(--accent); }
+        .hero-stat .label { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .progress-bar-container { background: var(--bg-primary); border-radius: 8px; height: 12px; overflow: hidden; margin-top: 16px; max-width: 600px; margin-left: auto; margin-right: auto; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), #7c4dff); border-radius: 8px; transition: width 0.5s ease; }
+
+        .last-updated { font-size: 0.75rem; color: var(--text-secondary); margin-top: 16px; }
+        .refresh-btn { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; margin-left: 8px; transition: all 0.2s; }
+        .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .refresh-btn.loading { opacity: 0.5; pointer-events: none; }
+
+        /* Pool Cards */
+        .pools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px; }
+        .pool-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; box-shadow: var(--shadow); }
+        .pool-card h3 { font-size: 1.15rem; margin-bottom: 4px; }
+        .pool-allocation { color: var(--accent); font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; }
+        .pool-stats { display: flex; gap: 24px; margin-bottom: 16px; }
+        .pool-stat .value { font-weight: 600; font-size: 1.1rem; }
+        .pool-stat .label { font-size: 0.8rem; color: var(--text-secondary); }
+        .actions-list { list-style: none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px; }
+        .actions-list li { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; }
+        .actions-list .points { color: var(--accent); font-weight: 600; white-space: nowrap; }
+
+        /* Section */
+        .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; margin-bottom: 32px; box-shadow: var(--shadow); }
+        .section h2 { font-size: 1.4rem; margin-bottom: 20px; }
+
+        /* Tabs */
+        .tab-bar { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg-primary); border-radius: 8px; padding: 4px; width: fit-content; }
+        .tab-btn { background: transparent; border: none; color: var(--text-secondary); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; }
+        .tab-btn.active { background: var(--accent); color: #fff; }
+        .tab-btn:hover:not(.active) { color: var(--text-primary); }
+
+        /* Leaderboard Table */
+        .leaderboard-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .leaderboard-table th { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .leaderboard-table td { padding: 12px 8px; border-bottom: 1px solid rgba(45, 49, 72, 0.5); }
+        .leaderboard-table tr:hover td { background: rgba(0, 176, 255, 0.04); }
+        .rank-cell { font-weight: 700; color: var(--text-secondary); width: 50px; }
+        .rank-cell.top-3 { color: var(--warning); }
+        .wallet-cell { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; }
+        .points-cell { font-weight: 600; }
+        .reward-cell { color: var(--accent); font-weight: 600; }
+
+        /* Pagination */
+        .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+        .pagination button { background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-secondary); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+        .pagination button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+        .pagination button:disabled { opacity: 0.3; cursor: default; }
+        .pagination button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .pagination .page-info { font-size: 0.85rem; color: var(--text-secondary); padding: 0 8px; }
+
+        /* Calculator */
+        .calculator-input { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+        .calculator-input input { flex: 1; min-width: 280px; padding: 12px 16px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 0.9rem; font-family: 'SF Mono', 'Fira Code', monospace; outline: none; transition: border-color 0.2s; }
+        .calculator-input input:focus { border-color: var(--accent); }
+        .calculator-input button { padding: 12px 24px; background: var(--accent); border: none; border-radius: 8px; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.9rem; transition: opacity 0.2s; }
+        .calculator-input button:hover { opacity: 0.85; }
+        .calculator-input button:disabled { opacity: 0.5; pointer-events: none; }
+
+        .calc-results { display: none; gap: 16px; }
+        .calc-results.visible { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+        .calc-result-card { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }
+        .calc-result-card .value { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+        .calc-result-card .label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
+        .calc-error { color: #ef5350; font-size: 0.85rem; display: none; }
+
+        /* CTAs */
+        .cta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+        .cta-card { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-decoration: none; color: var(--text-primary); transition: all 0.2s; display: flex; flex-direction: column; gap: 8px; }
+        .cta-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0, 176, 255, 0.1); }
+        .cta-card .cta-title { font-weight: 600; font-size: 1rem; }
+        .cta-card .cta-desc { font-size: 0.85rem; color: var(--text-secondary); }
+        .cta-card .cta-points { font-size: 0.8rem; color: var(--accent); font-weight: 600; margin-top: auto; }
+
+        /* Charts */
+        .charts-grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+        .chart-container { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+        .chart-container h4 { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px; }
+        .chart-container canvas { width: 100% !important; height: 280px !important; }
+        .charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; margin-top: 24px; }
+
+        /* Loading / Data info */
+        .data-source { font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px; font-style: italic; }
+        .loading-overlay { display: flex; align-items: center; justify-content: center; padding: 60px; flex-direction: column; gap: 12px; }
+        .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+        .empty-state .emoji { font-size: 2.5rem; margin-bottom: 12px; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero { padding: 24px 16px; }
+            .hero h1 { font-size: 1.5rem; }
+            .hero-stats { gap: 24px; }
+            .hero-stat .value { font-size: 1.4rem; }
+            .pools-grid { grid-template-columns: 1fr; }
+            .section { padding: 20px 16px; }
+            .leaderboard-table { font-size: 0.8rem; }
+            .leaderboard-table th, .leaderboard-table td { padding: 8px 4px; }
+            .calculator-input { flex-direction: column; }
+            .calculator-input input { min-width: 100%; }
+            .charts-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Hero -->
+        <section class="hero">
+            <h1>GoodDollar SUP Rewards -- Season 6 <span class="demo-badge">DEMO DATA</span></h1>
+            <p class="subtitle">July -- September 30, 2026</p>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="value" id="total-allocation">622,000</div>
+                    <div class="label">Total SUP</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" id="total-participants">--</div>
+                    <div class="label">Participants</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" id="total-points">--</div>
+                    <div class="label">Points Earned</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" id="total-events">--</div>
+                    <div class="label">Total Events</div>
+                </div>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+            </div>
+            <div class="last-updated">
+                <span id="last-updated-text">Loading...</span>
+                <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()">Refresh</button>
+            </div>
+        </section>
+
+        <!-- Pool Cards -->
+        <section class="pools-grid">
+            <div class="pool-card">
+                <h3>Pool 1: GoodDollar Actions</h3>
+                <div class="pool-allocation">217,700 SUP</div>
+                <div class="pool-stats">
+                    <div class="pool-stat">
+                        <div class="value" id="pool1-points">--</div>
+                        <div class="label">Total Points</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="value" id="pool1-members">--</div>
+                        <div class="label">Participants</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="value" id="pool1-events">--</div>
+                        <div class="label">Events</div>
+                    </div>
+                </div>
+                <ul class="actions-list">
+                    <li><span>Claim UBI daily</span><span class="points">1 pt/claim</span></li>
+                    <li><span>Successful invite</span><span class="points">5 pts</span></li>
+                    <li><span>Vote on FlowState</span><span class="points">5 pts/epoch</span></li>
+                </ul>
+                <div class="data-source">Source: Superfluid Points API, Campaign <span id="pool1-id">--</span></div>
+            </div>
+            <div class="pool-card">
+                <h3>Pool 2: Ecosystem Funding</h3>
+                <div class="pool-allocation">404,300 SUP</div>
+                <div class="pool-stats">
+                    <div class="pool-stat">
+                        <div class="value" id="pool2-points">--</div>
+                        <div class="label">Total Points</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="value" id="pool2-members">--</div>
+                        <div class="label">Participants</div>
+                    </div>
+                    <div class="pool-stat">
+                        <div class="value" id="pool2-events">--</div>
+                        <div class="label">Events</div>
+                    </div>
+                </div>
+                <ul class="actions-list">
+                    <li><span>Stream to GoodBuilders S4 council</span><span class="points">2 pts/$1 G$</span></li>
+                    <li><span>Donate to Gardens pool</span><span class="points">1 pt/$1 G$</span></li>
+                    <li><span>Stream to Gardens pool</span><span class="points">2 pts/$1 G$</span></li>
+                </ul>
+                <div class="data-source">Source: Superfluid Points API, Campaign <span id="pool2-id">--</span></div>
+            </div>
+        </section>
+
+        <!-- Leaderboard -->
+        <section class="section">
+            <h2>Leaderboard</h2>
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="pool1" onclick="switchTab('pool1')">Pool 1</button>
+                <button class="tab-btn" data-tab="pool2" onclick="switchTab('pool2')">Pool 2</button>
+            </div>
+            <div id="leaderboard-content">
+                <div class="loading-overlay">
+                    <div class="loading-spinner"></div>
+                    <span style="color: var(--text-secondary); font-size: 0.85rem;">Loading leaderboard...</span>
+                </div>
+            </div>
+            <div class="pagination" id="pagination" style="display:none;">
+                <button id="page-first" onclick="goToPage(1)">&laquo;</button>
+                <button id="page-prev" onclick="goToPage(state.currentPage[state.activeTab] - 1)">&lsaquo; Prev</button>
+                <span class="page-info" id="page-info">Page 1 of 1</span>
+                <button id="page-next" onclick="goToPage(state.currentPage[state.activeTab] + 1)">Next &rsaquo;</button>
+                <button id="page-last" onclick="goToPage(state.totalPages[state.activeTab])">&raquo;</button>
+            </div>
+        </section>
+
+        <!-- Reward Calculator -->
+        <section class="section">
+            <h2>Reward Calculator</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9rem;">
+                Enter your wallet address to see your points and estimated SUP rewards.
+            </p>
+            <div class="calculator-input">
+                <input type="text" id="wallet-input" placeholder="0x... (paste your wallet address)" maxlength="42" />
+                <button id="calc-btn" onclick="calculateReward()">Check Rewards</button>
+            </div>
+            <div class="calc-error" id="calc-error"></div>
+            <div class="calc-results" id="calc-results">
+                <div class="calc-result-card">
+                    <div class="value" id="calc-pool1-points">0</div>
+                    <div class="label">Pool 1 Points</div>
+                </div>
+                <div class="calc-result-card">
+                    <div class="value" id="calc-pool2-points">0</div>
+                    <div class="label">Pool 2 Points</div>
+                </div>
+                <div class="calc-result-card">
+                    <div class="value" id="calc-total-reward">0</div>
+                    <div class="label">Est. Total SUP</div>
+                </div>
+                <div class="calc-result-card">
+                    <div class="value" id="calc-rank">--</div>
+                    <div class="label">Rank (Pool 1)</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTAs -->
+        <section class="section">
+            <h2>How to Participate</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 0.9rem;">
+                Earn points by completing actions below. More points = more SUP rewards.
+            </p>
+            <div class="cta-grid">
+                <a href="https://wallet.gooddollar.org/" target="_blank" rel="noopener" class="cta-card">
+                    <span class="cta-title">Claim G$ UBI</span>
+                    <span class="cta-desc">Open GoodWallet and claim your daily UBI</span>
+                    <span class="cta-points">1 point per claim</span>
+                </a>
+                <a href="https://wallet.gooddollar.org/" target="_blank" rel="noopener" class="cta-card">
+                    <span class="cta-title">Invite Users</span>
+                    <span class="cta-desc">Share your invite link and earn points for each new user</span>
+                    <span class="cta-points">5 points per successful invite</span>
+                </a>
+                <a href="https://flowstate.network/flow-councils/42220/0x582e3314d4ef56c18930acb10bb64313525e7820" target="_blank" rel="noopener" class="cta-card">
+                    <span class="cta-title">Stream to GoodBuilders S4</span>
+                    <span class="cta-desc">Open a stream on FlowState council</span>
+                    <span class="cta-points">2 points per $1 G$ streamed</span>
+                </a>
+                <a href="https://app.gardens.fund/gardens/42220/0xf42c9ca2b10010142e2bac34ebdddb0b82177684" target="_blank" rel="noopener" class="cta-card">
+                    <span class="cta-title">Donate to Gardens Pool</span>
+                    <span class="cta-desc">One-time donation to the Gardens pool</span>
+                    <span class="cta-points">1 point per $1 G$ donated</span>
+                </a>
+                <a href="https://app.gardens.fund/gardens/42220/0xf42c9ca2b10010142e2bac34ebdddb0b82177684" target="_blank" rel="noopener" class="cta-card">
+                    <span class="cta-title">Stream to Gardens Pool</span>
+                    <span class="cta-desc">Open a stream to the Gardens pool</span>
+                    <span class="cta-points">2 points per $1 G$ streamed</span>
+                </a>
+                <a href="https://claim.superfluid.org/" target="_blank" rel="noopener" class="cta-card">
+                    <span class="cta-title">Claim SUP Rewards</span>
+                    <span class="cta-desc">Claim your earned SUP tokens once available</span>
+                    <span class="cta-points">Claim portal</span>
+                </a>
+            </div>
+        </section>
+
+        <!-- Analytics -->
+        <section class="section">
+            <h2>Campaign Analytics</h2>
+            <div id="analytics-content">
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h4>Daily Events (Full Season)</h4>
+                        <canvas id="daily-chart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-row">
+                    <div class="chart-container">
+                        <h4>Points Distribution (Top 100)</h4>
+                        <canvas id="distribution-chart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Cumulative Participants</h4>
+                        <canvas id="cumulative-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="loading-overlay" id="analytics-loading">
+                <div class="loading-spinner"></div>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">Loading analytics (fetching full season events)...</span>
+            </div>
+            <div class="empty-state" id="analytics-empty" style="display: none;">
+                <div class="emoji">&#128202;</div>
+                <p>Analytics will populate once the campaign has more activity. Check back after launch.</p>
+            </div>
+        </section>
+    </div>
+
+    <script>
+    // === Configuration ===
+    // DEMO MODE: Using Hadar's test campaign 511 (S5 GoodDollar, 2611 members)
+    // + campaign 607 (S6 Gardens, 585 members) as second pool demo
+    const API_BASE = 'https://cms.superfluid.pro';
+    const CAMPAIGN_1_ID = 511;   // S5 GoodDollar (Hadar's test campaign)
+    const CAMPAIGN_2_ID = 607;   // S6 Gardens (for second pool demo)
+    const POOL_1_ALLOCATION = 217700;
+    const POOL_2_ALLOCATION = 404300;
+    const TOTAL_ALLOCATION = 622000;
+    const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const LEADERBOARD_PAGE_SIZE = 20;
+
+    // === State ===
+    let state = {
+        campaign1: null,
+        campaign2: null,
+        leaderboardData: { pool1: [], pool2: [] },
+        currentPage: { pool1: 1, pool2: 1 },
+        totalPages: { pool1: 1, pool2: 1 },
+        activeTab: 'pool1',
+        allEvents: { pool1: [], pool2: [] },
+        eventsLoaded: { pool1: false, pool2: false },
+        refreshTimer: null
+    };
+
+    // === API ===
+    async function fetchJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`API ${res.status}: ${url}`);
+        return res.json();
+    }
+
+    async function fetchCampaign(id) {
+        return fetchJSON(`${API_BASE}/points/campaign?campaignId=${id}`);
+    }
+
+    async function fetchLeaderboard(id, page = 1) {
+        return fetchJSON(`${API_BASE}/points/accounts?campaignId=${id}&orderBy=totalPoints&order=desc&page=${page}&limit=${LEADERBOARD_PAGE_SIZE}`);
+    }
+
+    async function fetchEvents(id, page = 1, limit = 100) {
+        return fetchJSON(`${API_BASE}/points/events?campaignId=${id}&limit=${limit}&page=${page}`);
+    }
+
+    async function fetchBalanceBatch(account) {
+        const res = await fetch(`${API_BASE}/points/balance-batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ campaignIds: [CAMPAIGN_1_ID, CAMPAIGN_2_ID], account })
+        });
+        if (!res.ok) throw new Error(`Balance API error: ${res.status}`);
+        return res.json();
+    }
+
+    // Fetch ALL events for a campaign (paginate through everything)
+    async function fetchAllEvents(campaignId) {
+        let allEvents = [];
+        let page = 1;
+        let hasNext = true;
+
+        while (hasNext) {
+            const data = await fetchEvents(campaignId, page, 100);
+            const events = data.events || [];
+            allEvents = allEvents.concat(events);
+            hasNext = data.pagination?.hasNextPage || false;
+            page++;
+
+            // Safety: cap at 200 pages (20K events) to avoid infinite loops
+            if (page > 200) break;
+        }
+        return allEvents;
+    }
+
+    // === Data Loading ===
+    async function loadCampaigns() {
+        try {
+            const [c1, c2] = await Promise.all([
+                fetchCampaign(CAMPAIGN_1_ID),
+                fetchCampaign(CAMPAIGN_2_ID)
+            ]);
+            state.campaign1 = c1;
+            state.campaign2 = c2;
+            renderHero();
+            renderPools();
+        } catch (err) {
+            console.error('Campaign load failed:', err);
+        }
+    }
+
+    async function loadLeaderboard(tab, page = 1) {
+        const campaignId = tab === 'pool1' ? CAMPAIGN_1_ID : CAMPAIGN_2_ID;
+        try {
+            const data = await fetchLeaderboard(campaignId, page);
+            state.leaderboardData[tab] = data.accounts || [];
+            state.currentPage[tab] = data.pagination?.page || page;
+            state.totalPages[tab] = data.pagination?.totalPages || 1;
+            renderLeaderboard();
+            renderPagination();
+        } catch (err) {
+            console.error('Leaderboard load failed:', err);
+            renderLeaderboardEmpty();
+        }
+    }
+
+    async function loadAllEventsForCharts() {
+        const loadingEl = document.getElementById('analytics-loading');
+        const contentEl = document.getElementById('analytics-content');
+        const emptyEl = document.getElementById('analytics-empty');
+
+        loadingEl.style.display = 'flex';
+        contentEl.style.display = 'none';
+
+        try {
+            // Fetch events from both campaigns in parallel
+            const [events1, events2] = await Promise.all([
+                fetchAllEvents(CAMPAIGN_1_ID),
+                fetchAllEvents(CAMPAIGN_2_ID)
+            ]);
+
+            state.allEvents.pool1 = events1;
+            state.allEvents.pool2 = events2;
+            state.eventsLoaded.pool1 = true;
+            state.eventsLoaded.pool2 = true;
+
+            const totalEvents = events1.length + events2.length;
+            if (totalEvents < 3) {
+                loadingEl.style.display = 'none';
+                emptyEl.style.display = 'block';
+                return;
+            }
+
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+            renderCharts();
+        } catch (err) {
+            console.error('Events load failed:', err);
+            loadingEl.style.display = 'none';
+            emptyEl.style.display = 'block';
+        }
+    }
+
+    // === Rendering ===
+    function fmt(n) {
+        if (n === null || n === undefined) return '--';
+        return Number(n).toLocaleString();
+    }
+
+    function truncAddr(addr) {
+        if (!addr || addr.length < 10) return addr || '--';
+        return addr.slice(0, 6) + '...' + addr.slice(-4);
+    }
+
+    function renderHero() {
+        const c1 = state.campaign1;
+        const c2 = state.campaign2;
+        if (!c1 && !c2) return;
+
+        const totalPoints = (c1?.totalPoints || 0) + (c2?.totalPoints || 0);
+        const totalMembers = (c1?.memberCount || 0) + (c2?.memberCount || 0);
+        const totalEvents = (c1?.totalEvents || 0) + (c2?.totalEvents || 0);
+
+        document.getElementById('total-participants').textContent = fmt(totalMembers);
+        document.getElementById('total-points').textContent = fmt(totalPoints);
+        document.getElementById('total-events').textContent = fmt(totalEvents);
+
+        // Progress bar: participation relative to a reasonable target
+        const progressPct = Math.min((totalMembers / 5000) * 100, 100);
+        document.getElementById('progress-bar').style.width = progressPct + '%';
+
+        document.getElementById('last-updated-text').textContent =
+            'Last updated: ' + new Date().toLocaleTimeString() + ' | Data from Superfluid Points API (cms.superfluid.pro)';
+    }
+
+    function renderPools() {
+        const c1 = state.campaign1;
+        const c2 = state.campaign2;
+
+        document.getElementById('pool1-points').textContent = fmt(c1?.totalPoints);
+        document.getElementById('pool1-members').textContent = fmt(c1?.memberCount);
+        document.getElementById('pool1-events').textContent = fmt(c1?.totalEvents);
+        document.getElementById('pool1-id').textContent = CAMPAIGN_1_ID;
+
+        document.getElementById('pool2-points').textContent = fmt(c2?.totalPoints);
+        document.getElementById('pool2-members').textContent = fmt(c2?.memberCount);
+        document.getElementById('pool2-events').textContent = fmt(c2?.totalEvents);
+        document.getElementById('pool2-id').textContent = CAMPAIGN_2_ID;
+    }
+
+    function renderLeaderboard() {
+        const tab = state.activeTab;
+        const accounts = state.leaderboardData[tab];
+        const campaign = tab === 'pool1' ? state.campaign1 : state.campaign2;
+        const allocation = tab === 'pool1' ? POOL_1_ALLOCATION : POOL_2_ALLOCATION;
+        const totalPoolPoints = campaign?.totalPoints || 0;
+        const pageOffset = (state.currentPage[tab] - 1) * LEADERBOARD_PAGE_SIZE;
+
+        const container = document.getElementById('leaderboard-content');
+
+        if (!accounts || accounts.length === 0) {
+            renderLeaderboardEmpty();
+            return;
+        }
+
+        let html = `<table class="leaderboard-table">
+            <thead><tr>
+                <th>Rank</th>
+                <th>Wallet</th>
+                <th>Points</th>
+                <th>Events</th>
+                <th>Est. SUP Reward</th>
+                <th>Last Active</th>
+            </tr></thead><tbody>`;
+
+        accounts.forEach((acc, idx) => {
+            const rank = pageOffset + idx + 1;
+            const reward = totalPoolPoints > 0
+                ? ((acc.totalPoints / totalPoolPoints) * allocation).toFixed(1)
+                : '0';
+            const rankClass = rank <= 3 ? ' top-3' : '';
+            const lastActive = acc.lastEventAt ? new Date(acc.lastEventAt).toLocaleDateString() : '--';
+
+            html += `<tr>
+                <td class="rank-cell${rankClass}">#${rank}</td>
+                <td class="wallet-cell">${truncAddr(acc.account)}</td>
+                <td class="points-cell">${fmt(acc.totalPoints)}</td>
+                <td>${fmt(acc.eventCount)}</td>
+                <td class="reward-cell">${fmt(parseFloat(reward))} SUP</td>
+                <td style="color:var(--text-secondary);font-size:0.8rem">${lastActive}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    function renderLeaderboardEmpty() {
+        document.getElementById('leaderboard-content').innerHTML = `
+            <div class="empty-state">
+                <div class="emoji">&#128640;</div>
+                <p>Campaign launching soon -- check back after launch for the full leaderboard.</p>
+            </div>`;
+        document.getElementById('pagination').style.display = 'none';
+    }
+
+    function renderPagination() {
+        const tab = state.activeTab;
+        const current = state.currentPage[tab];
+        const total = state.totalPages[tab];
+        const paginationEl = document.getElementById('pagination');
+
+        if (total <= 1) {
+            paginationEl.style.display = 'none';
+            return;
+        }
+
+        paginationEl.style.display = 'flex';
+        document.getElementById('page-info').textContent = `Page ${current} of ${total}`;
+        document.getElementById('page-first').disabled = current <= 1;
+        document.getElementById('page-prev').disabled = current <= 1;
+        document.getElementById('page-next').disabled = current >= total;
+        document.getElementById('page-last').disabled = current >= total;
+    }
+
+    function renderCharts() {
+        const events1 = state.allEvents.pool1;
+        const events2 = state.allEvents.pool2;
+        const allEvents = [...events1, ...events2];
+
+        // --- Daily events chart (full season, aggregated by day) ---
+        const dailyCounts = {};
+        allEvents.forEach(e => {
+            const date = (e.createdAt || '').slice(0, 10);
+            if (date) dailyCounts[date] = (dailyCounts[date] || 0) + 1;
+        });
+
+        const sortedDates = Object.keys(dailyCounts).sort();
+        const dailyCtx = document.getElementById('daily-chart');
+
+        if (window._chartDaily) window._chartDaily.destroy();
+        window._chartDaily = new Chart(dailyCtx, {
+            type: 'bar',
+            data: {
+                labels: sortedDates,
+                datasets: [{
+                    label: 'Events per day',
+                    data: sortedDates.map(d => dailyCounts[d]),
+                    backgroundColor: 'rgba(0, 176, 255, 0.5)',
+                    borderColor: 'rgba(0, 176, 255, 0.9)',
+                    borderWidth: 1,
+                    borderRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(34,37,56,0.95)',
+                        titleColor: '#e8eaed',
+                        bodyColor: '#9aa0b0',
+                        borderColor: '#2d3148',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#9aa0b0',
+                            maxRotation: 45,
+                            autoSkip: true,
+                            maxTicksLimit: 20,
+                            font: { size: 11 }
+                        },
+                        grid: { color: 'rgba(45,49,72,0.3)' }
+                    },
+                    y: {
+                        ticks: { color: '#9aa0b0', font: { size: 11 } },
+                        grid: { color: 'rgba(45,49,72,0.3)' },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // --- Points distribution (top 100 from leaderboard) ---
+        renderDistributionChart();
+
+        // --- Cumulative participants over time ---
+        const firstSeenDates = {};
+        allEvents.forEach(e => {
+            const date = (e.createdAt || '').slice(0, 10);
+            const acct = e.account;
+            if (date && acct && (!firstSeenDates[acct] || date < firstSeenDates[acct])) {
+                firstSeenDates[acct] = date;
+            }
+        });
+
+        const newPerDay = {};
+        Object.values(firstSeenDates).forEach(d => { newPerDay[d] = (newPerDay[d] || 0) + 1; });
+        const cumulDates = Object.keys(newPerDay).sort();
+        let cumul = 0;
+        const cumulData = cumulDates.map(d => { cumul += newPerDay[d]; return cumul; });
+
+        const cumulCtx = document.getElementById('cumulative-chart');
+        if (window._chartCumul) window._chartCumul.destroy();
+        window._chartCumul = new Chart(cumulCtx, {
+            type: 'line',
+            data: {
+                labels: cumulDates,
+                datasets: [{
+                    label: 'Cumulative participants',
+                    data: cumulData,
+                    borderColor: '#4caf50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: 'rgba(34,37,56,0.95)', titleColor: '#e8eaed', bodyColor: '#9aa0b0' }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#9aa0b0', maxRotation: 45, autoSkip: true, maxTicksLimit: 15, font: { size: 11 } },
+                        grid: { color: 'rgba(45,49,72,0.3)' }
+                    },
+                    y: {
+                        ticks: { color: '#9aa0b0', font: { size: 11 } },
+                        grid: { color: 'rgba(45,49,72,0.3)' },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    async function renderDistributionChart() {
+        // Fetch top 100 for distribution
+        const tab = state.activeTab;
+        const campaignId = tab === 'pool1' ? CAMPAIGN_1_ID : CAMPAIGN_2_ID;
+        let topAccounts = [];
+
+        try {
+            const data = await fetchLeaderboard(campaignId, 1);
+            topAccounts = data.accounts || [];
+            // Get page 2 as well for 100 accounts
+            if (data.pagination?.hasNextPage) {
+                const data2 = await fetchLeaderboard(campaignId, 2);
+                topAccounts = topAccounts.concat(data2.accounts || []);
+            }
+        } catch (e) {
+            topAccounts = state.leaderboardData[tab] || [];
+        }
+
+        const pointValues = topAccounts.map(a => a.totalPoints).filter(p => p > 0);
+        if (pointValues.length === 0) return;
+
+        // Create logarithmic-style buckets for better distribution visibility
+        const max = Math.max(...pointValues);
+        const min = Math.min(...pointValues);
+
+        let bucketBounds;
+        if (max > 100) {
+            // Use exponential buckets for wide ranges
+            const logMax = Math.log10(max);
+            const logMin = Math.log10(Math.max(min, 1));
+            const steps = Math.min(12, Math.ceil(logMax - logMin + 1) * 2);
+            bucketBounds = [];
+            for (let i = 0; i <= steps; i++) {
+                bucketBounds.push(Math.round(Math.pow(10, logMin + (logMax - logMin) * i / steps)));
+            }
+            // Deduplicate
+            bucketBounds = [...new Set(bucketBounds)].sort((a, b) => a - b);
+        } else {
+            // Simple linear for small ranges
+            const bucketSize = Math.ceil(max / 10) || 1;
+            bucketBounds = [];
+            for (let i = 0; i <= max; i += bucketSize) bucketBounds.push(i);
+            if (bucketBounds[bucketBounds.length - 1] < max) bucketBounds.push(max);
+        }
+
+        const buckets = Array(bucketBounds.length - 1).fill(0);
+        const labels = [];
+        for (let i = 0; i < bucketBounds.length - 1; i++) {
+            labels.push(`${bucketBounds[i]}-${bucketBounds[i + 1]}`);
+        }
+
+        pointValues.forEach(p => {
+            for (let i = bucketBounds.length - 2; i >= 0; i--) {
+                if (p >= bucketBounds[i]) { buckets[i]++; break; }
+            }
+        });
+
+        const distCtx = document.getElementById('distribution-chart');
+        if (window._chartDist) window._chartDist.destroy();
+        window._chartDist = new Chart(distCtx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Users in range',
+                    data: buckets,
+                    backgroundColor: 'rgba(124, 77, 255, 0.5)',
+                    borderColor: 'rgba(124, 77, 255, 0.9)',
+                    borderWidth: 1,
+                    borderRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: 'rgba(34,37,56,0.95)', titleColor: '#e8eaed', bodyColor: '#9aa0b0' }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#9aa0b0', maxRotation: 45, font: { size: 10 } },
+                        grid: { color: 'rgba(45,49,72,0.3)' },
+                        title: { display: true, text: 'Points range', color: '#9aa0b0', font: { size: 11 } }
+                    },
+                    y: {
+                        ticks: { color: '#9aa0b0', font: { size: 11 } },
+                        grid: { color: 'rgba(45,49,72,0.3)' },
+                        beginAtZero: true,
+                        title: { display: true, text: '# of users', color: '#9aa0b0', font: { size: 11 } }
+                    }
+                }
+            }
+        });
+    }
+
+    // === Interactions ===
+    function switchTab(tab) {
+        state.activeTab = tab;
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+        loadLeaderboard(tab, 1);
+    }
+
+    function goToPage(page) {
+        const tab = state.activeTab;
+        if (page < 1 || page > state.totalPages[tab]) return;
+        loadLeaderboard(tab, page);
+    }
+
+    async function calculateReward() {
+        const input = document.getElementById('wallet-input');
+        const errorEl = document.getElementById('calc-error');
+        const resultsEl = document.getElementById('calc-results');
+        const btn = document.getElementById('calc-btn');
+        const wallet = input.value.trim().toLowerCase();
+
+        if (!/^0x[0-9a-f]{40}$/i.test(wallet)) {
+            errorEl.textContent = 'Please enter a valid Ethereum address (0x followed by 40 hex characters).';
+            errorEl.style.display = 'block';
+            resultsEl.classList.remove('visible');
+            return;
+        }
+
+        errorEl.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = 'Checking...';
+
+        try {
+            const balances = await fetchBalanceBatch(wallet);
+            let pool1Points = 0, pool2Points = 0;
+
+            if (Array.isArray(balances)) {
+                balances.forEach(b => {
+                    if (b.campaignId === CAMPAIGN_1_ID) pool1Points = b.points || b.totalPoints || 0;
+                    if (b.campaignId === CAMPAIGN_2_ID) pool2Points = b.points || b.totalPoints || 0;
+                });
+            } else if (balances && typeof balances === 'object') {
+                pool1Points = balances[CAMPAIGN_1_ID]?.points || balances[CAMPAIGN_1_ID]?.totalPoints || 0;
+                pool2Points = balances[CAMPAIGN_2_ID]?.points || balances[CAMPAIGN_2_ID]?.totalPoints || 0;
+            }
+
+            const totalPool1Pts = state.campaign1?.totalPoints || 0;
+            const totalPool2Pts = state.campaign2?.totalPoints || 0;
+            const reward1 = totalPool1Pts > 0 ? (pool1Points / totalPool1Pts) * POOL_1_ALLOCATION : 0;
+            const reward2 = totalPool2Pts > 0 ? (pool2Points / totalPool2Pts) * POOL_2_ALLOCATION : 0;
+
+            // Find rank
+            let rank = '--';
+            const idx = state.leaderboardData.pool1.findIndex(a => a.account.toLowerCase() === wallet);
+            if (idx >= 0) {
+                rank = '#' + ((state.currentPage.pool1 - 1) * LEADERBOARD_PAGE_SIZE + idx + 1);
+            } else if (pool1Points > 0) {
+                rank = 'Not on current page';
+            }
+
+            document.getElementById('calc-pool1-points').textContent = fmt(pool1Points);
+            document.getElementById('calc-pool2-points').textContent = fmt(pool2Points);
+            document.getElementById('calc-total-reward').textContent = fmt(Math.round(reward1 + reward2)) + ' SUP';
+            document.getElementById('calc-rank').textContent = rank;
+            resultsEl.classList.add('visible');
+        } catch (err) {
+            console.error('Calculator error:', err);
+            errorEl.textContent = 'Could not fetch balance. The address may not have participated yet.';
+            errorEl.style.display = 'block';
+            resultsEl.classList.remove('visible');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Check Rewards';
+        }
+    }
+
+    async function refreshAll() {
+        const btn = document.getElementById('refresh-btn');
+        btn.classList.add('loading');
+        btn.textContent = 'Refreshing...';
+        await loadCampaigns();
+        await loadLeaderboard(state.activeTab, state.currentPage[state.activeTab]);
+        btn.classList.remove('loading');
+        btn.textContent = 'Refresh';
+    }
+
+    // === Init ===
+    async function init() {
+        await loadCampaigns();
+        await loadLeaderboard('pool1', 1);
+        // Load all events for charts (runs in background after initial render)
+        loadAllEventsForCharts();
+        // Auto-refresh campaigns + leaderboard every 5 min
+        state.refreshTimer = setInterval(refreshAll, REFRESH_INTERVAL_MS);
+    }
+
+    document.getElementById('wallet-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') calculateReward();
+    });
+
+    init();
+    </script>
+</body>
+</html>
