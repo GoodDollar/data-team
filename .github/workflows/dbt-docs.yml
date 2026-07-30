@@ -3,8 +3,9 @@ name: publish site
 # Rebuilds and deploys all tools/docs to GitHub Pages:
 #   - dbt docs  → /onchain-analytics/  (gooddollar.github.io/data-team/onchain-analytics/)
 #   - UTM builder → /utm-builder/      (gooddollar.github.io/data-team/utm-builder/)
+#   - Antseed dashboard → /antseed-analytics/ (gooddollar.github.io/data-team/antseed-analytics/)
 #
-# Runs on pushes to master that touch either the dbt project or the UTM builder,
+# Runs on pushes to master that touch any deployed project,
 # and on manual dispatch. The dbt docs build uses --empty-catalog so NO BigQuery
 # credentials are needed — lineage, descriptions, and compiled SQL come from code.
 
@@ -14,6 +15,7 @@ on:
     paths:
       - 'projects/onchain-analytics/gd_dbt/**'
       - 'tools/utm-builder/**'
+      - 'projects/antseed-analytics/dashboard/**'
       - '.github/workflows/dbt-docs.yml'
   workflow_dispatch:
 
@@ -83,6 +85,10 @@ jobs:
           mkdir -p "$tmp/utm-builder"
           cp source/tools/utm-builder/index.html "$tmp/utm-builder/index.html"
           cp source/tools/utm-builder/config.json "$tmp/utm-builder/config.json"
+          # Deploy Antseed dashboard into /antseed-analytics/ subfolder
+          mkdir -p "$tmp/antseed-analytics"
+          cp source/projects/antseed-analytics/dashboard/index.html "$tmp/antseed-analytics/index.html"
+          cp source/projects/antseed-analytics/dashboard/app.js "$tmp/antseed-analytics/app.js"
           touch "$tmp/.nojekyll"
           git -C "$tmp" init -q -b gh-pages
           git -C "$tmp" config user.name "github-actions[bot]"
