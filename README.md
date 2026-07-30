@@ -12,6 +12,7 @@ The central hub for GoodDollar's analytics and data work. This repo contains the
 data-team/
 ├── projects/
 │   ├── onchain-analytics/    # On-chain analytics system (dbt + HyperSync pipeline, BigQuery)
+│   ├── antseed-analytics/    # Antseed AI Credits analytics dashboard
 │   ├── dashboard-scripts/    # GoodDollar main dashboard (Google Apps Script)
 │   ├── weekly-report/        # Weekly data report automation
 │   └── automations/          # n8n automation flows (archived)
@@ -33,6 +34,7 @@ data-team/
 | Project | Description | Status |
 |---|---|---|
 | [onchain-analytics](projects/onchain-analytics/) | 3-layer BigQuery warehouse (Staging → Semantic → Marts) fed by HyperSync, with dbt transformations. Powers all on-chain dashboards and reporting. | Active |
+| [antseed-analytics](projects/antseed-analytics/) | Analytics dashboard for the GoodDollar x AntSeed AI Credits integration. Visualizes G$ deposits, AI credit usage, and wallet activity from the Antseed Worker API. | Active |
 | [dashboard-scripts](projects/dashboard-scripts/) | Google Apps Script powering the GoodDollar main dashboard | Active (v6) |
 | [weekly-report](projects/weekly-report/) | Weekly data report automation | Active |
 
