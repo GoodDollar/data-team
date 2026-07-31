@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoodDollar SUP Rewards -- Season 6</title>
+    <title>GoodDollar SUP Rewards Campaign Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
@@ -60,6 +60,14 @@
         .refresh-btn { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; margin-left: 8px; transition: all 0.2s; }
         .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
         .refresh-btn.loading { opacity: 0.5; pointer-events: none; }
+
+        /* Season Toggle */
+        .season-toggle { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 20px; background: var(--bg-primary); border-radius: 8px; padding: 4px; width: fit-content; margin-left: auto; margin-right: auto; }
+        .season-btn { background: transparent; border: none; color: var(--text-secondary); padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; }
+        .season-btn.active { background: var(--accent); color: #fff; }
+        .season-btn:hover:not(.active) { color: var(--text-primary); }
+        .season-badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; vertical-align: middle; margin-left: 8px; }
+        .season-badge.test { background: var(--warning); color: #000; }
 
         /* Pool Cards */
         .pools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px; }
@@ -161,8 +169,12 @@
     <div class="container">
         <!-- Hero -->
         <section class="hero">
-            <h1>GoodDollar SUP Rewards -- Season 6 </h1>
-            <p class="subtitle">July -- September 30, 2026</p>
+            <div class="season-toggle" id="season-toggle">
+                <button class="season-btn active" data-season="s6" onclick="switchSeason('s6')">Live Data</button>
+                <button class="season-btn" data-season="s5" onclick="switchSeason('s5')">S5 Test Data</button>
+            </div>
+            <h1 id="hero-title">GoodDollar SUP Rewards -- Season 6</h1>
+            <p class="subtitle" id="hero-subtitle">July -- September 30, 2026</p>
             <div class="hero-stats">
                 <div class="hero-stat">
                     <div class="value" id="total-allocation">622,000</div>
@@ -239,6 +251,37 @@
                     <li><span>Stream to Gardens pool</span><span class="points">2 pts/$1 G$</span></li>
                 </ul>
                 <div class="data-source">Source: Superfluid Points API, Campaign <span id="pool2-id">--</span></div>
+            </div>
+        </section>
+
+        <!-- Analytics (moved up) -->
+        <section class="section">
+            <h2>Campaign Analytics</h2>
+            <div class="loading-overlay" id="analytics-loading">
+                <div class="loading-spinner"></div>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">Loading analytics (fetching full season events)...</span>
+            </div>
+            <div id="analytics-content" style="display:none;">
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h4>Daily Events (Full Season)</h4>
+                        <canvas id="daily-chart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-row">
+                    <div class="chart-container">
+                        <h4>Points Distribution (Top 100)</h4>
+                        <canvas id="distribution-chart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Cumulative Participants</h4>
+                        <canvas id="cumulative-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="empty-state" id="analytics-empty" style="display: none;">
+                <div class="emoji">&#128202;</div>
+                <p>No events recorded yet. Analytics will populate once the campaign has activity.</p>
             </div>
         </section>
 
@@ -334,53 +377,59 @@
                 </a>
             </div>
         </section>
-
-        <!-- Analytics -->
-        <section class="section">
-            <h2>Campaign Analytics</h2>
-            <div id="analytics-content">
-                <div class="charts-grid">
-                    <div class="chart-container">
-                        <h4>Daily Events (Full Season)</h4>
-                        <canvas id="daily-chart"></canvas>
-                    </div>
-                </div>
-                <div class="charts-row">
-                    <div class="chart-container">
-                        <h4>Points Distribution (Top 100)</h4>
-                        <canvas id="distribution-chart"></canvas>
-                    </div>
-                    <div class="chart-container">
-                        <h4>Cumulative Participants</h4>
-                        <canvas id="cumulative-chart"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="loading-overlay" id="analytics-loading">
-                <div class="loading-spinner"></div>
-                <span style="color: var(--text-secondary); font-size: 0.85rem;">Loading analytics (fetching full season events)...</span>
-            </div>
-            <div class="empty-state" id="analytics-empty" style="display: none;">
-                <div class="emoji">&#128202;</div>
-                <p>Analytics will populate once the campaign has more activity. Check back after launch.</p>
-            </div>
-        </section>
     </div>
 
-    <script>
-    // === Configuration ===
-    // PRODUCTION: Season 6 campaign IDs
-    // + campaign 607 (S6 Gardens, 585 members) as second pool demo
-    const API_BASE = 'https://cms.superfluid.pro';
-    const CAMPAIGN_1_ID = 606;   // S6 GoodDollar (Pool 1: GD Actions)
-    const CAMPAIGN_2_ID = 614;   // S6 GoodDollar 2 (Pool 2: Ecosystem Funding)
-    const POOL_1_ALLOCATION = 217700;
-    const POOL_2_ALLOCATION = 404300;
-    const TOTAL_ALLOCATION = 622000;
+    <script type="module">
+    import {
+        CONFIG, fetchCampaign, fetchLeaderboard, fetchBalanceBatch,
+        fetchAllEvents, calculateReward as calcReward, calculateCombinedReward,
+        parseBalanceBatch, aggregateDailyCounts, computeCumulativeParticipants,
+        computePointDistribution, formatNumber as fmt, truncateAddress as truncAddr,
+        isValidAddress, loadCampaigns as loadBothCampaigns, lookupWallet, loadAllEvents
+    } from './superfluid-api.js';
+
     const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-    const LEADERBOARD_PAGE_SIZE = 20;
+
+    // === Season Presets ===
+    const SEASONS = {
+        s6: { id1: 606, id2: 614, title: 'GoodDollar SUP Rewards -- Season 6', subtitle: 'July -- September 30, 2026', badge: '' },
+        s5: { id1: 511, id2: 607, title: 'GoodDollar SUP Rewards -- Season 5', subtitle: 'Test data -- S5 GoodDollar (campaign 511) + S6 Gardens (campaign 607)', badge: 'test' },
+    };
+
+    async function switchSeason(key) {
+        const season = SEASONS[key];
+        if (!season) return;
+
+        CONFIG.CAMPAIGN_1_ID = season.id1;
+        CONFIG.CAMPAIGN_2_ID = season.id2;
+
+        // Update toggle buttons
+        document.querySelectorAll('.season-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.season === key);
+        });
+
+        document.getElementById('hero-title').innerHTML = season.title +
+            (season.badge ? ' <span class="season-badge ' + season.badge + '">' + (season.badge === 'test' ? 'TEST DATA' : '') + '</span>' : '');
+        document.getElementById('hero-subtitle').textContent = season.subtitle;
+
+        // Reset state (events cache survives across toggles)
+        state.leaderboardData = { pool1: [], pool2: [] };
+        state.currentPage = { pool1: 1, pool2: 1 };
+        state.totalPages = { pool1: 1, pool2: 1 };
+        state.allEvents = { pool1: [], pool2: [] };
+        state.eventsLoaded = false;
+        state.activeTab = 'pool1';
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === 'pool1');
+        });
+
+        await loadCampaigns();
+        await loadLeaderboard('pool1', 1);
+        loadAllEventsForCharts();
+    }
 
     // === State ===
+    let eventsCache = {};  // keyed by 'campaignId1-campaignId2'
     let state = {
         campaign1: null,
         campaign2: null,
@@ -389,67 +438,22 @@
         totalPages: { pool1: 1, pool2: 1 },
         activeTab: 'pool1',
         allEvents: { pool1: [], pool2: [] },
-        eventsLoaded: { pool1: false, pool2: false },
+        eventsLoaded: false,
         refreshTimer: null
     };
 
-    // === API ===
-    async function fetchJSON(url) {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`API ${res.status}: ${url}`);
-        return res.json();
-    }
+    // === API (delegated to superfluid-api.js) ===
 
-    async function fetchCampaign(id) {
-        return fetchJSON(`${API_BASE}/points/campaign?campaignId=${id}`);
-    }
-
-    async function fetchLeaderboard(id, page = 1) {
-        return fetchJSON(`${API_BASE}/points/accounts?campaignId=${id}&orderBy=totalPoints&order=desc&page=${page}&limit=${LEADERBOARD_PAGE_SIZE}`);
-    }
-
-    async function fetchEvents(id, page = 1, limit = 100) {
-        return fetchJSON(`${API_BASE}/points/events?campaignId=${id}&limit=${limit}&page=${page}`);
-    }
-
-    async function fetchBalanceBatch(account) {
-        const res = await fetch(`${API_BASE}/points/balance-batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ campaignIds: [CAMPAIGN_1_ID, CAMPAIGN_2_ID], account })
-        });
-        if (!res.ok) throw new Error(`Balance API error: ${res.status}`);
-        return res.json();
-    }
-
-    // Fetch ALL events for a campaign (paginate through everything)
-    async function fetchAllEvents(campaignId) {
-        let allEvents = [];
-        let page = 1;
-        let hasNext = true;
-
-        while (hasNext) {
-            const data = await fetchEvents(campaignId, page, 100);
-            const events = data.events || [];
-            allEvents = allEvents.concat(events);
-            hasNext = data.pagination?.hasNextPage || false;
-            page++;
-
-            // Safety: cap at 200 pages (20K events) to avoid infinite loops
-            if (page > 200) break;
-        }
-        return allEvents;
+    function cacheKey() {
+        return CONFIG.CAMPAIGN_1_ID + '-' + CONFIG.CAMPAIGN_2_ID;
     }
 
     // === Data Loading ===
     async function loadCampaigns() {
         try {
-            const [c1, c2] = await Promise.all([
-                fetchCampaign(CAMPAIGN_1_ID),
-                fetchCampaign(CAMPAIGN_2_ID)
-            ]);
-            state.campaign1 = c1;
-            state.campaign2 = c2;
+            const data = await loadBothCampaigns();
+            state.campaign1 = data.campaign1;
+            state.campaign2 = data.campaign2;
             renderHero();
             renderPools();
         } catch (err) {
@@ -458,7 +462,7 @@
     }
 
     async function loadLeaderboard(tab, page = 1) {
-        const campaignId = tab === 'pool1' ? CAMPAIGN_1_ID : CAMPAIGN_2_ID;
+        const campaignId = tab === 'pool1' ? CONFIG.CAMPAIGN_1_ID : CONFIG.CAMPAIGN_2_ID;
         try {
             const data = await fetchLeaderboard(campaignId, page);
             state.leaderboardData[tab] = data.accounts || [];
@@ -477,31 +481,40 @@
         const contentEl = document.getElementById('analytics-content');
         const emptyEl = document.getElementById('analytics-empty');
 
+        const key = cacheKey();
+        if (eventsCache[key]) {
+            state.allEvents = eventsCache[key];
+            state.eventsLoaded = true;
+            loadingEl.style.display = 'none';
+            const total = state.allEvents.pool1.length + state.allEvents.pool2.length;
+            if (total === 0) { emptyEl.style.display = 'block'; contentEl.style.display = 'none'; }
+            else { emptyEl.style.display = 'none'; contentEl.style.display = 'block'; renderCharts(); }
+            return;
+        }
+
         loadingEl.style.display = 'flex';
         contentEl.style.display = 'none';
+        emptyEl.style.display = 'none';
 
         try {
-            // Fetch events from both campaigns in parallel
-            const [events1, events2] = await Promise.all([
-                fetchAllEvents(CAMPAIGN_1_ID),
-                fetchAllEvents(CAMPAIGN_2_ID)
-            ]);
+            const events1 = await fetchAllEvents(CONFIG.CAMPAIGN_1_ID);
+            const events2 = await fetchAllEvents(CONFIG.CAMPAIGN_2_ID);
 
             state.allEvents.pool1 = events1;
             state.allEvents.pool2 = events2;
-            state.eventsLoaded.pool1 = true;
-            state.eventsLoaded.pool2 = true;
+            state.eventsLoaded = true;
+            eventsCache[key] = { pool1: events1, pool2: events2 };
 
             const totalEvents = events1.length + events2.length;
-            if (totalEvents < 3) {
+            if (totalEvents === 0) {
                 loadingEl.style.display = 'none';
                 emptyEl.style.display = 'block';
                 return;
             }
 
+            renderCharts();
             loadingEl.style.display = 'none';
             contentEl.style.display = 'block';
-            renderCharts();
         } catch (err) {
             console.error('Events load failed:', err);
             loadingEl.style.display = 'none';
@@ -509,16 +522,7 @@
         }
     }
 
-    // === Rendering ===
-    function fmt(n) {
-        if (n === null || n === undefined) return '--';
-        return Number(n).toLocaleString();
-    }
-
-    function truncAddr(addr) {
-        if (!addr || addr.length < 10) return addr || '--';
-        return addr.slice(0, 6) + '...' + addr.slice(-4);
-    }
+    // === Rendering (fmt and truncAddr imported from superfluid-api.js) ===
 
     function renderHero() {
         const c1 = state.campaign1;
@@ -548,21 +552,21 @@
         document.getElementById('pool1-points').textContent = fmt(c1?.totalPoints);
         document.getElementById('pool1-members').textContent = fmt(c1?.memberCount);
         document.getElementById('pool1-events').textContent = fmt(c1?.totalEvents);
-        document.getElementById('pool1-id').textContent = CAMPAIGN_1_ID;
+        document.getElementById('pool1-id').textContent = CONFIG.CAMPAIGN_1_ID;
 
         document.getElementById('pool2-points').textContent = fmt(c2?.totalPoints);
         document.getElementById('pool2-members').textContent = fmt(c2?.memberCount);
         document.getElementById('pool2-events').textContent = fmt(c2?.totalEvents);
-        document.getElementById('pool2-id').textContent = CAMPAIGN_2_ID;
+        document.getElementById('pool2-id').textContent = CONFIG.CAMPAIGN_2_ID;
     }
 
     function renderLeaderboard() {
         const tab = state.activeTab;
         const accounts = state.leaderboardData[tab];
         const campaign = tab === 'pool1' ? state.campaign1 : state.campaign2;
-        const allocation = tab === 'pool1' ? POOL_1_ALLOCATION : POOL_2_ALLOCATION;
+        const allocation = tab === 'pool1' ? CONFIG.POOL_1_ALLOCATION : CONFIG.POOL_2_ALLOCATION;
         const totalPoolPoints = campaign?.totalPoints || 0;
-        const pageOffset = (state.currentPage[tab] - 1) * LEADERBOARD_PAGE_SIZE;
+        const pageOffset = (state.currentPage[tab] - 1) * CONFIG.PAGE_SIZE;
 
         const container = document.getElementById('leaderboard-content');
 
@@ -583,9 +587,7 @@
 
         accounts.forEach((acc, idx) => {
             const rank = pageOffset + idx + 1;
-            const reward = totalPoolPoints > 0
-                ? ((acc.totalPoints / totalPoolPoints) * allocation).toFixed(1)
-                : '0';
+            const reward = calcReward(acc.totalPoints, totalPoolPoints, allocation).toFixed(1);
             const rankClass = rank <= 3 ? ' top-3' : '';
             const lastActive = acc.lastEventAt ? new Date(acc.lastEventAt).toLocaleDateString() : '--';
 
@@ -637,13 +639,7 @@
         const allEvents = [...events1, ...events2];
 
         // --- Daily events chart (full season, aggregated by day) ---
-        const dailyCounts = {};
-        allEvents.forEach(e => {
-            const date = (e.createdAt || '').slice(0, 10);
-            if (date) dailyCounts[date] = (dailyCounts[date] || 0) + 1;
-        });
-
-        const sortedDates = Object.keys(dailyCounts).sort();
+        const { dates: sortedDates, counts: dailyData } = aggregateDailyCounts(allEvents);
         const dailyCtx = document.getElementById('daily-chart');
 
         if (window._chartDaily) window._chartDaily.destroy();
@@ -653,7 +649,7 @@
                 labels: sortedDates,
                 datasets: [{
                     label: 'Events per day',
-                    data: sortedDates.map(d => dailyCounts[d]),
+                    data: dailyData,
                     backgroundColor: 'rgba(0, 176, 255, 0.5)',
                     borderColor: 'rgba(0, 176, 255, 0.9)',
                     borderWidth: 1,
@@ -698,20 +694,7 @@
         renderDistributionChart();
 
         // --- Cumulative participants over time ---
-        const firstSeenDates = {};
-        allEvents.forEach(e => {
-            const date = (e.createdAt || '').slice(0, 10);
-            const acct = e.account;
-            if (date && acct && (!firstSeenDates[acct] || date < firstSeenDates[acct])) {
-                firstSeenDates[acct] = date;
-            }
-        });
-
-        const newPerDay = {};
-        Object.values(firstSeenDates).forEach(d => { newPerDay[d] = (newPerDay[d] || 0) + 1; });
-        const cumulDates = Object.keys(newPerDay).sort();
-        let cumul = 0;
-        const cumulData = cumulDates.map(d => { cumul += newPerDay[d]; return cumul; });
+        const { dates: cumulDates, cumulative: cumulData } = computeCumulativeParticipants(allEvents);
 
         const cumulCtx = document.getElementById('cumulative-chart');
         if (window._chartCumul) window._chartCumul.destroy();
@@ -755,13 +738,12 @@
     async function renderDistributionChart() {
         // Fetch top 100 for distribution
         const tab = state.activeTab;
-        const campaignId = tab === 'pool1' ? CAMPAIGN_1_ID : CAMPAIGN_2_ID;
+        const campaignId = tab === 'pool1' ? CONFIG.CAMPAIGN_1_ID : CONFIG.CAMPAIGN_2_ID;
         let topAccounts = [];
 
         try {
             const data = await fetchLeaderboard(campaignId, 1);
             topAccounts = data.accounts || [];
-            // Get page 2 as well for 100 accounts
             if (data.pagination?.hasNextPage) {
                 const data2 = await fetchLeaderboard(campaignId, 2);
                 topAccounts = topAccounts.concat(data2.accounts || []);
@@ -773,41 +755,7 @@
         const pointValues = topAccounts.map(a => a.totalPoints).filter(p => p > 0);
         if (pointValues.length === 0) return;
 
-        // Create logarithmic-style buckets for better distribution visibility
-        const max = Math.max(...pointValues);
-        const min = Math.min(...pointValues);
-
-        let bucketBounds;
-        if (max > 100) {
-            // Use exponential buckets for wide ranges
-            const logMax = Math.log10(max);
-            const logMin = Math.log10(Math.max(min, 1));
-            const steps = Math.min(12, Math.ceil(logMax - logMin + 1) * 2);
-            bucketBounds = [];
-            for (let i = 0; i <= steps; i++) {
-                bucketBounds.push(Math.round(Math.pow(10, logMin + (logMax - logMin) * i / steps)));
-            }
-            // Deduplicate
-            bucketBounds = [...new Set(bucketBounds)].sort((a, b) => a - b);
-        } else {
-            // Simple linear for small ranges
-            const bucketSize = Math.ceil(max / 10) || 1;
-            bucketBounds = [];
-            for (let i = 0; i <= max; i += bucketSize) bucketBounds.push(i);
-            if (bucketBounds[bucketBounds.length - 1] < max) bucketBounds.push(max);
-        }
-
-        const buckets = Array(bucketBounds.length - 1).fill(0);
-        const labels = [];
-        for (let i = 0; i < bucketBounds.length - 1; i++) {
-            labels.push(`${bucketBounds[i]}-${bucketBounds[i + 1]}`);
-        }
-
-        pointValues.forEach(p => {
-            for (let i = bucketBounds.length - 2; i >= 0; i--) {
-                if (p >= bucketBounds[i]) { buckets[i]++; break; }
-            }
-        });
+        const { labels, counts: buckets } = computePointDistribution(pointValues);
 
         const distCtx = document.getElementById('distribution-chart');
         if (window._chartDist) window._chartDist.destroy();
@@ -870,7 +818,7 @@
         const btn = document.getElementById('calc-btn');
         const wallet = input.value.trim().toLowerCase();
 
-        if (!/^0x[0-9a-f]{40}$/i.test(wallet)) {
+        if (!isValidAddress(wallet)) {
             errorEl.textContent = 'Please enter a valid Ethereum address (0x followed by 40 hex characters).';
             errorEl.style.display = 'block';
             resultsEl.classList.remove('visible');
@@ -882,36 +830,19 @@
         btn.textContent = 'Checking...';
 
         try {
-            const balances = await fetchBalanceBatch(wallet);
-            let pool1Points = 0, pool2Points = 0;
+            const result = await lookupWallet(wallet, state.campaign1, state.campaign2);
 
-            if (Array.isArray(balances)) {
-                balances.forEach(b => {
-                    if (b.campaignId === CAMPAIGN_1_ID) pool1Points = b.points || b.totalPoints || 0;
-                    if (b.campaignId === CAMPAIGN_2_ID) pool2Points = b.points || b.totalPoints || 0;
-                });
-            } else if (balances && typeof balances === 'object') {
-                pool1Points = balances[CAMPAIGN_1_ID]?.points || balances[CAMPAIGN_1_ID]?.totalPoints || 0;
-                pool2Points = balances[CAMPAIGN_2_ID]?.points || balances[CAMPAIGN_2_ID]?.totalPoints || 0;
-            }
-
-            const totalPool1Pts = state.campaign1?.totalPoints || 0;
-            const totalPool2Pts = state.campaign2?.totalPoints || 0;
-            const reward1 = totalPool1Pts > 0 ? (pool1Points / totalPool1Pts) * POOL_1_ALLOCATION : 0;
-            const reward2 = totalPool2Pts > 0 ? (pool2Points / totalPool2Pts) * POOL_2_ALLOCATION : 0;
-
-            // Find rank
             let rank = '--';
             const idx = state.leaderboardData.pool1.findIndex(a => a.account.toLowerCase() === wallet);
             if (idx >= 0) {
-                rank = '#' + ((state.currentPage.pool1 - 1) * LEADERBOARD_PAGE_SIZE + idx + 1);
-            } else if (pool1Points > 0) {
+                rank = '#' + ((state.currentPage.pool1 - 1) * CONFIG.PAGE_SIZE + idx + 1);
+            } else if (result.pool1Points > 0) {
                 rank = 'Not on current page';
             }
 
-            document.getElementById('calc-pool1-points').textContent = fmt(pool1Points);
-            document.getElementById('calc-pool2-points').textContent = fmt(pool2Points);
-            document.getElementById('calc-total-reward').textContent = fmt(Math.round(reward1 + reward2)) + ' SUP';
+            document.getElementById('calc-pool1-points').textContent = fmt(result.pool1Points);
+            document.getElementById('calc-pool2-points').textContent = fmt(result.pool2Points);
+            document.getElementById('calc-total-reward').textContent = fmt(Math.round(result.totalReward)) + ' SUP';
             document.getElementById('calc-rank').textContent = rank;
             resultsEl.classList.add('visible');
         } catch (err) {
@@ -948,6 +879,13 @@
     document.getElementById('wallet-input').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') calculateReward();
     });
+
+    // Expose functions to global scope for onclick handlers
+    window.switchSeason = switchSeason;
+    window.switchTab = switchTab;
+    window.goToPage = goToPage;
+    window.calculateReward = calculateReward;
+    window.refreshAll = refreshAll;
 
     init();
     </script>
