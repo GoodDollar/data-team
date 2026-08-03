@@ -1,0 +1,77 @@
+name: pipeline-daily
+
+# Runs the onchain analytics pipeline daily at 01:00 UTC (1h after midnight
+# to ensure yesterday's data is fully finalized on all chains), then refreshes
+# the dbt models so dashboards show the latest data.
+#
+# Required secrets:
+#   ENVIO_API_TOKEN        -- HyperSync API token
+#   GCP_SA_KEY             -- GCP service account JSON key (BigQuery access)
+#   SLACK_WEBHOOK_URL      -- Slack incoming webhook for alerts (optional)
+#
+# Manual trigger: use workflow_dispatch to run on demand.
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 01:00 UTC daily
+  workflow_dispatch:       # Manual trigger from GitHub UI
+
+concurrency:
+  group: pipeline-daily
+  cancel-in-progress: false  # Let running pipeline finish; don't start another
+
+defaults:
+  run:
+    working-directory: projects/onchain-analytics/pipeline-v5
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: projects/onchain-analytics/pipeline-v5/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Run pipeline (daily)
+        env:
+          ENVIO_API_TOKEN: ${{ secrets.ENVIO_API_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: npx tsx src/index.ts daily
+
+  # dbt refresh runs after successful ingestion
+  # Uncomment when dbt is ready for automated runs:
+  #
+  # transform:
+  #   needs: ingest
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 15
+  #   defaults:
+  #     run:
+  #       working-directory: projects/onchain-analytics/gd_dbt
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+  #     - name: Install dbt
+  #       run: pip install dbt-bigquery
+  #     - name: Authenticate to GCP
+  #       uses: google-github-actions/auth@v2
+  #       with:
+  #         credentials_json: ${{ secrets.GCP_SA_KEY }}
+  #     - name: dbt run
+  #       run: dbt run --select marts

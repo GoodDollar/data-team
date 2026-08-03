@@ -42,7 +42,10 @@ projects/dashboard-scripts/handoff.md
 docs/data-dictionary/
 docs/datasources/
 docs/other/
-
+# Internal strategy / planning docs â€" local only, never published
+projects/onchain-analytics/docs/antseed-tracking-plan.md
+projects/onchain-analytics/docs/tracking-plan-research.md
+docs/utm-tracking-architecture.md
 # Agent context & process files — local only, never published
 # This is a public repo: instructions files of any kind do not belong here,
 # only working code and reader-facing documentation. Keep this list ahead of
@@ -61,3 +64,51 @@ CLAUDE.md
 **/plan.md
 **/audit.md
 **/specs/
+
+# Private working files - local only, never committed
+_internal/
+
+# Investigation working files - local only
+investigations/jul15-spike/
+investigations/sybil-farm/amplitude-prompts.md
+investigations/sybil-farm/cross_reference_results.json
+queries/dune/reserve-governance/cross_reference.py
+queries/dune/sybil-monitor/BUILD-GUIDE.md
+
+investigations/sybil-farm/startup-prompt.md
+
+# ---------------------------------------------------------------------------
+# THE UNDERSCORE CONVENTION (added 2026-07-30)
+# A leading "_" means LOCAL-ONLY working file: raw dumps, exports, scratch
+# analysis, and anything candid about people. One rule to remember instead of
+# listing every future filename. Prefix a file with "_" and it can never be
+# committed to this public repo by accident.
+# NOTE: *.yml is deliberately NOT matched — dbt uses _sources.yml / _schema.yml
+# as real tracked code.
+_*.md
+_*.txt
+_*.json
+_*.csv
+_*.tsv
+**/_*.md
+**/_*.txt
+**/_*.json
+**/_*.csv
+**/_*.tsv
+
+# Agent kickoff / seed prompts (same family as the handoff + prompt rules above)
+**/*kickoff*.md
+**/*startup-prompt*.md
+**/*-primer.md
+
+# Internal meeting material + working digests — never reader-facing
+**/meeting-prep*.md
+**/meeting-notes*.md
+**/project-checklist-meeting.md
+docs/monday-digest-*.md
+docs/monday-digest-pull-guide.md
+docs/monday-digest-template.md
+
+# Candid docs about colleagues / stakeholders — NEVER in a repo others can read
+**/*-alignment-analysis.md
+**/*-profile.md

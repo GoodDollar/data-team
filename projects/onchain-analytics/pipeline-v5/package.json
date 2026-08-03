@@ -1,0 +1,21 @@
+{
+  "name": "gooddollar-pipeline-v5",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "daily": "tsx src/index.ts daily",
+    "backfill": "tsx src/index.ts backfill",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@envio-dev/hypersync-client": "^0.6.3",
+    "@google-cloud/bigquery": "^7.9.1",
+    "dotenv": "^16.4.7",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

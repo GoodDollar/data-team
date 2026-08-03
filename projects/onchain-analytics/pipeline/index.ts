@@ -188,6 +188,9 @@ const CONTRACT_CONFIGS: Record<string, ContractConfig> = {
 const VALID_MODES = ["backfill", "append"] as const;
 type Mode = (typeof VALID_MODES)[number];
 
+// P2: Configurable inter-batch delay to prevent HyperSync 429 cascade during catchup
+const BATCH_DELAY_MS = Number(process.env.BATCH_DELAY_MS ?? 200);
+
 // ============================================================
 // BigQuery helpers
 // ============================================================
@@ -195,7 +198,17 @@ type Mode = (typeof VALID_MODES)[number];
 const bigquery = new BigQuery({ projectId: GCP_PROJECT_ID });
 const dataset  = bigquery.dataset(DATASET_ID, { projectId: GCP_PROJECT_ID });
 
-async function insertWithRetry(rows: any[], tableId: string, retries = 3): Promise<void> {
+// P7: Exponential backoff with jitter for BQ insert retries
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 1000;
+
+function backoffDelay(attempt: number): number {
+  const exponential = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+  const jitter = Math.random() * exponential * 0.3;
+  return exponential + jitter;
+}
+
+async function insertWithRetry(rows: any[], tableId: string, retries = MAX_RETRIES): Promise<void> {
   const table = dataset.table(tableId);
   const rowsWithInsertId = rows.map((row) => ({
     insertId: `${row.network}:${row.tx_hash}:${row.log_index}`,
@@ -210,12 +223,13 @@ async function insertWithRetry(rows: any[], tableId: string, retries = 3): Promi
       // Log it clearly so schema mismatches are immediately obvious.
       const firstRowErr = e.errors?.[0];
       if (firstRowErr?.errors?.length > 0) {
-        console.error("  BQ rejection — first row errors:", JSON.stringify(firstRowErr.errors));
-        console.error("  BQ rejection — first row data:  ", JSON.stringify(firstRowErr.row));
+        console.error("  BQ rejection -- first row errors:", JSON.stringify(firstRowErr.errors));
+        console.error("  BQ rejection -- first row data:  ", JSON.stringify(firstRowErr.row));
       }
       if (attempt === retries) throw e;
-      console.warn(`  Insert failed (attempt ${attempt}/${retries}), retrying in 3s...`);
-      await new Promise((r) => setTimeout(r, 3000));
+      const delay = backoffDelay(attempt);
+      console.warn(`  Insert failed (attempt ${attempt}/${retries}), retrying in ${Math.round(delay)}ms...`);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
 }
@@ -226,7 +240,8 @@ async function getChainTip(networkUrl: string, finalityBlocks: number): Promise<
     const height = await client.getHeight();
     return Math.max(0, height - finalityBlocks);
   } catch (e: any) {
-    console.warn(`Could not get chain tip: ${e.message}; fetching to latest`);
+    // P3: Explicit warning -- finality guard is dropped, pipeline will fetch to chain tip
+    console.warn(`[WARN] getChainTip failed: ${e.message}. Finality guard DISABLED for this run -- fetching to latest block. Data may include unfinalized blocks.`);
     return undefined;
   }
 }
@@ -246,6 +261,9 @@ async function getLastBlockForNetwork(tableId: string, network: string): Promise
 // ============================================================
 // Stream and ingest events for one (contract, network) pair
 // ============================================================
+
+// P1: Track rows actually written to BQ (survives throws)
+let globalInsertedCount = 0;
 
 async function syncEvents(
   cfg: ContractConfig,
@@ -293,6 +311,7 @@ async function syncEvents(
   const stream = await client.stream(query, {});
   let totalDecoded = 0;
   let totalSkipped = 0;
+  let totalInserted = 0;
   const BATCH_SIZE = 1000;
   let pendingRows: any[] = [];
   const ingestedAt = new Date().toISOString();
@@ -367,17 +386,23 @@ async function syncEvents(
     while (pendingRows.length >= BATCH_SIZE) {
       const chunk = pendingRows.splice(0, BATCH_SIZE);
       await insertWithRetry(chunk, cfg.tableId);
-      console.log(`[${network.name}] Inserted ${chunk.length} rows (total: ${totalDecoded})`);
+      totalInserted += chunk.length;
+      globalInsertedCount += chunk.length;
+      console.log(`[${network.name}] Inserted ${chunk.length} rows (total inserted: ${totalInserted})`);
+      // P2: Inter-batch delay to prevent HyperSync 429 rate-limiting
+      if (BATCH_DELAY_MS > 0) await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
     }
   }
 
   if (pendingRows.length > 0) {
     await insertWithRetry(pendingRows, cfg.tableId);
-    console.log(`[${network.name}] Inserted final ${pendingRows.length} rows (total: ${totalDecoded})`);
+    totalInserted += pendingRows.length;
+    globalInsertedCount += pendingRows.length;
+    console.log(`[${network.name}] Inserted final ${pendingRows.length} rows (total inserted: ${totalInserted})`);
   }
 
-  console.log(`[${network.name}] Done. Decoded: ${totalDecoded}, skipped: ${totalSkipped}.`);
-  return totalDecoded;
+  console.log(`[${network.name}] Done. Decoded: ${totalDecoded}, inserted: ${totalInserted}, skipped: ${totalSkipped}.`);
+  return totalInserted;
 }
 
 // ============================================================
@@ -396,7 +421,8 @@ async function main() {
   const contractArg = (process.argv[3] || "all").toLowerCase();
 
   if (!VALID_MODES.includes(modeArg as Mode)) {
-    throw new Error(`Unknown mode: "${modeArg}". Valid modes: ${VALID_MODES.join(", ")}`);
+    console.error(`Unknown mode: "${modeArg}". Valid modes: ${VALID_MODES.join(", ")}`);
+    process.exit(2);
   }
 
   const allKeys      = Object.keys(CONTRACT_CONFIGS);
@@ -405,41 +431,61 @@ async function main() {
     : contractArg.split(",").map((s) => s.trim()).filter((k) => k in CONTRACT_CONFIGS);
 
   if (contractKeys.length === 0) {
-    throw new Error(`Unknown contract(s): "${contractArg}". Valid: ${allKeys.join(", ")}, all`);
+    console.error(`Unknown contract(s): "${contractArg}". Valid: ${allKeys.join(", ")}, all`);
+    process.exit(2);
   }
 
   const mode = modeArg as Mode;
   console.log(`\nMode: ${mode} | Contracts: ${contractKeys.join(", ")}`);
-  console.log(`Project: ${GCP_PROJECT_ID} | Dataset: ${DATASET_ID}\n`);
+  console.log(`Project: ${GCP_PROJECT_ID} | Dataset: ${DATASET_ID}`);
+  console.log(`Batch delay: ${BATCH_DELAY_MS}ms\n`);
 
-  let grandTotal = 0;
+  // P6: Track per-contract success/failure for structured exit codes
+  let succeededContracts = 0;
+  let failedContracts = 0;
 
   for (const key of contractKeys) {
     try {
       const cfg = CONTRACT_CONFIGS[key];
-      console.log(`\n=== ${key.toUpperCase()} → ${DATASET_ID}.${cfg.tableId} ===`);
+      console.log(`\n=== ${key.toUpperCase()} -> ${DATASET_ID}.${cfg.tableId} ===`);
 
       for (const network of cfg.networks) {
         if (mode === "backfill") {
           console.log(`\n--- BACKFILL: ${network.name} (chainId ${network.chainId}) from block ${network.firstBlock} ---`);
-          grandTotal += await syncEvents(cfg, network, network.firstBlock);
+          await syncEvents(cfg, network, network.firstBlock);
         } else {
           const lastBlock  = await getLastBlockForNetwork(cfg.tableId, network.name);
           const startBlock = lastBlock > 0 ? lastBlock + 1 : network.firstBlock;
           const safeTip    = await getChainTip(network.url, network.finalityBlocks);
           console.log(`\n--- APPEND: ${network.name} (chainId ${network.chainId}) from block ${startBlock}${safeTip ? ` to ${safeTip}` : ""} ---`);
-          grandTotal += await syncEvents(cfg, network, startBlock, safeTip);
+          await syncEvents(cfg, network, startBlock, safeTip);
         }
       }
+      succeededContracts++;
     } catch (e: any) {
       console.error(`[${key}] Error processing contract: ${e.message}`);
+      failedContracts++;
     }
   }
 
-  console.log(`\n=== DONE. Total events inserted: ${grandTotal} ===`);
+  // P1: Report actual rows written (globalInsertedCount survives throws)
+  console.log(`\n=== DONE. Total events inserted: ${globalInsertedCount} (${succeededContracts} contracts succeeded, ${failedContracts} failed) ===`);
+
+  // P6: Structured exit codes
+  if (failedContracts === 0) {
+    process.exit(0); // Full success
+  } else if (succeededContracts > 0) {
+    process.exit(1); // Partial -- some contracts failed
+  } else {
+    process.exit(2); // Complete failure
+  }
 }
 
 main().catch((error) => {
   console.error(error);
-  process.exit(1);
+  // P1: Even on fatal crash, report what was written
+  if (globalInsertedCount > 0) {
+    console.log(`(Partial progress: ${globalInsertedCount} rows were inserted before crash)`);
+  }
+  process.exit(2);
 });
