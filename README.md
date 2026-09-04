@@ -14,6 +14,7 @@ data-team/
 │   ├── onchain-analytics/    # On-chain analytics system (dbt + HyperSync pipeline, BigQuery)
 │   ├── antseed-analytics/    # Antseed AI Credits analytics dashboard
 │   ├── dashboard-scripts/    # GoodDollar main dashboard (Google Apps Script)
+│   ├── reserve-analysis/     # Shared reserve analysis toolkit (Dune + RPC checks)
 │   ├── weekly-report/        # Weekly data report automation
 │   └── automations/          # n8n automation flows (archived)
 ├── queries/
@@ -36,6 +37,7 @@ data-team/
 | [onchain-analytics](projects/onchain-analytics/) | 3-layer BigQuery warehouse (Staging → Semantic → Marts) fed by HyperSync, with dbt transformations. Powers all on-chain dashboards and reporting. | Active |
 | [antseed-analytics](projects/antseed-analytics/) | Analytics dashboard for the GoodDollar x AntSeed AI Credits integration. Visualizes G$ deposits, AI credit usage, and wallet activity from the Antseed Worker API. | Active |
 | [dashboard-scripts](projects/dashboard-scripts/) | Google Apps Script powering the GoodDollar main dashboard | Active (v6) |
+| [reserve-analysis](projects/reserve-analysis/) | Auditable reserve analysis toolkit: Celo Dune links plus reproducible XDC and Fuse RPC checks with transaction receipts. | Active |
 | [weekly-report](projects/weekly-report/) | Weekly data report automation | Active |
 
 ---

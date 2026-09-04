@@ -1,0 +1,10 @@
+{
+  "name": "reserve-analysis-rpc-checks",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "analysis": "node analysis-rpc-checks.mjs",
+    "analysis:ps": "powershell -ExecutionPolicy Bypass -File .\\analysis-rpc-checks.ps1"
+  }
+}
