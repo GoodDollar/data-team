@@ -46,6 +46,18 @@ Current logic:
 - Exclude GD token transfers.
 - Rank recipients by non-GD outflow and return top 2.
 
+## XSwap Checks (XDC, Public RPC)
+
+Script: scripts/rpc-checks/xswap-check.mjs
+
+GD has pools on XSwap (a separate AMM on XDC, independent of the GoodDollar Reserve). This script checks that venue directly:
+
+- Pull GD token Transfer logs from XDC RPC for a fixed window, no pool address assumed in advance.
+- Detect pool-like addresses empirically (bidirectional flow, multiple counterparties, varying amounts).
+- Confirm each candidate on-chain via the standard token0()/token1() selectors before trusting it as an AMM pair.
+- Rank buyers by GD received directly from a confirmed pool, with a live current-balance check per buyer.
+- RPC calls rotate across multiple public XDC endpoints with backoff, since single-endpoint rate limits are common.
+
 ## Run
 
 PowerShell:
@@ -62,6 +74,13 @@ cd projects/reserve-analysis/scripts/rpc-checks
 npm run analysis
 ```
 
+XSwap check (Node):
+
+```bash
+cd projects/reserve-analysis/scripts/rpc-checks
+node xswap-check.mjs
+```
+
 ## Output
 
 Both scripts print JSON with:
@@ -72,6 +91,12 @@ Both scripts print JSON with:
 - xdc.sellers[] with txHashes
 - fuse.routeOutflowRows
 - fuse.top2[] with txHashes and token breakdown
+
+xswap-check.mjs prints JSON with:
+
+- window, blockRange
+- confirmedPools[] with paired token and volume
+- buyers[] ranked by GD received, each with txHashes and currentGdBalance
 
 ## Auditability
 
