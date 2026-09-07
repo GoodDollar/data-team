@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "analysis": "node analysis-rpc-checks.mjs",
-    "analysis:ps": "powershell -ExecutionPolicy Bypass -File .\\analysis-rpc-checks.ps1"
+    "analysis:ps": "powershell -ExecutionPolicy Bypass -File .\\analysis-rpc-checks.ps1",
+    "xswap": "node xswap-check.mjs"
   }
 }
