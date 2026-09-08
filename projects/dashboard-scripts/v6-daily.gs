@@ -1,6 +1,11 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v6.0
+ * GOODDOLLAR DASHBOARD v6.1
  * =========================================
+ *
+ * CHANGELOG v6.1 (2026-08-31)
+ * - XDC RPC: switched from dead erpc.xinfin.network to rpc.xinfin.network
+ * - XDC RPC: added fallback endpoint list (rpc1.xinfin.network)
+ * - xdcRpcCall: retries across XDC_RPC_URLS on HTTP or RPC errors
  *
  * OVERVIEW
  * --------
@@ -178,7 +183,12 @@ const XDC_COLLATERAL_TOKENS = {
   USDC:  { address: '0xfa2958cb79b0491cc627c1557f441ef849ca8eb1', decimals: 6 },
   USDm:  { address: '0x765de816845861e75a25fca122bb6898b8b1282a', decimals: 18 },
 };
-const XDC_RPC_URL = 'https://erpc.xinfin.network';
+// Fallback list: if the primary is down, try the next. erpc died 2026-08-24 (HTTP 520).
+const XDC_RPC_URLS = [
+  'https://rpc.xinfin.network',
+  'https://rpc1.xinfin.network',
+];
+const XDC_RPC_URL = XDC_RPC_URLS[0];
 
 /** Dune Analytics query IDs — each powers one or more metrics via column indices */
 const DUNE_IDS = {
@@ -1904,21 +1914,34 @@ function xdcRpcCall(to, data) {
     deadline: DEADLINES.RPC / 1000
   };
   
-  var res = UrlFetchApp.fetch(XDC_RPC_URL, options);
-  var status = res.getResponseCode();
-  var text = res.getContentText();
-  
-  if (status < 200 || status >= 300) {
-    throw new Error('XDC RPC HTTP error (' + status + '): ' + text.slice(0, 500));
+  // Try each RPC endpoint; fall through to the next on HTTP or RPC-level errors.
+  var lastError = null;
+  for (var i = 0; i < XDC_RPC_URLS.length; i++) {
+    try {
+      var res = UrlFetchApp.fetch(XDC_RPC_URLS[i], options);
+      var status = res.getResponseCode();
+      var text = res.getContentText();
+      
+      if (status < 200 || status >= 300) {
+        lastError = new Error('XDC RPC HTTP error (' + status + '): ' + text.slice(0, 500));
+        Logger.log('xdcRpcCall: ' + XDC_RPC_URLS[i] + ' returned ' + status + ', trying next');
+        continue;
+      }
+      
+      var json = JSON.parse(text);
+      if (json.error) {
+        lastError = new Error('XDC RPC error: ' + JSON.stringify(json.error));
+        Logger.log('xdcRpcCall: ' + XDC_RPC_URLS[i] + ' returned RPC error, trying next');
+        continue;
+      }
+      
+      return json.result;
+    } catch (e) {
+      lastError = e;
+      Logger.log('xdcRpcCall: ' + XDC_RPC_URLS[i] + ' failed: ' + e.message);
+    }
   }
-  
-  var json = JSON.parse(text);
-  
-  if (json.error) {
-    throw new Error('XDC RPC error: ' + JSON.stringify(json.error));
-  }
-  
-  return json.result;
+  throw lastError || new Error('All XDC RPC endpoints failed');
 }
 
 /**
@@ -3574,7 +3597,7 @@ function testBuildRows() {
   Logger.log('=== TEST RUN for ' + yesterday + ' ===');
   Logger.log('Metrics enabled: ' + Object.keys(METRICS).join(', '));
   
-  const result = buildRows(yesterday, yesterday, {});
+  const result = buildRows(yesterday, yesterday, { index: {}, maxDates: {}, factsValueIndex: {} });
   
   Logger.log('Generated ' + result.rows.length + ' rows:');
   for (var i = 0; i < result.rows.length; i++) {
