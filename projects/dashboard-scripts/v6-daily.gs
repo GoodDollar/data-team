@@ -1,6 +1,20 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v6.1
+ * GOODDOLLAR DASHBOARD v6.2
  * =========================================
+ *
+ * CHANGELOG v6.2 (2026-09-08)
+ * - buildRows: added a staleness scan for Dune/Subgraph/Reserve metrics.
+ *   A metric whose latest known date is still behind untilYMD after the
+ *   run now gets an explicit 'warn' health row, even though the fetch
+ *   itself reported no error. Closes a blind spot exposed by the Sep 4
+ *   protocol-pause incident: Dune queries 4834304 (Active Claimers) and
+ *   4834229 (Daily Claimers) have no calendar spine, so a day with zero
+ *   claim events produces zero output rows (not a zero-value row) —
+ *   previously invisible because addHealth() suppresses ok+0 results.
+ * - Reserve adapter (daily_volume): zero swap activity on a day is a
+ *   real 0, not a missing row. celo_reserve_in/out/volume now walk every
+ *   day in the queried window and default to 0 when the subgraph bundle
+ *   has no entry, instead of silently omitting the day.
  *
  * CHANGELOG v6.1 (2026-08-31)
  * - XDC RPC: switched from dead erpc.xinfin.network to rpc.xinfin.network
@@ -2246,12 +2260,20 @@ const Adapters = {
           var bundle = Adapters.Reserve._bundle;
           var field = spec.field;
           var out = [];
-          var days = Object.keys(bundle).sort();
-          for (var i = 0; i < days.length; i++) {
-            var ymd = days[i];
-            if (ymd >= sinceYMD && ymd <= untilYMD) {
-              out.push({ date: ymd, value: bundle[ymd][field] || 0, source: 'RESERVE_SUBGRAPH' });
-            }
+          // Zero swap activity on a day is a real 0, not a missing row — walk
+          // every day in range and default to 0 when the bundle has no entry
+          // (v6.2). reserveFetchDailyVolumeBundle silently clamps its own
+          // lookback to 60 days, so mirror that cap here: never assert 0 for
+          // a day that was never actually queried.
+          var effectiveSinceYMD = sinceYMD;
+          if (dateDiffDays(sinceYMD, untilYMD) > 60) {
+            effectiveSinceYMD = addDays(untilYMD, -60);
+          }
+          var vd = effectiveSinceYMD;
+          while (vd <= untilYMD) {
+            var dayData = bundle[vd];
+            out.push({ date: vd, value: dayData ? (dayData[field] || 0) : 0, source: 'RESERVE_SUBGRAPH' });
+            vd = addDays(vd, 1);
           }
           return out;
         default:
@@ -3042,6 +3064,43 @@ function buildRows(sinceYMD, untilYMD, indexResult, scriptStartMs) {
       Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
     }
   }
+
+  // ----- Staleness scan (v6.2) -----
+  // The loops above only call addHealth(..., 'error', ...) when the fetch
+  // itself throws. If a query/subgraph call succeeds but simply has no row
+  // for untilYMD (e.g. the source table has zero events that day — a
+  // paused contract, a claims freeze), 0 rows are written and addHealth()
+  // suppresses the resulting ok+0 entry. Slack then reports "all good"
+  // while a metric has silently stopped advancing. This scan flags any
+  // raw-ingestion metric whose most recent known date (existing facts +
+  // this run's batch) is still behind untilYMD, as an explicit 'warn'.
+  var batchMaxByMetric = {};
+  Object.keys(batchByKey).forEach(function(k) {
+    var parts = k.split('|'); // date|chain|metric_key
+    var mk2 = parts[1] + '|' + parts[2];
+    if (!batchMaxByMetric[mk2] || parts[0] > batchMaxByMetric[mk2]) batchMaxByMetric[mk2] = parts[0];
+  });
+
+  function scanStaleness(metricList, adapterLabel) {
+    for (var si = 0; si < metricList.length; si++) {
+      var mk = metricList[si].metricKey;
+      var ch = metricList[si].chain;
+      if (ch === 'XDC' && untilYMD < CONFIG.XDC_GENESIS) continue;
+      var maxKey = ch + '|' + mk;
+      var lastKnown = (indexResult.maxDates && indexResult.maxDates[maxKey]) || null;
+      if (batchMaxByMetric[maxKey] && (!lastKnown || batchMaxByMetric[maxKey] > lastKnown)) {
+        lastKnown = batchMaxByMetric[maxKey];
+      }
+      if (!lastKnown || lastKnown < untilYMD) {
+        addHealth(adapterLabel, ch, mk, 'warn', 0, 0,
+          'stale — last data point ' + (lastKnown || 'never') + ', expected through ' + untilYMD, 0);
+      }
+    }
+  }
+  scanStaleness(duneMetrics, 'DUNE');
+  scanStaleness(subgraphMetrics, 'XDC_SUBGRAPH');
+  scanStaleness(reserveMetrics, 'RESERVE_SUBGRAPH');
+
   return { rows: rows, health: health, runId: runIdStr, batchByKey: batchByKey };
 }
 
