@@ -58,6 +58,40 @@ GD has pools on XSwap (a separate AMM on XDC, independent of the GoodDollar Rese
 - Rank buyers by GD received directly from a confirmed pool, with a live current-balance check per buyer.
 - RPC calls rotate across multiple public XDC endpoints with backoff, since single-endpoint rate limits are common.
 
+## LP Position and Staking Contract Checks (Celo)
+
+A plain `balanceOf` check on a wallet misses GD held inside a liquidity-pool position (Uniswap-V3-style NFT position, or a Ubeswap-V2-style ERC20 LP token) or staked in a separate voting-power contract. These scripts and queries close that gap.
+
+Fast, targeted RPC scripts (no historical scanning, safe to re-run any time):
+
+- `lp-pool-current-state.mjs`, live GD balance for every known Celo GD pool, classified by kind (V3-style NFT positions vs. V2-style ERC20 LP token).
+- `lp-pool-discovery.mjs`, discovers GD pools from a factory registry rather than a hardcoded list.
+- `lp-known-positions-check.mjs`, resolves specific known Uniswap-V3 NFT position token IDs (owner, tick range, GD amount) directly via `positions()` / `ownerOf()`.
+- `final-fresh-snapshot.mjs`, a quick live-balance snapshot for a fixed watchlist of addresses/contracts, meant to be re-run immediately before publishing any figure that depends on current balances.
+- `refresh-burn-list-balances.mjs`, live re-check of every wallet on a given list against its previously-recorded balance.
+- `staking-contract-check.mjs`, identifies a staking/voting-power contract's aggregate state and known interactions.
+
+General-purpose finders (self-discover positions/holders via on-chain event history rather than a hardcoded list; correct but rate-limited by public RPC `eth_getLogs` block-range caps on a full historical scan):
+
+- `lp-v3-positions.mjs <poolAddress>`, per-pool Uniswap-V3-style NFT position finder.
+- `lp-v2-holders.mjs <poolAddress>`, per-pool Ubeswap-V2-style LP-token holder finder.
+
+Dune SQL (no per-call block-range limit, the practical way to run the same discovery over full history):
+
+- `queries/dune/reserve-analysis/lp-v3-positions.sql`, discovers every V3 LP position across all Uniswap-V3-style GD pools via Mint/IncreaseLiquidity/Transfer event correlation, no hardcoded token-ID list.
+- `queries/dune/reserve-analysis/lp-v2-holders.sql`, LP-token holder enumeration for the Ubeswap-V2-style GD pools.
+- `queries/dune/reserve-analysis/staking-contract-per-member-v2.sql`, per-member net staked GD for the staking contract, using last-event-wins state-machine logic (an amount-increase event on this contract restates an absolute total, not a delta, so a naive SUM overcounts members who topped up more than once).
+- `queries/dune/reserve-analysis/v3-direct-liquidity-diagnostic.sql`, checks whether any GD liquidity was added directly to a pool bypassing the NFT position-manager wrapper.
+- `queries/dune/reserve-analysis/v3-pairing-completeness-check.sql`, checks whether every position-manager-owned Mint event has a matching IncreaseLiquidity event in the same transaction.
+
+Supporting parsers, clean up a raw Dune CSV/UI export (which can include repeated pagination headers) into structured rows for the scripts above:
+
+- `parse-dune-export.mjs`, `parse-staking-export.mjs`, `parse-v3-direct-export.mjs`.
+
+Converts parsed V3 position rows into GD amounts using the pool's current tick/price:
+
+- `lp-bulk-gd-amounts.mjs <parsedPositionsJson>`.
+
 ## Run
 
 PowerShell:
