@@ -64,6 +64,24 @@ cd projects/reserve-analysis/scripts/rpc-checks
 node wallet-cost-basis-fuse.mjs
 ```
 
+Burn/refund candidate table, current-held live + Dune bought/paid (Node):
+
+```bash
+cd projects/reserve-analysis/scripts/rpc-checks
+export DUNE_API_KEY=<your free key from https://dune.com/settings/api>
+node generate-holder-table.mjs [--fresh] [--xdc-json=path/to/xdc-cost-basis.json]
+```
+
+Needs nothing but Node and public RPC access for the "current held" column (always live). The
+"acquired" and "USD paid" columns fetch live from Dune query 8656320 (wallet-cost-list.sql) via
+Dune's REST API, the same pattern already used daily by projects/dashboard-scripts/v6-daily.gs on
+a free Dune plan -- no paid plan or manual export needed, just a free API key. `--fresh` triggers
+a new Dune execution and waits for it instead of using the latest cached result. No API key
+available? Pass `--dune-csv=path/to/export.csv` (a manual CSV export) as a fallback, or omit both
+to fall back to a hardcoded snapshot (loudly flagged as stale). XDC needs a fresh run of
+wallet-cost-basis-xdc.mjs passed via `--xdc-json`. Auto-tags burns and staking-contract transfers
+into the remark column if wallet-outflow-trace-out.json is present in this folder.
+
 ## Notes
 
 - If Node execution hits XDC RPC network filtering from your environment, use the PowerShell runner.
