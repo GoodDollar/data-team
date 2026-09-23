@@ -95,6 +95,20 @@ _*.tsv
 **/_*.json
 **/_*.csv
 **/_*.tsv
+# Extended 2026-09-23: scratch SCRIPTS were escaping the convention. Only .yml
+# is exempt; no tracked file outside dbt's *.yml configs starts with "_".
+_*.mjs
+_*.js
+_*.ts
+_*.sql
+_*.ps1
+_*.py
+**/_*.mjs
+**/_*.js
+**/_*.ts
+**/_*.sql
+**/_*.ps1
+**/_*.py
 
 # Agent kickoff / seed prompts (same family as the handoff + prompt rules above)
 **/*kickoff*.md
@@ -112,3 +126,20 @@ docs/monday-digest-template.md
 # Candid docs about colleagues / stakeholders — NEVER in a repo others can read
 **/*-alignment-analysis.md
 **/*-profile.md
+
+# ---------------------------------------------------------------------------
+# Investigation working folders (added 2026-09-23)
+# These hold wallet-level attribution, actor narratives and exchange names.
+# Nothing in them is reader-facing; none of it may reach a repo others can read.
+# Earlier rules targeted investigations/sybil-farm/, but the content moved to
+# projects/sybil-farm-investigation/ and the ignore rules did not follow --
+# hence whole-folder rules here rather than per-file ones.
+projects/sybil-farm-investigation/
+queries/dune/price-crash-2026-09-04/
+queries/dune/reserve-governance/
+queries/dune/sybil-monitor/
+
+# Scratch API/RPC output dumped at the repo root during investigations
+/celoscan-*.json
+/discovery*-out.json
+**/*-out.json
