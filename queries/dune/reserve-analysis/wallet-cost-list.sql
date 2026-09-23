@@ -3,17 +3,17 @@ GoodDollar Sep 4 Incident Delta 1: Celo large cheap buyers and current holdings
 
 What: Rank buyers who accumulated GD cheaply since the malicious contract's
 deployment and show their current GD balance on Celo.
-Why: Hadar asked (2026-09-08) for a full list of wallets that bought cheap GD
-and still hold it, for burn + refund. Window start moved from Sep 3 00:00 to
-Sep 2 14:35:12 UTC (1 hour before the malicious SuperApp contract's verified
-deployment at 2026-09-02T15:35:12Z, tx 0xc1da5a5db80108033de7dde2ba2dedc934744216c8a7ee6ebe2fda13cfe36e99,
-per Lewis's concern about earlier unnoticed activity). Window end is now live
+Why: Requested internally (2026-09-08) as a full list of wallets that bought
+cheap GD and still hold it, for burn + refund. Window start moved from Sep 3
+00:00 to Sep 2 14:35:12 UTC (1 hour before the malicious SuperApp contract's
+verified deployment at 2026-09-02T15:35:12Z, tx 0xc1da5a5db80108033de7dde2ba2dedc934744216c8a7ee6ebe2fda13cfe36e99,
+to cover earlier activity that may have gone unnoticed). Window end is now live
 (now()) since the mispricing was never fixed and cheap-buying is still
 ongoing, re-run rather than hand-edit dates.
 
 Notes:
 - "Cheap" is parameterized via cheap_price_cap_usd_per_gd.
-- min_gd_bought lowered from 1,000,000 to 1 (2026-09-08): Hadar asked for
+- min_gd_bought lowered from 1,000,000 to 1 (2026-09-08): the request was for
   "all wallets", the prior floor excluded small buyers. If refund processing
   cost makes tiny amounts impractical, re-raise this, it's a policy call.
 - Current balance is computed from full GD transfer history for the ranked set.

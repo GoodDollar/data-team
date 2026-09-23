@@ -5,7 +5,7 @@
 // this uses the same router addresses already verified working in
 // analysis-rpc-checks.mjs, and asks a narrower, correct question: which GD
 // transfers left those routers, and who received them (a buy), during the
-// window Mike originally asked about.
+// window originally requested.
 
 const FUSE_RPC_ENDPOINTS = ["https://rpc.fuse.io", "https://fuse-pokt.nodies.app", "https://rpc.ankr.com/fuse"];
 const GD_TOKEN = "0x495d133b938596c9984d462f007b676bdc57ecec";

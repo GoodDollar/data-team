@@ -22,7 +22,7 @@ const KNOWN_POOLS = [
   { address: "0xa0bef7ff637c10b9ec67a00687b4d4364a7f1c55", labelFromSql: "GD/PACT" },
   // Additional candidates mentioned live in the crisis-management Slack
   // thread (2026-09-08) not present in the SQL file, checked for existence:
-  { address: "0x784d8d96d0e0859ec534ef5d70522c890d5da23b", labelFromSql: "Lewis-mentioned G$/USDM position (unverified, checked here)" }
+  { address: "0x784d8d96d0e0859ec534ef5d70522c890d5da23b", labelFromSql: "separately reported G$/USDM position (unverified, checked here)" }
 ];
 
 let rpcId = 1;

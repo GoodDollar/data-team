@@ -1,0 +1,27 @@
+# .shipgate-allow -- recorded exceptions to ship_gate.py rules.
+#
+# Format:  <path glob> :: <rule id> :: <reason>
+#
+# Every rule blocks by default. A line here waives ONE rule for ONE path glob,
+# and the scan prints every exception it applies, so nothing is waived silently.
+# Rule id "*" waives all rules for a path -- avoid it; it is flagged loudly.
+#
+# Only the repository maintainer adds lines here. Keep globs narrow and always
+# say WHY: the reason is the audit trail for a future reader asking
+# "was this actually checked?".
+
+# --- contract registries: public infrastructure, not per-account data --------
+# These list GoodDollar/Uniswap/Ubeswap contract addresses. Confirmed 2026-09-23
+# that none of them contain user wallets.
+docs/subgraph/*.txt :: content:address-list :: subgraph manifests, contract addresses and start blocks only
+projects/onchain-analytics/contracts/ABIs/*.csv :: content:address-list :: contract ABI export, deployed contract addresses only
+projects/onchain-analytics/contracts/README.md :: content:address-list :: the contract registry doc, by definition a list of contracts
+queries/dune/reserve-analysis/lp-v3-positions.sql :: content:address-list :: Uniswap V3 pool contract addresses
+
+# --- dbt seeds: address + number pairs, but the number is not a balance -------
+projects/onchain-analytics/gd_dbt/seeds/contract_deployments.csv :: content:holder-table :: contract address paired with its deployment BLOCK, not a holder balance
+projects/onchain-analytics/gd_dbt/seeds/tokens.csv :: content:holder-table :: token contract address paired with its DECIMALS, not a holder balance
+
+# --- reader-facing docs that trip a filename or attribution rule -------------
+projects/goodwidget-components/spec.md :: name:spec.md :: real component specification, reader-facing product doc, not a pipeline artifact
+projects/goodbuilders-s4/README.md :: content:colleague-name :: repo ownership table; naming the owner of a public GoodDollar repo is the point of the column
