@@ -40,7 +40,7 @@ sources:
           - name: contract_address
             description: "UBI claim contract address."
           - name: amount
-            description: "Raw uint256 amount (divide by 100 for G$)."
+            description: "Raw uint256 amount as STRING, 18 decimals on both Celo and XDC. Resolve the divisor from the tokens seed, never hardcode it, and never divide by POW() which returns FLOAT64."
           - name: ingested_at
             description: "Pipeline ingestion timestamp. Used for freshness checks."
       - name: InviteContractEvents
@@ -77,3 +77,131 @@ sources:
             description: "Earned level. Present for InviterBounty events."
           - name: ingested_at
             description: "Pipeline ingestion timestamp. Used for freshness checks."
+
+      # -------------------------------------------------------------------------------------
+      # Celo Phase 1 tables. DDL warehouse/L1/04_L0Contract_v3.sql, applied 2026-09-23.
+      # Reconciled from the four design streams. EMPTY until ingestion lands.
+      #
+      # Six rules bind every table below, each traceable to a defect that actually occurred:
+      #   L0-1 the raw log is stored entire, four topics plus the data blob, IN ADDITION to the
+      #        decoded columns, so a wrong ABI becomes a SQL fix instead of a re-ingest.
+      #   L0-2 every uint256 and int256 is STRING, including values that fit today.
+      #   L0-3 binding is on topic0, never on an event name, and the matched topic0 is stored.
+      #   L0-4 every row carries implementation_address, so it self-identifies its era.
+      #   L0-5 one grain per table.
+      #   L0-6 every row carries its ingestion run.
+      # -------------------------------------------------------------------------------------
+      - name: ContractStateSnapshots
+        description: >
+          **The table that makes this system correct, and the one that did not exist.**
+
+          Three quantities in this protocol change with no event of any kind: The reserve ratio
+          moves on every sell, whitelist expiry moved for every wallet six times on chain-wide
+          parameter changes, and a Superfluid balance changes every second by agreement. None are
+          recoverable from any event stream at any level of diligence, because the chain never
+          emitted them.
+
+          **Narrow on purpose**, one row per reading. A wide row cannot honestly report that one
+          call succeeded while another reverted, and would fill with nulls that read as measured
+          zeros. A failed read is a row with `read_status` set, and is never forward-filled.
+        columns:
+          - name: read_status
+            description: "ok, revert, rpc_error or unreadable. Never null. A revert is a fact about the chain; an rpc_error is a fact about us."
+          - name: value_raw
+            description: "uint256 or int256 as STRING, sign preserved. realtimeBalanceOf returns int256 and the negative IS the finding."
+          - name: denominator
+            description: "The literal denominator, e.g. 100000000 for MAX_WEIGHT. Publishing a raw ratio as a percentage is the 1e16 defect in a new costume."
+
+      - name: IdentityContractEvents
+        description: >
+          Identity events, ingested for attribution and **not** for reconstructing whitelist state.
+
+          Replaying these to derive eligibility absorbed thirteen audit findings across three passes
+          and cannot work: Chain-wide parameter changes moved every wallet's expiry six times with
+          no wallet event. Eligibility comes from claims, which are enforced proof, and from state
+          reads.
+        columns:
+          - name: authenticated_timestamp
+            description: "uint256 as STRING. Contract-supplied, not block time: an admin can set it to any value, so the gap is an input rather than drift."
+          - name: counterparty_account
+            description: "AccountConnected and AccountDisconnected only, from block 61,416,834. Their absence before that is NOT evidence no connections existed: connectedAccounts is a public mapping in every era and is readable by state."
+
+      - name: TokenTransferEvents
+        description: >
+          ERC20 `Transfer` ONLY. Admin and supply events have their own tables.
+
+          **Complete for discrete transfers, incomplete for movement.** GD on Celo is a live
+          Superfluid SuperToken. Balances change every second with no transaction and no event.
+          Measured: a balance moving by exactly 2,315,940,197,129,030 wei per second across
+          consecutive blocks, and an account losing 516,484.018264840183908 GD in one hour with zero
+          transfer legs in an exhausted index. At current rates streams move roughly 1.7 percent of
+          the entire supply per day, invisibly to this table.
+
+          Supply reconciles from here exactly, because `_totalSupply` has two writers and both emit.
+          Balances do not reconcile from here at all. Anything named total volume, holder balance or
+          market cap needs `StreamEvents` and `ContractStateSnapshots` as well.
+        columns:
+          - name: value
+            description: "uint256 as STRING. Cast to BIGNUMERIC at the point of division and never divide by POW(), which returns FLOAT64 and silently drops precision."
+
+      - name: TokenSupplyEvents
+        description: >
+          Mint, burn and fee events, held out of the transfer table so nothing can sum them
+          alongside `Transfer` and double count. `TransferFee` has never been charged, established
+          from source plus state reads rather than from a log scan, and is ingested as a tripwire.
+
+      - name: TokenAdminEvents
+        description: >
+          The blocklist and the access-control surface. A blocked address cannot move the token, so
+          a silent address may be prohibited rather than inactive.
+
+          The seed currently says 15 addresses were blocked in one transaction at block 77,233,730.
+          That is wrong: 15 addresses across three blocks. It is the worked example of why a
+          single-pass log scan is not evidence. Those addresses hold about 44 percent of supply.
+
+      - name: StreamEvents
+        description: >
+          CFAv1, GDAv1 and IDAv1. **These events mark the moments a flow rate changes. They do not
+          carry the amount moved, because no event can:** The amount is an integral of a rate over
+          clock time. A missed rate change corrupts every later interval, not just its own.
+
+          Take the start block from contract creation, never from a document including this one. A
+          widely-copied declared start block was found to sit 570 real events late.
+
+      - name: TokenAgreementEvents
+        description: >
+          The token's own view of agreement lifecycle, including liquidations and bailouts. Kept
+          separate from `StreamEvents`, which is the agreement contracts' view, so the two can be
+          reconciled against each other rather than trusted.
+
+      - name: ReserveContractEvents
+        description: >
+          Mento trading activity. **This table answers who traded and how much. It cannot answer
+          what the reserve state is**, and must never be used to try.
+
+          `reserveRatio`, `tokenSupply` and `reserveBalance` all move on ordinary sells through code
+          paths that emit nothing, because the 10 percent exit contribution burns supply without
+          paying reserve. `ExchangeCreated` and `ExchangeUpdated` carry every parameter indexed with
+          an empty data section, so they announce that something changed and nothing about what.
+          Reserve state comes from `ContractStateSnapshots`.
+
+          The deployed `ReserveRatioUpdated` is `(bytes32,uint32)`. The spec said uint256, which
+          changes the selector, so a conforming decoder would have found zero events forever with
+          no error. Ingest from 31,415,857; the copied 34,100,000 truncates 570 real swaps.
+        columns:
+          - name: exchange_provider
+            description: "From the DATA section of Swap, NOT a topic."
+          - name: amount_out
+            description: "uint256 as STRING. NOT a price source: amount_out over amount_in is the execution rate net of the 10 percent exit contribution and sits 11.1 percent from the curve price."
+          - name: reserve_ratio_raw
+            description: "uint32 over MAX_WEIGHT 100000000. Named _raw so nobody publishes 40416114 as a percentage."
+
+      - name: DexPoolEvents
+        description: >
+          Pool coverage before this design was 1 of 9: Eight pair-style pools across three
+          factories, plus a Uniswap V4 singleton holding 550 million GD whose pools no
+          address-based discovery method can find, because V4 keeps every pool inside one contract
+          and identifies them by pool id.
+        columns:
+          - name: amount0
+            description: "int256 as STRING, signed. V4 sign convention is INVERTED from V3: negative means the caller owes the pool."

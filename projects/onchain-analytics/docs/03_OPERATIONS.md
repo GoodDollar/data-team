@@ -40,58 +40,56 @@ The pipeline and `bq` CLI both read these credentials automatically — no passw
 ### 4. Install pipeline dependencies
 
 ```
-cd pipeline
+cd pipeline-v5
 npm install
 ```
 
 ### 5. Configure environment
 
 ```
-cp pipeline/.env.example pipeline/.env
+cp pipeline-v5/.env.example pipeline-v5/.env
 ```
 
-Edit `pipeline/.env` and paste your `ENVIO_API_TOKEN` (get it at <https://envio.dev>).
+Edit `pipeline-v5/.env` and paste your `ENVIO_API_TOKEN` (get it at <https://envio.dev>).
 
 ---
 
 ## Running the pipeline
 
-The pipeline is at [`pipeline/index.ts`](../pipeline/index.ts). All commands run from inside `pipeline/`.
+The pipeline is [`pipeline-v5/`](../pipeline-v5/), and it is the only one. Its full runbook is
+[`pipeline-v5/README.md`](../pipeline-v5/README.md); this section is the short version. All
+commands run from inside `pipeline-v5/`.
 
-### Backfill — load full history (run once per contract)
-
-```
-cd pipeline
-npx tsx index.ts backfill claim       # UBIClaimed events from UBIScheme
-npx tsx index.ts backfill invite      # InviteeJoined + InviterBounty from Invite contract
-```
-
-Each backfill takes a few minutes at MVP volume. Output looks like:
+### Backfill, load full history
 
 ```
-Mode: backfill | Contracts: claim
-[XDC] Fetching from block 95249624 to latest...
-[XDC] First event: UBIClaimed at block 95249701
-[XDC] Inserted 1000 rows (total: 1000)
-...
-[XDC] Done. Decoded: 12483, skipped: 0.
+cd pipeline-v5
+npx tsx src/index.ts backfill --contracts=ClaimContractEvents
+npx tsx src/index.ts backfill --contracts=InviteContractEvents
 ```
 
-If a backfill crashes mid-way, just rerun the same command. Insert IDs deduplicate retries automatically.
+Add `--from=N --to=N` to target a range. A run reports its chunk plan and, for every range it
+attempted, writes a row to `BlockchainEvents.IngestionCoverage` recording whether every chunk
+succeeded.
 
-### Append — daily incremental (run after backfill, then daily going forward)
+**Re-running the same range is safe and is expected.** The write path is a staging table plus a
+`MERGE` on `(network, tx_hash, log_index)`, so a repeated backfill leaves the table
+byte-identical. This was not true of the predecessor, which appended through streaming inserts
+whose `insertId` de-duplication window is minutes rather than months; re-running a range four
+months later wrote 43,000 phantom rows. If you read that older instruction anywhere, it is
+wrong.
+
+### Daily incremental
 
 ```
-cd pipeline
-npx tsx index.ts append claim
-npx tsx index.ts append invite
+cd pipeline-v5
+npx tsx src/index.ts daily
+npx tsx src/index.ts verify
 ```
 
-Or all contracts at once:
-
-```
-npx tsx index.ts append
-```
+`verify` reconciles the warehouse against the contracts' own per-day ledgers and is the only
+check here that consults something outside the warehouse. A run that does not reconcile exits
+nonzero.
 
 ---
 
@@ -154,13 +152,15 @@ model/column docs with `dbt docs serve` (opens <http://localhost:8080>).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `ENVIO_API_TOKEN is missing` | `pipeline/.env` not created or empty | `cp pipeline/.env.example pipeline/.env` and fill in the token |
+| `ENVIO_API_TOKEN is missing` | `pipeline-v5/.env` not created or empty | `cp pipeline-v5/.env.example pipeline-v5/.env` and fill in the token |
 | `Could not authenticate to Google` | gcloud ADC expired | `gcloud auth application-default login` again |
-| `Table not found: gooddollar.BlockchainEvents.…` | L1 DDL not run yet | `.\scripts\deploy-warehouse.ps1` |
-| `Insert failed: schema mismatch` | Pipeline writing fields not in the table schema | Re-run the L1 DDL — `CREATE OR REPLACE TABLE` will reset the schema |
-| `Request Entity Too Large` (HTTP 413) | Single insert batch over 10MB | Lower `BATCH_SIZE` in `pipeline/index.ts` |
-| `Unrecognized name` during `dbt run` | A Semantic model references an L1 column that doesn't exist | Check the L1 schema matches `02_DATA_MODEL.md`; re-run L1 DDL if drift |
-| Mart numbers look wrong | Marts rebuilt before L1 fully backfilled. Re-run backfill, then `cd gd_dbt && dbt run --select marts`. |  |
+| `Table not found: gooddollar.BlockchainEvents.…` | L1 DDL not run yet | Apply `warehouse/L1/04_L0Contract_v3.sql` |
+| `SCHEMA_MISMATCH: <table> has no column(s) …` | The pipeline writes a column the live table lacks | Apply the L0 contract. The pipeline refuses to write rather than corrupting a MERGE |
+| Run exits 1 with skipped chunks | HyperSync rate limiting or a timeout | Read `IngestionCoverage` for the exact ranges, then `backfill --from --to` over them |
+| `UNCONFIRMED EMPTY RANGE` | A range came back empty and no independent endpoint could confirm it | Not an error to clear by retrying. The watermark deliberately did not advance. Re-run when the endpoints recover |
+| `REORG SUSPECTED` | An existing key now sits under a different block hash | Delete and re-ingest that block range |
+| `Unrecognized name` during `dbt run` | A Semantic model references an L1 column that does not exist | Check the L1 schema matches `02_DATA_MODEL.md` |
+| Mart numbers look wrong | Marts rebuilt before L1 was fully ingested | Run `verify` first. If it reports short days, `repair --days=…`, then `cd gd_dbt && dbt run --select marts` |
 
 ---
 
@@ -172,7 +172,7 @@ automate, the daily flow is two ordered steps: ingest first, then dbt.
 **Linux/macOS:**
 
 ```cron
-30 0 * * * cd /opt/gd-events-pipeline/pipeline && /usr/local/bin/npx tsx index.ts append >> /var/log/gd-events.log 2>&1
+30 0 * * * cd /opt/onchain-analytics/pipeline-v5 && /usr/local/bin/npx tsx src/index.ts daily >> /var/log/gd-events.log 2>&1
 45 0 * * * cd /opt/gd-events-pipeline/gd_dbt && /usr/local/bin/dbt run --select marts >> /var/log/gd-events.log 2>&1
 ```
 

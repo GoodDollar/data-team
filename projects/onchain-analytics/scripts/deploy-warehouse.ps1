@@ -1,13 +1,17 @@
 # deploy-warehouse.ps1
 # Creates the L1 raw event tables (BlockchainEvents.*) from the DDL in warehouse/L1/.
-# These are the tables the TypeScript pipeline streams into and dbt reads as sources —
-# they are NOT managed by dbt, so this bootstrap DDL still lives here.
+# These are the tables pipeline-v5 writes into and dbt reads as sources; they are NOT managed
+# by dbt, so this bootstrap DDL still lives here.
 #
-# The Semantic (L2) and Marts (L3) layers are managed by dbt now — use `dbt run`, not this
-# script. See gd_dbt/ and docs/03_OPERATIONS.md.
+# The Semantic (L2) and Marts (L3) layers are managed by dbt. Use `dbt run`, not this script.
+# See gd_dbt/ and docs/03_OPERATIONS.md.
+#
+# SAFETY: files whose header carries a DO NOT RUN or NOT THE LIVE SHAPE banner are skipped, and
+# -Force deliberately does not override that. Two files in warehouse/L1 are CREATE OR REPLACE
+# against tables holding 2.6 million rows of production data.
 #
 # Usage:
-#   .\scripts\deploy-warehouse.ps1        # creates/refreshes the L1 raw tables
+#   .\scripts\deploy-warehouse.ps1        # applies the L1 DDL that is safe to re-apply
 #
 # Requires:
 #   - Google Cloud SDK installed (provides the `bq` CLI)
@@ -16,7 +20,9 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet("L1")]
-    [string]$Layer = "L1"
+    [string]$Layer = "L1",
+
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,8 +75,39 @@ function Deploy-Layer {
         Write-Warning "No .sql files in $layerDir"
         return
     }
-    Write-Host "Deploying $($files.Count) file(s) in $LayerName..." -ForegroundColor Green
+
+    # Refuse anything that would drop a table holding production data. warehouse/L1 now contains
+    # historical DDL that is NOT the live shape: 01 and 02 are CREATE OR REPLACE against the two
+    # tables holding 2.6 million rows, and 03 was superseded. Running this folder end to end used
+    # to be safe and no longer is. Each such file carries a banner and is skipped by name.
+    $skipped = @()
+    $toRun = @()
     foreach ($f in $files) {
+        $head = Get-Content -Path $f.FullName -TotalCount 20 -Raw
+        if ($head -match 'DO NOT RUN|NOT THE LIVE SHAPE') {
+            $skipped += $f.Name
+        } else {
+            $toRun += $f
+        }
+    }
+
+    if ($skipped.Count -gt 0) {
+        Write-Host ""
+        Write-Host "SKIPPED (superseded or destructive, banner in file header):" -ForegroundColor Yellow
+        foreach ($s in $skipped) { Write-Host "  $s" -ForegroundColor Yellow }
+        if ($Force) {
+            Write-Error "-Force does not override this. These files would drop tables holding production data. Run the individual statements you actually want, by hand."
+            exit 1
+        }
+    }
+
+    if ($toRun.Count -eq 0) {
+        Write-Warning "Nothing to run in $LayerName after skips."
+        return
+    }
+
+    Write-Host "Deploying $($toRun.Count) file(s) in $LayerName..." -ForegroundColor Green
+    foreach ($f in $toRun) {
         Invoke-SqlFile -Path $f.FullName
     }
     Write-Host "$LayerName complete." -ForegroundColor Green

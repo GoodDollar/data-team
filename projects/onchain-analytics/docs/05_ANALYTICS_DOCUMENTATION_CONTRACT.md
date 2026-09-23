@@ -79,6 +79,22 @@ Required tests where applicable:
 - freshness checks on `ingested_at`
 - row-count or block-range reconciliation after backfills
 
+## dbt Docs Site Requirements (overview.md and {% docs %} blocks)
+
+The dbt docs site (`gd_dbt/models/overview.md` → GitHub Pages) is what stakeholders and analysts actually browse. Documentation that only exists in `docs/` repo files but not in the dbt docs site is **incomplete**.
+
+When creating or updating any of the following, the corresponding dbt docs surface must also be updated:
+
+| Artifact created | Required dbt docs update |
+|---|---|
+| New business term / glossary entry | Add row to Business Glossary in `gd_dbt/models/overview.md` |
+| New dbt model | Add `{% docs %}` block in a `.md` file next to the model, OR update overview.md architecture/data-flow sections |
+| New metric definition | Add to the relevant metrics table in `overview.md` |
+| New disambiguation rule | Add to Important Distinctions or link the governance doc in overview.md |
+| Updated governance contract | Ensure any user-facing interpretation changes are reflected in overview.md |
+
+The `docs/` files remain the development source of truth for detailed contracts and specifications. The dbt docs site is the **user-facing** surface. Both must stay in sync.
+
 ## Staging Model Requirements
 
 Every raw source table gets exactly one staging model before semantic models consume it.
@@ -216,3 +232,4 @@ A new source/model/metric is production-ready when:
 5. It obeys the latest-closed-day contract unless explicitly documented otherwise.
 6. It has glossary coverage for any user-facing terms.
 7. It has at least one verified golden question if exposed to self-service AI.
+8. **The dbt docs site is updated.** Any user-facing term, metric, or model is reflected in `gd_dbt/models/overview.md` or a `{% docs %}` block next to the model. A documentation artifact that exists only in `docs/` is not done.

@@ -7,6 +7,7 @@ profile: 'gd_dbt'
 
 # Paths (relative to this file)
 model-paths: ["models"]
+seed-paths: ["seeds"]
 test-paths: ["tests"]
 macro-paths: ["macros"]
 
@@ -14,6 +15,17 @@ macro-paths: ["macros"]
 clean-targets:
   - "target"
   - "dbt_packages"
+
+# Reference data loaded from CSV. Lives in Semantic so it sits alongside the models
+# that join it rather than in a fourth dataset nobody thinks to look in.
+seeds:
+  gd_dbt:
+    +schema: Semantic
+    +quote_columns: true
+    tokens:
+      +column_types:
+        decimals: INT64
+        is_gd: BOOLEAN
 
 # Default materialization per layer.
 # "view" = BigQuery view (no data stored, always fresh)

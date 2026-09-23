@@ -1,0 +1,10 @@
+chain,valid_from_block,valid_to_block,valid_from_date,period_days,era_kind,legacy_cutoff_unix,reverify_options,source
+CELO,17237952,28231171,2023-01-16,1095,global_period,,,measured_2026_09_21_archive_bisection
+CELO,28231171,28269185,2024-10-13,630,global_period,,,measured_2026_09_21_archive_bisection
+CELO,28269185,28352027,2024-10-15,540,global_period,,,measured_2026_09_21_archive_bisection
+CELO,28352027,28433369,2024-10-20,450,global_period,,,measured_2026_09_21_archive_bisection
+CELO,28433369,28478256,2024-10-25,360,global_period,,,measured_2026_09_21_archive_bisection
+CELO,28478256,28660050,2024-10-27,270,global_period,,,measured_2026_09_21_archive_bisection
+CELO,28660050,61416834,2024-11-07,180,global_period,,,measured_2026_09_21_archive_bisection
+CELO,61416834,63823853,2026-03-12,,per_wallet_authcount,1772697574,180,measured_2026_09_21_archive_bisection
+CELO,63823853,9223372036854775807,2026-04-09,,per_wallet_authcount,1772697574,3|180,measured_2026_09_21_archive_bisection

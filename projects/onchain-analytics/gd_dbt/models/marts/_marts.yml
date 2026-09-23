@@ -31,17 +31,19 @@ models:
         tests:
           - not_null
       - name: daily_unique_claimers
-        description: "How many distinct wallets claimed on this day (same person claiming twice = counted once)."
-      - name: daily_total_g_claimed
-        description: "Total G$ distributed on this day across all claimers."
+        description: "How many distinct identities claimed on this day (same person claiming twice = counted once)."
+      - name: daily_claim_amount
+        description: >
+          Total GD distributed on this day across all claimers. Renamed from
+          `daily_total_g_claimed`, whose values were inflated by 1e16 before the decimals fix.
         tests:
           - not_null
-      - name: avg_claim_amount_g
-        description: "Average G$ per claim on this day."
+      - name: avg_claim_amount
+        description: "Average GD per claim on this day."
       - name: cumulative_claims
         description: "Running total of all claims from the beginning of time up to this date."
-      - name: cumulative_total_g_claimed
-        description: "Running total of all G$ distributed from the beginning of time up to this date."
+      - name: cumulative_claim_amount
+        description: "Running total of all GD distributed from the beginning of time up to this date."
       - name: cumulative_unique_claimers_approx
         description: >
           Approximate running total of unique claimers. Note: this overcounts because it sums

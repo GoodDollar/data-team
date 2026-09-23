@@ -73,7 +73,7 @@ Blockchain → Pipeline (L0) → BigQuery raw tables → dbt Staging (L1) → db
 
 | Concern | Where it lives | Key files |
 |---|---|---|
-| **Chain connection & event decoding** | Pipeline (TypeScript) | `pipeline/index.ts` |
+| **Chain connection & event decoding** | Pipeline (TypeScript) | `pipeline-v5/src/`, runbook in `pipeline-v5/README.md` |
 | **Raw table schemas (DDL)** | `warehouse/L1/` | `01_ClaimContractEvents.sql`, etc. |
 | **Data cleaning & normalization** | dbt Staging models (L1) | `gd_dbt/models/staging/` |
 | **Business logic** (what is a signup, what is a payout) | dbt Semantic models (L2) | `gd_dbt/models/semantic/` |
@@ -98,7 +98,8 @@ Each layer only reads from the layer directly below it. Logic flows up, never si
 
 | Task | Command | When |
 |---|---|---|
-| Ingest new events from chain | `cd pipeline && npx tsx index.ts` | Daily / on-demand |
+| Ingest new events from chain | `cd pipeline-v5 && npx tsx src/index.ts daily` | Daily / on-demand |
+| Check ingestion against the contracts | `cd pipeline-v5 && npx tsx src/index.ts verify` | After every ingest |
 | Rebuild all warehouse layers | `cd gd_dbt && dbt run` | After ingestion |
 | Run data quality tests | `cd gd_dbt && dbt test` | After any `dbt run` |
 | Browse data catalog + lineage | Visit [gooddollar.github.io/data-team](https://gooddollar.github.io/data-team/) | Anytime |
@@ -115,7 +116,8 @@ The pipeline and dbt are independent — the pipeline writes raw tables, dbt rea
 | Ingestion pipeline | ✅ Live | XDC chain — UBIScheme + Invite contracts |
 | dbt warehouse (10 models) | ✅ Live | 2 staging, 5 semantic, 3 marts |
 | Looker Studio dashboards | ✅ Live | Invite funnel, daily metrics, claim activity |
-| Pipeline hardening | 🔄 Next | Idempotency, dedup, gap detection, scheduling |
+| Pipeline hardening | ✅ Done | Idempotent MERGE write path, historical de-duplication, contract-oracle reconciliation, coverage ledger |
+| Scheduled ingestion | 🔄 Next | The workflow exists and has never authenticated. See `pipeline-v5/README.md` |
 | Multi-chain expansion | 📋 Planned | Celo, Ethereum |
 | Self-service AI | 📋 Planned | Post-pipeline hardening |
 
@@ -126,7 +128,7 @@ The pipeline and dbt are independent — the pipeline writes raw tables, dbt rea
 | Path | What |
 |---|---|
 | [`gd_dbt/`](gd_dbt/) | dbt project — all warehouse models, tests, docs, macros |
-| [`pipeline/`](pipeline/) | HyperSync ingestion pipeline (TypeScript) |
+| [`pipeline-v5/`](pipeline-v5/) | The ingestion pipeline (TypeScript). The only one. Runbook in its own README |
 | [`warehouse/L1/`](warehouse/L1/) | Raw table DDL (pipeline-written tables, dbt *sources*) |
 | [`scripts/`](scripts/) | L1 bootstrap script (`deploy-warehouse.ps1`) |
 | [`contracts/`](contracts/) | ABI files, deployment block numbers, contract reference |
@@ -155,10 +157,11 @@ dbt docs serve       # Browse lineage + docs at localhost:8080
 ### Run the pipeline
 
 ```bash
-cd pipeline
-cp .env.example .env  # Add your ENVIO_API_TOKEN
+cd pipeline-v5
+cp .env.example .env      # Add your ENVIO_API_TOKEN
 npm install
-npx ts-node index.ts  # Ingest from chain → BigQuery raw tables
+npx tsx src/index.ts daily    # Ingest from chain into the BigQuery raw tables
+npx tsx src/index.ts verify   # Reconcile what was ingested against the contracts
 ```
 
 ### Bootstrap L1 raw tables (first time only)

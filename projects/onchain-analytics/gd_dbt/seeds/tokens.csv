@@ -1,0 +1,7 @@
+token_address,chain,symbol,token_name,decimals,decimals_source,is_gd,token_standard,notes
+0x62b8b11039fcfe5ab0c56e502b1c372a3d2a9c7a,CELO,GD,GoodDollar,18,measured_2026_09_21_decimals_call_plus_event_crosscheck,true,SuperToken,Onchain symbol() returns the currency-symbol form. Implementation is SuperGoodDollar.
+0xec2136843a983885aebf2feb3931f73a8ebee50c,XDC,GD,GoodDollar,18,measured_2026_09_21_decimals_call_plus_event_crosscheck,true,ERC20,UBIClaimed amount matched the paired Transfer value byte for byte.
+0x495d133b938596c9984d462f007b676bdc57ecec,FUSE,GD,GoodDollar,2,measured_2026_09_21_decimals_call_plus_event_crosscheck,true,ERC20,Earliest Fuse UBIClaimed amounts are order 5000 raw which is 50.00 GD at 2dp.
+0x67c5870b4a41d4ebef24d2456547a03f1f3e094b,ETHEREUM,GD,GoodDollar,2,measured_2026_09_21_decimals_call,true,ERC20,Not currently ingested. Seeded so the factor is never guessed later.
+0x765de816845861e75a25fca122bb6898b8b1282a,CELO,USDm,Mento Dollar,18,measured_2026_09_21_decimals_call,false,ERC20,Formerly cUSD. symbol() now returns USDm and name() returns Mento Dollar. Quote leg of the Celo Mento exchange.
+0xfa2958cb79b0491cc627c1557f441ef849ca8eb1,XDC,USDC,USDC,6,measured_2026_09_21_decimals_call_plus_supply_sanity,false,ERC20,SIX decimals not eighteen. totalSupply 64728258961136 reads as 64.7M at 6dp and 0.00006 at 18dp.

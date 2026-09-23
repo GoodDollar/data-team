@@ -24,8 +24,8 @@ WITH daily AS (
     network,
     COUNT(*)                        AS daily_claims,
     COUNT(DISTINCT claimer_address) AS daily_unique_claimers,
-    SUM(amount_g)                   AS daily_total_g_claimed,
-    AVG(amount_g)                   AS avg_claim_amount_g
+    SUM(claim_amount)               AS daily_claim_amount,
+    AVG(claim_amount)               AS avg_claim_amount
   FROM {{ ref('claim_events') }}
   GROUP BY 1, 2
 )
@@ -35,12 +35,12 @@ SELECT
   network,
   daily_claims,
   daily_unique_claimers,
-  daily_total_g_claimed,
-  avg_claim_amount_g,
+  daily_claim_amount,
+  avg_claim_amount,
 
   -- Running totals per network
   SUM(daily_claims)          OVER (PARTITION BY network ORDER BY metric_date) AS cumulative_claims,
   SUM(daily_unique_claimers) OVER (PARTITION BY network ORDER BY metric_date) AS cumulative_unique_claimers_approx,
-  SUM(daily_total_g_claimed) OVER (PARTITION BY network ORDER BY metric_date) AS cumulative_total_g_claimed
+  SUM(daily_claim_amount)    OVER (PARTITION BY network ORDER BY metric_date) AS cumulative_claim_amount
 
 FROM daily
