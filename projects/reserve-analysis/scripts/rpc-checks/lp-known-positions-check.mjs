@@ -1,5 +1,5 @@
-// Direct, fast check of the 3 specific LP positions Lewis already posted in
-// Slack for pool 0x9491d57c (GD/cUSD), by token ID -- no historical scan
+// Direct, fast check of the 3 specific LP positions already reported for
+// pool 0x9491d57c (GD/cUSD), by token ID -- no historical scan
 // needed since the IDs are already known. Computes current GD amount per
 // position via validated tick-math and cross-checks the sum against the
 // pool's own live GD balanceOf.

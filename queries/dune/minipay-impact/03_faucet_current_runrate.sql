@@ -1,6 +1,6 @@
 -- GoodDollar Faucet: Current Run Rate (last 30 days)
 -- What: Daily averages for the last 30 days — the "current cost" number
--- Why: Hadar can say "we spend $X/month right now to keep Celo UBI working"
+-- Why: so the team can say "we spend $X/month right now to keep Celo UBI working"
 
 WITH faucet_outflows AS (
     SELECT
