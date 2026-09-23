@@ -143,3 +143,13 @@ queries/dune/sybil-monitor/
 /celoscan-*.json
 /discovery*-out.json
 **/*-out.json
+
+# THE DESIGNATED SCRATCH LOCATION (added 2026-09-23)
+# Every intermediate artefact an agent or a script produces -- raw API dumps,
+# query exports, one-off probe scripts, logs, screenshots -- belongs in _scratch/.
+# Anything else is a bug. A branch does NOT protect against this: untracked files
+# live on disk regardless of which branch is checked out, which is exactly how
+# unrelated working files from eight different initiatives ended up sitting in
+# one checkout. Giving the mess one address is what actually contains it.
+_scratch/
+**/_scratch/
