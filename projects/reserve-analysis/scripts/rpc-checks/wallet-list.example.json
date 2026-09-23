@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "Template for _wallet-list.json, which holds the reviewed wallet list and is",
+    "gitignored because it is per-account holder data. Copy this file to",
+    "_wallet-list.json and replace the placeholder entries with the real list.",
+    "listedHeld is the GD balance recorded when the wallet was added, used to",
+    "measure drift against the live balanceOf at run time."
+  ],
+  "celo": [
+    { "address": "0x0000000000000000000000000000000000000000", "listedHeld": 0, "note": "" }
+  ],
+  "xdc": [
+    { "address": "0x0000000000000000000000000000000000000000", "listedHeld": 0 }
+  ],
+  "watch": [
+    { "address": "0x0000000000000000000000000000000000000000", "note": "" }
+  ]
+}

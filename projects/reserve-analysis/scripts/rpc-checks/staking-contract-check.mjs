@@ -1,10 +1,11 @@
-// Identify what 0xF42C9Ca2b10010142e2bAc34eBdDDB0b82177684 actually is (Lewis
-// asked directly, unresolved: "we dont have governance on celo?"), and cross-
-// reference every address that has ever interacted with it against the
-// current burn/refund list. Method names visible on Celoscan ("Stake And
+// Identify what 0xF42C9Ca2b10010142e2bAc34eBdDDB0b82177684 actually is, and
+// cross-reference every address that has ever interacted with it against the
+// current reviewed list. Method names visible on Celoscan ("Stake And
 // Register", "Increase Power", "Unregister Member") suggest a delegate/
 // voting-power staking registry, not a GD-locking vault in the LP sense --
 // checked here rather than assumed.
+
+import { loadWalletList } from "./wallet-list.mjs";
 
 const CELO_RPC_ENDPOINTS = ["https://celo.drpc.org", "https://forno.celo.org", "https://rpc.ankr.com/celo"];
 const GD_TOKEN = "0x62b8b11039fcfe5ab0c56e502b1c372a3d2a9c7a";
@@ -60,25 +61,11 @@ async function ethCall(to, data) {
 }
 function addressFromWord(w) { return "0x" + w.slice(24); }
 
-// Known burn/refund-list wallets (Celo side), for cross-reference.
-const KNOWN_LIST_WALLETS = new Set([
-  "0x22fa3239c4bf43d05cc587ff40ea3ba5841c6709", "0xa779ce177555284baf953de8a3246ba2444a2d34",
-  "0x4f649e50680c16c9b73e646e4b396647fd153091", "0x62b7fd18f9bc72c8543801b31ce88289264f9869",
-  "0xce029f6ee3c8d7e6c9338c04171b895a22428de3", "0x288dc841a52fca2707c6947b3a777c5e56cd87bc",
-  "0xd7f3596fcf17e68bd7db2537c87cf8a969235c12", "0x2973a379b3fb2d869712b9296a7ea2c054426d47",
-  "0x93f1f1e11b995a8bd3fe87afc404634ddbcf8624", "0x1df536323b382def549cb386fc128efe93e6f24f",
-  "0xf2fb24a6cedca39b9c514833371aca29512d8a3f", "0x7f553faa8f4bbbbd16fe419bf9b5255d3ea01652",
-  "0x61dd2ec85e168b4a06ae39b35eebfee8eaebea37", "0x9b27ac014671d006000b4546a3fb4796e2073241",
-  "0x980abeb0f35db41c6ee67068f981d46de04823c7", "0xdedff708684052be37ec7cbe1de2e6e608e9447e",
-  "0x8e089f5d70c5d5d1378f656ae74752bf65e00c8e", "0xce06ac2d581e80cc6ea4bc28f8bdb91ce887ff25",
-  "0x0e9b063789909565ceda1fba162474405a151e66", "0x0e401c81611424eccd0428f309bcd41ba3057112",
-  "0xc96e2cc0de82bbafebbd70c2a30db34e4c419fce", "0xd824212300be0555df8bb14278c1f25c975d1106",
-  "0xc151fe0d8dd6b852d75e29e18f4791b2f806f2a6", "0x83525b2783fb2dccaf7ae5b2551fbd995dd27309",
-  "0x58d6eb8cd983449dc4fb0d6b173be140dfdb63d0", "0x7f8946b257ad9a8fa55704120957901741a3346c",
-  "0x744942ec88d88c4dcc3da48f18e824d765e9a245", "0x20a15f256f7537da4f707a196f6ddc3e2e8be9da",
-  "0x55fbeae109d55b911d165a624e99d3e5abdddb54", "0x2c2b0310adcba409deb2739106a08a05cc4c0a79",
-  "0x463dfcbf3b88f3330646648e185475f98235c74f" // watch wallet, not on the list yet
-]);
+// Reviewed-list wallets (Celo side) plus watch wallets, for cross-reference.
+// Loaded from the local-only _wallet-list.json -- see wallet-list.example.json.
+const KNOWN_LIST_WALLETS = new Set(
+  [...loadWalletList().celo, ...loadWalletList().watch].map((w) => w.address.toLowerCase())
+);
 
 async function main() {
   const latest = Number(BigInt(await rpc("eth_blockNumber", [])));
@@ -112,7 +99,7 @@ async function main() {
   console.error(`Unique candidate addresses referenced in events: ${candidateAddresses.size}`);
 
   const overlap = [...candidateAddresses].filter((a) => KNOWN_LIST_WALLETS.has(a.toLowerCase()));
-  console.error(`Overlap with current burn/refund list / watch wallets: ${overlap.length} -> ${overlap.join(", ")}`);
+  console.error(`Overlap with current reviewed list / watch wallets: ${overlap.length} -> ${overlap.join(", ")}`);
 
   console.log(JSON.stringify({
     generatedAt: new Date().toISOString(),

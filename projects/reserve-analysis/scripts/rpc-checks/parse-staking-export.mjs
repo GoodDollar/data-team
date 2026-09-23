@@ -39,7 +39,7 @@ const totalOnList = uniqueRows.filter((r) => r.onList).reduce((s, r) => s + r.ne
 const totalNotOnList = uniqueRows.filter((r) => !r.onList).reduce((s, r) => s + r.netStakedGd, 0);
 
 console.error(`\nTotal net staked across ${uniqueRows.length} members: ${totalStaked.toFixed(2)}`);
-console.error(`  Already on burn/refund list: ${totalOnList.toFixed(2)} (${uniqueRows.filter((r) => r.onList).length} members)`);
+  console.error(`  Already on reviewed list: ${totalOnList.toFixed(2)} (${uniqueRows.filter((r) => r.onList).length} members)`);
 console.error(`  NOT on the list: ${totalNotOnList.toFixed(2)} (${uniqueRows.filter((r) => !r.onList).length} members)`);
 
 console.error(`\nTop 30 by net staked GD:`);
