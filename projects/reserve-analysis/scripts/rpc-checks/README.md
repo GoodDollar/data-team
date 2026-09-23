@@ -2,10 +2,29 @@
 
 This folder contains reproducible reserve analysis checks for XDC and Fuse.
 
+## Wallet list (required by some scripts)
+
+Scripts that operate on the reviewed wallet list read it from `_wallet-list.json`
+in this folder. That file holds per-account holder data, so it is gitignored and
+never committed -- this is a public repository.
+
+Before running them, copy the template and fill it in:
+
+```bash
+cp wallet-list.example.json _wallet-list.json
+```
+
+Scripts that require it: `refresh-burn-list-balances.mjs`,
+`final-fresh-snapshot.mjs`, `staking-contract-check.mjs`,
+`lp-bulk-gd-amounts.mjs`, `parse-dune-export.mjs`. They fail with an explicit
+message if the file is missing.
+
 ## Files
 
 - analysis-rpc-checks.ps1: Recommended runner for Windows.
 - analysis-rpc-checks.mjs: Node runner.
+- wallet-list.mjs: Loader for the local-only `_wallet-list.json`.
+- wallet-list.example.json: Template for `_wallet-list.json`.
 - xswap-check.mjs: Node runner for the XSwap (XDC) pool and cheap-buyer check.
 - fuse-cheap-buyer-check.mjs: Node runner for the Fuse pool and cheap-buyer check.
 - wallet-balance-check.mjs: Node runner for a live balance snapshot across Celo, XDC, Fuse, and Ethereum for a configured wallet list.

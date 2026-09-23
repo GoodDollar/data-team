@@ -43,7 +43,7 @@ const SELECTORS = {
 };
 
 const POOLS_TO_CHECK = process.argv[2] ? [process.argv[2]] : [
-  "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f", // Uniswap V3 GD/cUSD -- calibration case (Lewis already posted 3 positions for this one)
+  "0x9491d57c5687ab75726423b55ac2d87d1cda2c3f", // Uniswap V3 GD/cUSD -- calibration case
   "0x991f1aa7e0901f9ab3d583846bf5be0ebace1d7f", // Uniswap V3 GD/USDGLO
   "0xcb037f27eb3952222810966e28e0ceb650c65cd9", // Uniswap V3 GD/CELO
   "0x3d9e27c04076288ebfdc4815b4f6d81b0ed1b341", // Ubeswap V3-style GD/USDGLO (different factory/NFPM)
