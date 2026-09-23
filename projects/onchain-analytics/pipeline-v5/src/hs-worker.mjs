@@ -1,0 +1,81 @@
+/**
+ * hs-worker.mjs
+ *
+ * Performs ONE HyperSync collection and exits. It exists so that the parent can impose a REAL
+ * timeout: the HyperSync client retries internally without bound, so a job that hits a 429 storm
+ * never returns, never throws, and cannot be cancelled in-process. Killing a child process can.
+ * Node's fetch has no default timeout either, which is how a backfill in this project hung
+ * indefinitely on one socket while looking exactly like slow work.
+ *
+ * Protocol: request JSON on argv[2], result JSON on stdout between the markers below.
+ *
+ * This file is deliberately plain .mjs rather than TypeScript, so the parent can spawn it with
+ * the bare node binary and no loader. It has no dependency on the rest of the pipeline.
+ */
+
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { HypersyncClient } = require("@envio-dev/hypersync-client");
+
+const START = "<<<HS_RESULT_START>>>";
+const END = "<<<HS_RESULT_END>>>";
+
+// The client returns BigInt for uint fields, which JSON.stringify refuses outright. Rendering
+// them as strings keeps full precision across the process boundary; a Number would silently
+// round anything above 2^53, and tx_value is a uint256.
+const bigIntSafe = (_key, value) => (typeof value === "bigint" ? value.toString() : value);
+
+function emit(obj) {
+  process.stdout.write(START + JSON.stringify(obj, bigIntSafe) + END);
+}
+
+async function main() {
+  const req = JSON.parse(process.argv[2]);
+
+  if (!req.token) throw new Error("ENVIO_API_TOKEN missing in worker request");
+  const client = HypersyncClient.new({ url: req.url, bearerToken: req.token });
+
+  if (req.op === "height") {
+    const height = await client.getHeight();
+    return emit({ ok: true, op: "height", height: Number(height) });
+  }
+
+  const query = {
+    fromBlock: req.fromBlock,
+    toBlock: req.toBlock,
+    logs: [{ address: req.addresses }],
+    fieldSelection: {
+      log: [
+        "BlockNumber", "BlockHash", "TransactionHash", "TransactionIndex",
+        "LogIndex", "Address", "Data", "Topic0", "Topic1", "Topic2", "Topic3",
+      ],
+      transaction: [
+        "Hash", "From", "To", "Value", "Status", "Nonce", "GasUsed", "EffectiveGasPrice",
+      ],
+      block: ["Number", "Hash", "Timestamp"],
+    },
+  };
+
+  const res = await client.collect(query, {});
+
+  // nextBlock is how a short collection announces itself. The client can return fewer blocks
+  // than asked for without raising anything, and a caller that ignores nextBlock reads a
+  // truncated range as a complete one. The parent refuses any chunk where this is short.
+  emit({
+    ok: true,
+    op: "collect",
+    fromBlock: req.fromBlock,
+    toBlock: req.toBlock,
+    nextBlock: res.nextBlock === undefined || res.nextBlock === null ? null : Number(res.nextBlock),
+    archiveHeight: res.archiveHeight === undefined || res.archiveHeight === null ? null : Number(res.archiveHeight),
+    logs: res.data.logs ?? [],
+    transactions: res.data.transactions ?? [],
+    blocks: res.data.blocks ?? [],
+  });
+}
+
+main().catch((e) => {
+  emit({ ok: false, error: String((e && e.message) || e) });
+  process.exitCode = 1;
+});

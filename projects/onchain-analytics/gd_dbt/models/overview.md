@@ -93,8 +93,15 @@ GoodDollar operates across three blockchains:
 |--------|-----------|--------|
 | **Daily claims** | Count of `UBIClaimed` events per date and network. | `daily_claim_activity` |
 | **Daily unique claimers** | Distinct claimers per date. Same wallet counted once per day. | `daily_claim_activity` |
-| **G$ claimed** | Human-readable amount (raw ÷ 100). | `claim_events.amount_g` |
+| **GD claimed** | Human-readable amount. The raw onchain value divided by the token's decimal factor, which is looked up per (chain, token) in the `tokens` seed. It is **18 on Celo and XDC and 2 on Fuse and Ethereum**, so no single divisor is correct everywhere. | `claim_events.claim_amount` |
 | **Cumulative unique claimers** | Running sum of daily uniques — approximate, overcounts repeat claimers across days. | `daily_claim_activity` |
+
+> **Note on claim counts and GD totals before 2026-09-21.** Two defects were corrected on that date.
+> GD amounts had been divided by 100 on a chain whose token uses 18 decimals, inflating every GD
+> figure by 1e16. Separately, a re-ingested block range meant 2025-11-10 to 2025-11-19 was stored
+> twice, so those seven days reported exactly double the real claim activity, and the invite
+> programme over-reported 1,223 bounties and 1,834,500 GD against a true 939 and 1,408,500 GD.
+> Any figure quoted from this warehouse before that date should be re-derived.
 
 ### Important Distinctions
 

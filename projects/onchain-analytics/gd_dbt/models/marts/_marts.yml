@@ -31,17 +31,19 @@ models:
         tests:
           - not_null
       - name: daily_unique_claimers
-        description: "How many distinct wallets claimed on this day (same person claiming twice = counted once)."
-      - name: daily_total_g_claimed
-        description: "Total G$ distributed on this day across all claimers."
+        description: "How many distinct identities claimed on this day (same person claiming twice = counted once)."
+      - name: daily_claim_amount
+        description: >
+          Total GD distributed on this day across all claimers. Renamed from
+          `daily_total_g_claimed`, whose values were inflated by 1e16 before the decimals fix.
         tests:
           - not_null
-      - name: avg_claim_amount_g
-        description: "Average G$ per claim on this day."
+      - name: avg_claim_amount
+        description: "Average GD per claim on this day."
       - name: cumulative_claims
         description: "Running total of all claims from the beginning of time up to this date."
-      - name: cumulative_total_g_claimed
-        description: "Running total of all G$ distributed from the beginning of time up to this date."
+      - name: cumulative_claim_amount
+        description: "Running total of all GD distributed from the beginning of time up to this date."
       - name: cumulative_unique_claimers_approx
         description: >
           Approximate running total of unique claimers. Note: this overcounts because it sums
@@ -196,3 +198,51 @@ models:
           - not_null
       - name: pct_of_top
         description: "This stage's user_count as a percentage of Stage 1. Shows the drop-off rate."
+
+  - name: weekly_claimer_retention
+    description: >
+      **What this is:** A cohort retention matrix for claimers. Each row answers one question:
+      of the people who first claimed in a given week on a given network, what share were still
+      claiming N weeks later?
+
+
+      **Why it exists:** Claim volume alone cannot distinguish a growing user base from a
+      churning one refilled by new signups. Retention separates the two, and it is the input
+      the retention heatmap visualization reads directly.
+
+
+      **How to read it:** weeks_since_first = 0 is the cohort's own first week, so retention_pct
+      is 100 by construction there. Real signal starts at week 1. The window stops at 12 weeks.
+
+
+      **Technical:** First claim per (claimer, network) defines the cohort via QUALIFY
+      ROW_NUMBER(). Weekly activity is de-duplicated per claimer, then joined back to the cohort
+      on activity_week >= cohort_week. Weeks start on Monday. Materialized as a table,
+      partitioned by cohort_week and clustered by network.
+    config:
+      tags: ['claim', 'mart', 'retention']
+    columns:
+      - name: cohort_week
+        description: "Monday of the week in which this group of claimers made their first-ever claim."
+        tests:
+          - not_null
+      - name: network
+        description: "Chain the cohort claimed on. Cohorts are per-network, never pooled across chains."
+        tests:
+          - not_null
+      - name: cohort_size
+        description: "How many distinct claimers first claimed in this cohort_week on this network."
+        tests:
+          - not_null
+      - name: weeks_since_first
+        description: "Whole weeks elapsed since cohort_week. 0 is the cohort's first week; capped at 12."
+        tests:
+          - not_null
+      - name: active_claimers
+        description: "How many of the cohort made at least one claim in that later week."
+        tests:
+          - not_null
+      - name: retention_pct
+        description: "active_claimers as a percentage of cohort_size, rounded to one decimal."
+        tests:
+          - not_null

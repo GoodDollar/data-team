@@ -92,9 +92,9 @@
 ## How to add a new contract
 
 1. Create the contract/event registry entry required by [`05_ANALYTICS_DOCUMENTATION_CONTRACT.md`](05_ANALYTICS_DOCUMENTATION_CONTRACT.md).
-2. Add an entry to `CONTRACT_CONFIGS` in [`pipeline/index.ts`](../pipeline/index.ts).
+2. Add an entry to `CONTRACTS` in [`pipeline-v5/src/config.ts`](../pipeline-v5/src/config.ts). If the contract exposes a counter that can settle its own event count, add it to `ORACLES` in the same file, because a table with an oracle can be reconciled against the chain and a table without one can only be checked against itself.
 3. Create the L1 BigQuery table — a numbered SQL file in [`warehouse/L1/`](../warehouse/L1/) — and declare it as a dbt source in [`gd_dbt/models/staging/_sources.yml`](../gd_dbt/models/staging/_sources.yml).
-4. Run `npx tsx index.ts backfill <contract_key>`.
+4. Run `npx tsx src/index.ts backfill --contracts=<TableId>` from `pipeline-v5/`, then `npx tsx src/index.ts verify`.
 5. Add a staging model in [`gd_dbt/models/staging/`](../gd_dbt/models/staging/), then (optional) a Semantic model in [`gd_dbt/models/semantic/`](../gd_dbt/models/semantic/) for the new contract's business semantics.
 6. Add or update glossary entries in [`06_BUSINESS_GLOSSARY_AND_AI_DISAMBIGUATION.md`](06_BUSINESS_GLOSSARY_AND_AI_DISAMBIGUATION.md) for every user-facing entity, metric, or ambiguous term.
 7. (Optional) Add a mart in [`gd_dbt/models/marts/`](../gd_dbt/models/marts/) for the dashboards that depend on it.

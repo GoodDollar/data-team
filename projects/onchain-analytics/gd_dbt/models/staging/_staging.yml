@@ -13,11 +13,27 @@ models:
 
 
       **Technical:** Reads from `gooddollar.BlockchainEvents.ClaimContractEvents` (written by
-      the HyperSync pipeline). Lowercases addresses, casts amount to BIGNUMERIC / 100 for G$.
+      the HyperSync pipeline). Lowercases addresses and exposes the raw onchain amount as a string.
       Filters to the latest closed day so business-facing dbt layers exclude the current partial day.
-      Grain: one row per (tx_hash, log_index). No business logic — that lives in the semantic layer.
+      Grain: one row per (tx_hash, log_index). No business logic -- that lives in the semantic layer.
+
+
+      **Decimal conversion does not happen here, deliberately.** The factor is a property of
+      (chain, token) and resolving it needs a join to the `tokens` seed, which staging does not do.
+      Conversion happens in `claim_events`.
+
+
+      **This model deduplicates.** The raw table contains 43,000 rows that are a second copy of an
+      event already present, because blocks around 95,864,458 to 96,213,000 were ingested twice.
+      Without the dedup, 2025-11-10 to 2025-11-19 reports exactly double the real claim activity.
     config:
       tags: ['claim']
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - network
+            - tx_hash
+            - log_index
     columns:
       - name: network
         description: "Which blockchain this claim happened on (XDC, CELO, or ETHEREUM)."
@@ -42,13 +58,24 @@ models:
       - name: contract_address
         description: "Address of the UBI claim contract on this network."
       - name: claimer_address
-        description: "The wallet address of the person who claimed their UBI."
+        description: >
+          The whitelisted identity that was entitled to this claim. Note this is NOT necessarily
+          the wallet that received the tokens: the contract emits the identity root and pays
+          `msg.sender`, which can be a connected wallet. See the business glossary.
         tests:
           - not_null
-      - name: amount_raw
-        description: "Raw on-chain amount before conversion. Technical — use amount_g instead."
-      - name: amount_g
-        description: "How many G$ were claimed in this transaction. This is the human-readable amount."
+      - name: block_date
+        description: "Calendar date of the block. Convenience column for daily aggregation and clustering."
+      - name: event_name
+        description: "Which UBIScheme event this row is. Currently only UBIClaimed is ingested."
+      - name: tx_sender_address
+        description: "The address that sent and paid for the transaction. Null on some older rows."
+      - name: tx_status
+        description: "1 for a successful transaction, 0 for a revert."
+      - name: claim_amount_raw
+        description: >
+          The exact uint256 amount as emitted onchain, kept as a string. This is the ground truth
+          and survives any decimals mistake without a re-ingest. Convert via `claim_events`.
         tests:
           - not_null
       - name: ingested_at
@@ -70,8 +97,19 @@ models:
       that happens in the semantic layer (invite_signups and invite_payouts).
       Filters to the latest closed day so business-facing dbt layers exclude the current partial day.
       Grain: one row per (tx_hash, log_index).
+
+
+      **This model deduplicates.** 2,167 of the 9,260 rows in the raw table, 23 percent, are a
+      second copy of an event already present, from a re-ingested block range. For InviterBounty
+      that was 284 phantom rows of 1,223, which inflated reported bounty expenditure.
     config:
       tags: ['invite']
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - network
+            - tx_hash
+            - log_index
     columns:
       - name: network
         description: "Which blockchain this event happened on (XDC, CELO, or ETHEREUM)."

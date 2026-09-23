@@ -1,0 +1,5 @@
+chain,chain_id,chain_name,native_token_symbol,explorer_url_template,is_active,notes
+CELO,42220,Celo,CELO,https://celoscan.io/tx/{tx_hash},true,Primary Phase 1 chain. Block cadence changed from 5s to 1s around May 2025 so never convert blocks to time arithmetically.
+XDC,50,XDC Network,XDC,https://xdcscan.io/tx/{tx_hash},true,Holds the existing invites and claims MVP dataset. Newest ingested row 2026-07-23.
+FUSE,122,Fuse,FUSE,https://explorer.fuse.io/tx/{tx_hash},true,GD is 2 decimals here. Five UBI contracts with overlapping block ranges. No HyperSync endpoint exists so an RPC adapter is required.
+ETHEREUM,1,Ethereum,ETH,https://etherscan.io/tx/{tx_hash},false,GD is 2 decimals here. Reserve paused since 2023-12-17. Not ingested. Matters only for pre-2024 history.

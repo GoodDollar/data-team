@@ -1,7 +1,13 @@
 -- L1: ClaimContractEvents
--- Source: UBIScheme contract — UBIClaimed events
--- Written by: pipeline/index.ts via streaming insert
+-- Source: UBIScheme contract - UBIClaimed events
+-- Written by: pipeline-v5, staging table plus MERGE on (network, tx_hash, log_index)
+-- Reconciled against: getClaimerCount(day) and getClaimAmount(day) on the UBIScheme
 -- See: docs/02_DATA_MODEL.md
+--
+-- NOT THE LIVE SHAPE. This file records the table as first created. The live table has since
+-- been extended by 04_L0Contract_v3.sql and its column documentation is maintained by
+-- 05_RestoreColumnDescriptions.sql. Do not run this against production: it is CREATE OR
+-- REPLACE and would destroy 2.6 million rows.
 
 CREATE OR REPLACE TABLE `gooddollar.BlockchainEvents.ClaimContractEvents` (
   network          STRING   OPTIONS(description = "Chain name: XDC, CELO, ETHEREUM"),

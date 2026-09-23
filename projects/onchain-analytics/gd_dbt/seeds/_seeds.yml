@@ -1,0 +1,191 @@
+version: 2
+
+seeds:
+  - name: contract_deployments
+    description: >
+      **What this is:** Which implementation of each contract was live at which block.
+
+
+      **Why it exists:** Every GoodDollar contract address is a proxy, and the logic behind it has
+      changed. A rule expressed against "the Identity contract" is silently wrong for part of
+      history unless it knows which version it is talking about. This was not theoretical: mapping
+      Identity's eras revealed that whitelist expiry changed from a single global period to a
+      per-wallet schedule, which invalidated an entire model that had already been specified.
+
+
+      **How it was established:** Two independent methods, and the UNION of both. The EIP-1967
+      implementation slot was bisected against archive state, and `Upgraded(address)` logs were
+      collected separately. **Both were load-bearing.** Log collection found zero events for the GD
+      token, because its Superfluid UUPS proxy does not emit the standard event, yet it has seven
+      eras. Bisection separately missed a real UBIScheme upgrade because one probe hit an archive
+      gap. Either method alone produces a confidently wrong answer.
+
+
+      **Generated, not hand-written.** Produced from measurement artifacts by a generator script
+      rather than transcribed. Re-generate rather than edit rows by hand; transcribing hex
+      addresses is how silent corruption enters a seed.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests: [not_null]
+        description: "Uppercase chain name."
+      - name: contract_name
+        tests: [not_null]
+        description: "Logical contract name, stable across eras."
+      - name: proxy_address
+        tests: [not_null]
+        description: "The stable address events are emitted from. Lowercase."
+      - name: implementation_address
+        tests: [not_null]
+        description: "The logic contract in force for this era. Lowercase."
+      - name: implementation_name
+        description: "Verified contract name, or `unknown` where the explorer publishes none."
+      - name: valid_from_block
+        tests: [not_null]
+        description: "Inclusive lower bound of this era."
+      - name: valid_to_block
+        tests: [not_null]
+        description: "Exclusive upper bound. 9223372036854775807 means current."
+      - name: valid_from_date
+        description: "Date of the upgrade, where known. Convenience only, never join on it."
+      - name: semantics_note
+        description: >
+          What changed at this boundary that a model must care about. Empty means the event set was
+          measured identical to the previous era, which is a measurement and not an absence of
+          checking.
+      - name: source
+        tests: [not_null]
+        description: "How this row was established."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain
+            - contract_name
+            - valid_from_block
+
+  - name: chains
+    description: >
+      **What this is:** One row per blockchain the system covers.
+
+
+      **Note what is deliberately absent:** There is no average block time column. Celo's cadence
+      changed from 5s to 1s around May 2025, so any single value invites exactly the block-to-time
+      arithmetic that must never be done. Use `block_timestamp`.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests: [not_null, unique]
+      - name: chain_id
+        tests: [not_null]
+      - name: is_active
+        tests: [not_null]
+
+  - name: identity_auth_periods
+    description: >
+      **What this is:** How long a whitelisting stays valid, and how that rule has changed.
+
+
+      **Two eras with different SHAPES, not just different numbers.** Until block 61,416,834 there
+      was one global `authenticationPeriod`, and the contract compared against **whatever it was at
+      the moment of the call**, so every reduction moved every existing wallet's expiry
+      retroactively with no event. From 61,416,834 there is no chain-level period at all: each
+      wallet uses `reverifyDaysOptions[authCount]`, except wallets last authenticated before the
+      hardcoded cutoff 1772697574 (2026-03-05T07:59:34Z), which are pinned to the longest option.
+
+
+      `era_kind` tells a model which formula applies. Do not average across eras and do not chart
+      `period_days` as a single continuous series.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests: [not_null]
+      - name: valid_from_block
+        tests: [not_null]
+      - name: period_days
+        description: "The global period. NULL in the per-wallet era, where no such number exists."
+      - name: era_kind
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['global_period', 'per_wallet_authcount']
+      - name: legacy_cutoff_unix
+        description: "Wallets last authenticated before this instant are pinned to the longest option."
+      - name: reverify_options
+        description: "Pipe-separated day options for the per-wallet era, in ascending order."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain
+            - valid_from_block
+
+  - name: tokens
+    description: >
+      **What this is:** The authoritative decimal factor for every token this warehouse
+      converts, keyed by (chain, token_address).
+
+
+      **Why it exists:** A token's decimal factor is a property of the token, not of the event
+      that mentions it, and it is not the same on every chain. GoodDollar is an 18-decimal token
+      on Celo and XDC and a 2-decimal token on Fuse and Ethereum. Any single hardcoded factor is
+      therefore wrong somewhere, and a wrong factor produces a plausible-looking number rather
+      than a visible error.
+
+
+      **How the values were established:** Every `decimals` value here was read from the deployed
+      contract with a live `decimals()` call, and for the three chains that carry claim data it was
+      additionally cross-checked against a real event: the `UBIClaimed` amount was compared with the
+      ERC20 `Transfer` value emitted in the same transaction. The `decimals_source` column on each
+      row records which checks were performed. **Do not add a row without measuring it.**
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: token_address
+        description: "Lowercase hex contract address of the token. Part of the primary key."
+        tests:
+          - not_null
+      - name: chain
+        description: "Uppercase chain name (CELO, XDC, FUSE, ETHEREUM). Part of the primary key."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CELO', 'XDC', 'FUSE', 'ETHEREUM']
+      - name: symbol
+        description: >
+          Short ticker used in this warehouse. Note this is the warehouse convention, not
+          necessarily the string the contract's own `symbol()` returns. See the notes column.
+        tests:
+          - not_null
+      - name: token_name
+        description: "Human-readable token name as reported by the contract."
+      - name: decimals
+        description: >
+          **The authoritative decimal factor.** A raw onchain amount is divided by 10^decimals to
+          produce a human-readable quantity. Measured, never assumed.
+        tests:
+          - not_null
+          - accepted_values:
+              values: [2, 6, 18]
+              quote: false
+      - name: decimals_source
+        description: >
+          How this row's decimal value was established. An entry naming only a `decimals()` call is
+          weaker evidence than one that also names an event cross-check, because a wrapper token's
+          getter can in principle disagree with how amounts are actually used.
+        tests:
+          - not_null
+      - name: is_gd
+        description: "True for the GoodDollar token on this chain. At most one row per chain may be true."
+        tests:
+          - not_null
+      - name: token_standard
+        description: "ERC20 or SuperToken. SuperToken deployments can settle balances without emitting Transfer."
+      - name: notes
+        description: "Free text. Why the row exists, and anything a reader would otherwise get wrong."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - token_address
+            - chain

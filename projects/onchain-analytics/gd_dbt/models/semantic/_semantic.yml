@@ -12,9 +12,15 @@ models:
       "Which wallets are actively claiming?"
 
 
-      **Technical:** Currently a 1:1 passthrough from staging (claim_contract_events).
-      Exists as a named semantic entity so downstream models always have a stable reference
-      point, even if staging logic changes. Grain: one row per claim event (tx_hash + log_index).
+      **Technical:** Reads staging (claim_contract_events) and joins the `tokens` seed to resolve
+      the decimal factor for the GoodDollar token on that chain. Grain: one row per claim event
+      (tx_hash + log_index).
+
+
+      **Why the decimal factor is a join and not a constant:** GoodDollar is an 18-decimal token on
+      Celo and XDC and a 2-decimal token on Fuse and Ethereum. This model previously inherited a
+      hardcoded division by 100, which inflated every GD figure on XDC by 1e16. The factor now comes
+      from the `tokens` seed, where every value was measured against the deployed contract.
     config:
       tags: ['claim']
     columns:
@@ -41,13 +47,29 @@ models:
       - name: contract_address
         description: "Address of the UBI claim contract."
       - name: claimer_address
-        description: "The wallet that claimed. This is how we identify individual users."
+        description: >
+          The whitelisted identity entitled to this claim. **Not necessarily the wallet that
+          received the tokens.** The UBIScheme contract emits the identity root and transfers to
+          `msg.sender`, so a connected wallet receives the GD while the root appears here. Measured
+          at 1.19 percent divergence on Celo. Use this column to count people, not payments.
         tests:
           - not_null
-      - name: amount_raw
-        description: "Raw on-chain amount (technical — use amount_g)."
-      - name: amount_g
-        description: "G$ amount claimed. This is the human-readable value for dashboards."
+      - name: token_address
+        description: "The GoodDollar token contract on this chain, resolved from the tokens seed."
+      - name: token_symbol
+        description: "Warehouse ticker for the token, from the tokens seed."
+      - name: token_decimals
+        description: "The decimal factor applied to produce claim_amount. Measured, not assumed."
+      - name: token_decimals_source
+        description: >
+          How the decimal factor was established. Carried through so a reader can see the evidence
+          rather than inherit it invisibly.
+      - name: claim_amount_raw
+        description: "Exact uint256 as emitted onchain, as a string. The ground truth."
+      - name: claim_amount
+        description: >
+          GD claimed, human readable. Equals claim_amount_raw divided by 10^token_decimals.
+          Replaces the former `amount_g`, which was wrong by 1e16 on XDC.
         tests:
           - not_null
       - name: ingested_at
@@ -86,7 +108,9 @@ models:
         description: "When this person most recently claimed. Stale = inactive user."
       - name: total_claims
         description: "Total number of times this person has claimed on this network."
-      - name: total_amount_g
-        description: "Lifetime G$ earned by this wallet on this network."
+      - name: claim_amount_total
+        description: >
+          Lifetime GD earned by this identity on this network. Renamed from `total_amount_g`, whose
+          values were inflated by 1e16 before the decimals fix.
       - name: active_days
         description: "Number of distinct days this person claimed. Measures engagement consistency."
