@@ -3,65 +3,169 @@ version: 2
 seeds:
   - name: contract_deployments
     description: >
-      **What this is:** Which implementation of each contract was live at which block.
+      **What this is:** Which implementation of each contract was live at which block, for every
+      contract this system reads, on every chain it reads. One row per contract era. 360 rows
+      covering 354 eras across 146 addresses on Celo, XDC, Fuse and Ethereum.
 
 
-      **Why it exists:** Every GoodDollar contract address is a proxy, and the logic behind it has
-      changed. A rule expressed against "the Identity contract" is silently wrong for part of
-      history unless it knows which version it is talking about. This was not theoretical: mapping
+      **Why it exists:** Most GoodDollar contract addresses are proxies, and the logic behind them
+      has changed. A rule expressed against "the Identity contract" is silently wrong for part of
+      history unless it knows which version it is talking about. This was not theoretical: Mapping
       Identity's eras revealed that whitelist expiry changed from a single global period to a
       per-wallet schedule, which invalidated an entire model that had already been specified.
 
 
       **How it was established:** Two independent methods, and the UNION of both. The EIP-1967
-      implementation slot was bisected against archive state, and `Upgraded(address)` logs were
-      collected separately. **Both were load-bearing.** Log collection found zero events for the GD
-      token, because its Superfluid UUPS proxy does not emit the standard event, yet it has seven
-      eras. Bisection separately missed a real UBIScheme upgrade because one probe hit an archive
-      gap. Either method alone produces a confidently wrong answer.
+      implementation slot was bisected against archive state, and upgrade announcement logs were
+      collected separately. **Both were load-bearing**, and the split is recorded per row in
+      `era_evidence`: 134 boundaries were found by both methods, 111 by an announcement alone, 98
+      are a contract creation, and 11 rest on bisection alone with no announcement anywhere.
 
 
-      **Generated, not hand-written.** Produced from measurement artifacts by a generator script
-      rather than transcribed. Re-generate rather than edit rows by hand; transcribing hex
-      addresses is how silent corruption enters a seed.
+      **There is no single upgrade announcement event, and some contracts announce nothing.** 179
+      eras announce with `Upgraded(address)`, 66 with the Superfluid `CodeUpdated(bytes32,address)`,
+      and 115 announce nothing at all. Celo cUSD is the worked example: Nine eras, not one of them
+      announced, every boundary found by bisection. Anything that detects eras from logs alone will
+      report that contract as a single immutable era forever. Read `era_announcement_event` before
+      assuming a selector exists.
+
+
+      **Bind on (chain, proxy_address, era_index), not on a contract name.** Events are added late,
+      removed mid-life, and removed then restored. Of the era-bound event rows in `event_surface`,
+      59 combinations disappear from one era and return in a later one, which a first-and-last era
+      comparison renders as continuously present.
+
+
+      **Generated, not hand-written.** Produced from measurement artifacts by a generator rather
+      than transcribed. Re-generate rather than edit rows by hand; transcribing hex addresses is
+      how silent corruption enters a seed. During the migration that produced this version, a
+      sanitising rule silently turned "Event set identical to V2" into "Event set identical to .",
+      which is that failure happening inside the tooling meant to prevent it. Every field is now
+      diffed against its source after generation.
     config:
       tags: ['seed', 'reference']
     columns:
       - name: chain
-        tests: [not_null]
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CELO', 'XDC', 'FUSE', 'ETHEREUM']
         description: "Uppercase chain name."
+      - name: chain_id
+        tests: [not_null]
+        description: "EVM chain id. 42220 Celo, 50 XDC, 122 Fuse, 1 Ethereum."
       - name: contract_name
         tests: [not_null]
-        description: "Logical contract name, stable across eras."
+        description: >
+          Logical contract name, stable across eras. A name is a label, never evidence: Two
+          published artifact entries named `DAOCreator` point at an address that holds no code on
+          either chain that names it, and whose verified source on a third chain is an old Identity
+          implementation. Identify a contract by its address and its runtime code hash.
+      - name: category
+        tests: [not_null]
+        description: >
+          What the contract is to this system. `gooddollar_owned` and `gooddollar_owned_safe` are
+          deployed and controlled by the protocol. Everything prefixed `third_party_` is in the
+          registry because GoodDollar state passes through it, not because the protocol owns it.
+      - name: provenance
+        tests: [not_null]
+        description: >
+          Which of the three discovery sources found this address. `published` is the deployment
+          artifact, `registry` is the onchain name registry, `discovered` means neither carries it
+          and it was found by asking which contracts hold or move GoodDollar state. Sixteen Celo
+          addresses are here by discovery alone, including every contract that makes the token's
+          streaming behaviour work.
       - name: proxy_address
         tests: [not_null]
         description: "The stable address events are emitted from. Lowercase."
       - name: implementation_address
-        tests: [not_null]
-        description: "The logic contract in force for this era. Lowercase."
+        tests:
+          - not_null:
+              config:
+                where: "era_method != 'no_code_deployed'"
+        description: >
+          The logic contract in force for this era. Lowercase. NULL only on the six rows where
+          nothing is deployed at the address at all, which `era_method` states explicitly.
       - name: implementation_name
-        description: "Verified contract name, or `unknown` where the explorer publishes none."
-      - name: valid_from_block
+        description: >
+          Verified contract name, `unknown` where no explorer publishes one, and `uninitialised`
+          for the eleven eras where a proxy existed with a zero implementation slot. In that window
+          only the proxy's own events can occur and no implementation event can be decoded.
+      - name: era_index
         tests: [not_null]
+        description: "1-based position of this era in the contract's life. Joins to `event_surface`."
+      - name: era_count
+        tests: [not_null]
+        description: "How many eras the contract has in total, so a row can tell whether it is the last one."
+      - name: valid_from_block
+        tests:
+          - not_null:
+              config:
+                where: "era_method != 'no_code_deployed'"
         description: "Inclusive lower bound of this era."
       - name: valid_to_block
-        tests: [not_null]
+        tests:
+          - not_null:
+              config:
+                where: "era_method != 'no_code_deployed'"
         description: "Exclusive upper bound. 9223372036854775807 means current."
-      - name: valid_from_date
-        description: "Date of the upgrade, where known. Convenience only, never join on it."
-      - name: semantics_note
+      - name: is_live
+        description: "True when this is the era in force at the block the inventory was measured at."
+      - name: creation_block
+        description: "Block the address was created at. Take a scan's lower bound from here and never from a declared start block in a configuration file, which has been measured 570 real events late."
+      - name: creation_method
+        description: "How the creation block was established. Fuse prunes its transaction index, so a receipt lookup cannot establish one there and the block is confirmed against the block's own transaction list instead."
+      - name: era_method
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['bisection_and_announcement_union', 'announcement_logs_only', 'single_era_no_proxy_slot', 'no_code_deployed', 'slots_unreadable']
         description: >
-          What changed at this boundary that a model must care about. Empty means the event set was
-          measured identical to the previous era, which is a measurement and not an absence of
-          checking.
+          How this contract's era history as a whole was established. `announcement_logs_only`
+          means no archive state reader exists for that chain, which is the situation on Fuse for
+          all of its eras; those boundaries carry one method, not two. `slots_unreadable` is not
+          the same as `single_era_no_proxy_slot`: An unreadable slot recorded as zero is
+          indistinguishable from an empty one, and re-reading all 85 plain-contract verdicts on
+          that suspicion reclassified one contract that really has four eras.
+      - name: era_evidence
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['slot_bisection_and_announcement_log', 'announcement_log_only', 'slot_bisection_only', 'contract_creation', 'none']
+        description: "What established THIS boundary, as opposed to the contract's history as a whole."
+      - name: era_announcement_event
+        tests: [not_null]
+        description: >
+          The event this boundary announced, or `none`. There are two announcement events in this
+          system and a large population that announces neither. A decoder bound to one of them
+          finds exactly zero for every contract that uses the other, and throws nothing.
+      - name: abi_source
+        description: "Where the interface for this era came from, or `none` for the 19 superseded implementations whose interface could not be obtained. `none` means the event surface for that era is unknown, which is not the same as empty."
+      - name: runtime_code_hash
+        description: >
+          Keccak hash of the deployed runtime bytecode. This is how identity claims are made in
+          this seed. Twenty-five hashes appear on more than one chain, which is evidence that two
+          addresses run the same code; a shared name is not.
+      - name: semantics_note
+        tests: [not_null]
+        description: >
+          Tri-state and never empty, because silence and a finding of no change are different facts.
+          `abi_identical_bodies_unreviewed` means the interface did not change and the
+          implementation was NOT read; it is the honest default and not a clean bill of health, and
+          314 of 354 eras carry it. `reviewed_no_semantic_change` and `carried_from_seed` name what
+          was actually compared. An identical interface implies nothing about behaviour:
+          `authenticationPeriod()` kept its name, signature and return type across one upgrade and
+          changed from reading a stored variable to reading the last element of an options array.
       - name: source
         tests: [not_null]
-        description: "How this row was established."
+        description: "How this row was established, as a single provenance string for the whole generation."
+      - name: notes
+        description: "Free text. Anything a reader would otherwise get wrong."
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - chain
-            - contract_name
+            - proxy_address
             - valid_from_block
 
   - name: chains
@@ -90,7 +194,7 @@ seeds:
       **Two eras with different SHAPES, not just different numbers.** Until block 61,416,834 there
       was one global `authenticationPeriod`, and the contract compared against **whatever it was at
       the moment of the call**, so every reduction moved every existing wallet's expiry
-      retroactively with no event. From 61,416,834 there is no chain-level period at all: each
+      retroactively with no event. From 61,416,834 there is no chain-level period at all: Each
       wallet uses `reverifyDaysOptions[authCount]`, except wallets last authenticated before the
       hardcoded cutoff 1772697574 (2026-03-05T07:59:34Z), which are pinned to the longest option.
 
@@ -136,7 +240,7 @@ seeds:
 
       **How the values were established:** Every `decimals` value here was read from the deployed
       contract with a live `decimals()` call, and for the three chains that carry claim data it was
-      additionally cross-checked against a real event: the `UBIClaimed` amount was compared with the
+      additionally cross-checked against a real event: The `UBIClaimed` amount was compared with the
       ERC20 `Transfer` value emitted in the same transaction. The `decimals_source` column on each
       row records which checks were performed. **Do not add a row without measuring it.**
     config:
