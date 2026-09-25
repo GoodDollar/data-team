@@ -25,12 +25,35 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
-import type { NetworkConfig, ChunkResult, FetchResult } from "./types.js";
+import { normaliseChunk } from "./normalise.js";
+import type { NetworkConfig, ChunkResult, FetchResult, RollbackGuard } from "./types.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKER = join(HERE, "hs-worker.mjs");
 const START = "<<<HS_RESULT_START>>>";
 const END = "<<<HS_RESULT_END>>>";
+
+/** Whether HyperSync can read this chain at all. Two of the four in this set have no index. */
+export function hasHypersync(network: NetworkConfig): boolean {
+  return network.readers.hypersyncUrl !== null;
+}
+
+function hypersyncUrl(network: NetworkConfig): string {
+  const url = network.readers.hypersyncUrl;
+  if (url === null) {
+    throw new Error(
+      `NO_HYPERSYNC: ${network.name} has no HyperSync index. fuse.hypersync.xyz and ` +
+      `eth.hypersync.xyz do not resolve, and the client retries forever so their absence presents ` +
+      `as a timeout rather than as a 404. Use the RPC reader for this chain.`
+    );
+  }
+  return url;
+}
+
+/** A stable short code for the reader that answered, written onto every row it produces. */
+function sourceIdFor(network: NetworkConfig): string {
+  return `hypersync:${new URL(hypersyncUrl(network)).host}`;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -49,6 +72,7 @@ interface WorkerResult {
   height?: number;
   nextBlock?: number | null;
   archiveHeight?: number | null;
+  rollbackGuard?: RollbackGuard | null;
   logs?: any[];
   transactions?: any[];
   blocks?: any[];
@@ -105,12 +129,16 @@ function runWorker(request: Record<string, unknown>, timeoutMs: number): Promise
 export async function getChainTip(network: NetworkConfig): Promise<number | null> {
   for (let attempt = 1; attempt <= CONFIG.HYPERSYNC_RETRIES; attempt++) {
     const r = await runWorker(
-      { op: "height", url: network.url, token: CONFIG.ENVIO_API_TOKEN },
+      { op: "height", url: hypersyncUrl(network), token: CONFIG.ENVIO_API_TOKEN },
       CONFIG.HS_CHUNK_TIMEOUT_MS
     );
-    if (r.ok && typeof r.height === "number") return r.height;
+    // Number.isFinite rather than typeof number, because an endpoint on one chain in this set has
+    // been measured answering with a value that parses to NaN, and NaN IS a number. A guard that
+    // counts answers rather than USABLE answers produced eight state reads at a block that does
+    // not exist.
+    if (r.ok && Number.isFinite(r.height)) return r.height as number;
     log.warn(`getChainTip attempt ${attempt}/${CONFIG.HYPERSYNC_RETRIES} failed for ${network.name}`, {
-      error: r.error, timedOut: r.timedOut,
+      error: r.error, timedOut: r.timedOut, height: r.height,
     });
     if (attempt < CONFIG.HYPERSYNC_RETRIES) await sleep(backoffMs(attempt));
   }
@@ -125,10 +153,11 @@ async function collectChunk(
   toBlockExclusive: number
 ): Promise<ChunkResult> {
   const attempts: string[] = [];
+  const sourceId = sourceIdFor(network);
 
   for (let attempt = 1; attempt <= CONFIG.HYPERSYNC_RETRIES; attempt++) {
     const r = await runWorker(
-      { op: "collect", url: network.url, token: CONFIG.ENVIO_API_TOKEN, addresses, fromBlock, toBlock: toBlockExclusive },
+      { op: "collect", url: hypersyncUrl(network), token: CONFIG.ENVIO_API_TOKEN, addresses, fromBlock, toBlock: toBlockExclusive },
       CONFIG.HS_CHUNK_TIMEOUT_MS
     );
 
@@ -149,18 +178,27 @@ async function collectChunk(
       continue;
     }
 
-    return {
+    const chunk: ChunkResult = {
       fromBlock, toBlock: toBlockExclusive - 1, ok: true,
       logs: r.logs ?? [], transactions: r.transactions ?? [], blocks: r.blocks ?? [],
       nextBlock: r.nextBlock ?? null, archiveHeight: r.archiveHeight ?? null,
+      rollbackGuard: r.rollbackGuard ?? null,
+      sourceKind: "index", sourceId,
       attempts, ms: r.ms,
     };
+    // Normalise at the boundary, once, before anything else touches the chunk. This is the only
+    // place in the pipeline that lowercases an identifier, and it is what makes the merge key
+    // sound: two spellings of one hash are two different keys, and no test on the key can see it.
+    normaliseChunk(chunk);
+    return chunk;
   }
 
   return {
     fromBlock, toBlock: toBlockExclusive - 1, ok: false,
     logs: [], transactions: [], blocks: [],
-    nextBlock: null, archiveHeight: null, attempts, ms: 0,
+    nextBlock: null, archiveHeight: null, rollbackGuard: null,
+    sourceKind: "index", sourceId,
+    attempts, ms: 0,
   };
 }
 
@@ -193,6 +231,12 @@ export async function fetchRange(
     chunksPlanned: chunks.length, chunksOk: 0,
     skipped: [], errors: [], emptyChunks: [],
     logsSeen: 0, complete: false,
+    sourceKind: "index", sourceId: sourceIdFor(network),
+    // One index enumerated this range. HyperSync is a single source, however good it is, and the
+    // grade has to say so: a second independent enumeration is what raises it and this is not one.
+    enumeratingSources: 1,
+    headAtCapture: null,
+    rollbackGuards: [],
   };
 
   const deadline = Date.now() + CONFIG.HS_RANGE_DEADLINE_MS;
@@ -214,6 +258,14 @@ export async function fetchRange(
     } else {
       result.chunksOk += 1;
       result.logsSeen += chunk.logs.length;
+      // archiveHeight is the reader's own view of the chain head, which is what makes
+      // confirmations_at_capture on each row reproducible. The highest one seen is kept, because
+      // the chain advances during a long range and the newest reading is the one that describes
+      // the blocks most at risk.
+      if (chunk.archiveHeight !== null && (result.headAtCapture === null || chunk.archiveHeight > result.headAtCapture)) {
+        result.headAtCapture = chunk.archiveHeight;
+      }
+      if (chunk.rollbackGuard) result.rollbackGuards.push(chunk.rollbackGuard);
       if (chunk.logs.length === 0) result.emptyChunks.push([c.from, c.to]);
       await onChunk(chunk);
     }

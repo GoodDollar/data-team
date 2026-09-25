@@ -45,13 +45,27 @@ async function main() {
     fromBlock: req.fromBlock,
     toBlock: req.toBlock,
     logs: [{ address: req.addresses }],
+    // EVERY FIELD HERE IS TAKEN FROM THE INSTALLED CLIENT'S OWN ENUMS, NOT FROM RECOLLECTION.
+    // LogField offers twelve and the previous selection requested eleven. The one it left out was
+    // Removed, which is why the v4 `removed` column was described as unpopulatable: the reader
+    // offers it and nobody asked. A log the source reports as removed by a reorganisation is the
+    // single most important thing this pipeline can be told, and it was being discarded at the
+    // request.
+    //
+    // The transaction list gained Gas, Kind, Input, ContractAddress, BlockNumber and BlockHash.
+    // Those are not extras: the v4 Transactions table declares gas_limit, tx_type,
+    // input_selector, contract_created, block_number and block_hash, and all six were offered by
+    // the client and unrequested. Note that the gas LIMIT is `Gas` while `GasUsed` is the receipt
+    // figure; taking the wrong one of a similarly named pair is a defect this project has
+    // shipped before.
     fieldSelection: {
       log: [
         "BlockNumber", "BlockHash", "TransactionHash", "TransactionIndex",
-        "LogIndex", "Address", "Data", "Topic0", "Topic1", "Topic2", "Topic3",
+        "LogIndex", "Address", "Data", "Topic0", "Topic1", "Topic2", "Topic3", "Removed",
       ],
       transaction: [
-        "Hash", "From", "To", "Value", "Status", "Nonce", "GasUsed", "EffectiveGasPrice",
+        "Hash", "BlockNumber", "BlockHash", "TransactionIndex", "From", "To", "Value",
+        "Status", "Nonce", "Gas", "GasUsed", "EffectiveGasPrice", "Input", "ContractAddress", "Kind",
       ],
       block: ["Number", "Hash", "Timestamp"],
     },
@@ -62,6 +76,12 @@ async function main() {
   // nextBlock is how a short collection announces itself. The client can return fewer blocks
   // than asked for without raising anything, and a caller that ignores nextBlock reads a
   // truncated range as a complete one. The parent refuses any chunk where this is short.
+  //
+  // rollbackGuard is how the client announces that blocks it previously served may be rolled
+  // back, and the previous version of this file DROPPED IT. An exhaustive search of the pipeline
+  // for rollback, orphan or reorg-removal handling returned nothing at all, so the disappearing
+  // log shape was undetectable: the detector was offered by the client and never read. It is
+  // passed through here and recorded by the caller.
   emit({
     ok: true,
     op: "collect",
@@ -69,6 +89,7 @@ async function main() {
     toBlock: req.toBlock,
     nextBlock: res.nextBlock === undefined || res.nextBlock === null ? null : Number(res.nextBlock),
     archiveHeight: res.archiveHeight === undefined || res.archiveHeight === null ? null : Number(res.archiveHeight),
+    rollbackGuard: res.rollbackGuard ?? null,
     logs: res.data.logs ?? [],
     transactions: res.data.transactions ?? [],
     blocks: res.data.blocks ?? [],

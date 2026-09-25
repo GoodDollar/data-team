@@ -20,14 +20,27 @@
  * is open at both ends. They are reported separately rather than averaged in.
  */
 
-import { CONTRACTS, oracleFor } from "./config.js";
+import { oraclesFor, selectedNetworks, RAW_LOGS_TABLE } from "./config.js";
+import type { OracleConfig } from "./config.js";
 import { log, RUN_ID } from "./log.js";
 import {
   pinBlock, readDays, readPeriodStart, readCurrentDay, readInviteStats, dayOf,
 } from "./oracle.js";
-import { warehouseDailyTotals, recordReconciliation, getMaxBlockTimestamp, bqQuery } from "./bq.js";
-import { fullTableName } from "./config.js";
+import { warehouseDailyTotals, recordReconciliation, getMaxBlockTimestamp, bqQuery, allHistory } from "./bq.js";
+import { keccak256, toHex } from "viem";
 import type { PipelineOpts } from "./types.js";
+
+/**
+ * The event selector, COMPUTED from a signature, never recalled.
+ *
+ * L0-3 binds on topic0 and never on an event name, and that is not a style rule. The GD token
+ * declares two different events both named Transfer, a three argument and a four argument form,
+ * with different selectors. A hand-written ABI with one wrong parameter type changes the selector
+ * completely, so a topic-filtered query on it finds precisely zero matches forever with no error,
+ * which is indistinguishable from a genuinely inactive contract. That has already produced a
+ * false "confirmed zero activity" finding in this project.
+ */
+export const topic0Of = (signature: string): string => keccak256(toHex(signature));
 
 export interface DayVerdict {
   day: number;
@@ -36,14 +49,16 @@ export interface DayVerdict {
   storedRows: number;
   distinctRows: number;
   warehouseAmountRaw: bigint;
+  unreadableRows: number;
   countGap: number;
   amountGapRaw: bigint;
-  verdict: "exact" | "missing" | "duplicated" | "surplus" | "oracle_unreadable";
+  verdict: "exact" | "missing" | "duplicated" | "surplus" | "oracle_unreadable" | "amount_unreadable";
 }
 
 export interface ReconcileResult {
-  tableId: string;
+  chainId: number;
   network: string;
+  contractAddress: string;
   pinnedBlock: number;
   firstDay: number;
   lastDay: number;
@@ -55,16 +70,23 @@ export interface ReconcileResult {
   clean: boolean;
 }
 
-/** The protocol days the warehouse actually covers, from the stored block timestamps. */
+/**
+ * The protocol days the warehouse actually covers, from the stored block timestamps.
+ *
+ * Reads through the all-history view: a MIN and MAX over a contract's whole history has no
+ * natural window, which is exactly the shape require_partition_filter refuses.
+ */
 async function warehouseDaySpan(
-  tableId: string,
-  network: string,
+  chainId: number,
+  contractAddress: string,
+  topic0: string,
   periodStart: number
 ): Promise<{ first: number; last: number } | null> {
   const rows = await bqQuery(
     `SELECT MIN(block_timestamp) AS lo, MAX(block_timestamp) AS hi
-     FROM ${fullTableName(tableId)} WHERE network = @network`,
-    { network }
+     FROM ${allHistory(RAW_LOGS_TABLE)}
+     WHERE chain_id = @chainId AND contract_address = @address AND topic0 = @topic0`,
+    { chainId, address: contractAddress.toLowerCase(), topic0: topic0.toLowerCase() }
   );
   const lo = rows[0]?.lo, hi = rows[0]?.hi;
   if (!lo || !hi) return null;
@@ -74,24 +96,22 @@ async function warehouseDaySpan(
 }
 
 /**
- * Reconcile one daily-ledger table against its contract.
+ * Reconcile one daily-ledger contract against its own onchain record.
  *
  * `days` limits the check to named protocol days, which is what makes a targeted re-check after
  * a repair cheap. Omit it to check the whole warehouse window.
  */
 export async function reconcileDaily(
-  tableId: string,
-  networkName: string,
-  amountColumn: string,
+  oracle: OracleConfig,
   days?: number[]
 ): Promise<ReconcileResult | null> {
-  const oracle = oracleFor(tableId, networkName);
-  if (!oracle || oracle.kind !== "ubi_daily") return null;
+  if (oracle.kind !== "ubi_daily") return null;
   const network = oracle.network;
+  const topic0 = topic0Of(oracle.eventSignature);
 
   const pin = await pinBlock(network);
   if (!pin.ok || pin.value === null) {
-    throw new Error(`Cannot pin a block on ${networkName}: ${pin.errors.join("; ")}`);
+    throw new Error(`Cannot pin a block on ${network.name}: ${pin.errors.join("; ")}`);
   }
   const block = pin.value;
 
@@ -109,9 +129,9 @@ export async function reconcileDaily(
   const cd = await readCurrentDay(network, oracle.address, block);
   const currentDay = cd.ok && cd.value !== null ? cd.value : null;
 
-  const span = await warehouseDaySpan(tableId, networkName, periodStart);
+  const span = await warehouseDaySpan(oracle.network.chainId, oracle.address, topic0, periodStart);
   if (!span) {
-    log.warn(`${tableId}/${networkName} holds no rows; nothing to reconcile`);
+    log.warn(`${RAW_LOGS_TABLE} holds no ${oracle.eventSignature} rows for ${oracle.address}; nothing to reconcile`);
     return null;
   }
 
@@ -132,15 +152,16 @@ export async function reconcileDaily(
     }
   }
   if (wantedDays.length === 0) {
-    log.warn(`No frozen days to reconcile for ${tableId}/${networkName}`);
+    log.warn(`No frozen days to reconcile for ${oracle.address} on ${network.name}`);
     return null;
   }
   const firstDay = wantedDays[0];
   const lastDay = wantedDays[wantedDays.length - 1];
 
   log.info(
-    `Reconciling ${tableId}/${networkName}, ${wantedDays.length} protocol day(s) in ${firstDay}..${lastDay} at block ${block}`,
-    { pinnedBlock: block, periodStart, currentDay }
+    `Reconciling ${oracle.address} on ${network.name}, ${wantedDays.length} protocol day(s) in ` +
+    `${firstDay}..${lastDay} at block ${block}`,
+    { pinnedBlock: block, periodStart, currentDay, topic0 }
   );
 
   const oracleDays = await readDays(
@@ -148,20 +169,21 @@ export async function reconcileDaily(
     (done, total) => log.info(`  oracle ${done}/${total} days`)
   );
   const warehouse = await warehouseDailyTotals(
-    tableId, networkName, periodStart, amountColumn, firstDay, lastDay
+    network.chainId, oracle.address, topic0, periodStart, oracle.amountWordIndex, firstDay, lastDay
   );
 
   const verdicts: DayVerdict[] = [];
   const oracleErrors: string[] = [];
 
   for (const od of oracleDays) {
-    const w = warehouse.get(od.day) ?? { stored: 0, distinct: 0, amountRaw: 0n };
+    const w = warehouse.get(od.day) ?? { stored: 0, distinct: 0, amountRaw: 0n, unreadable: 0 };
 
     if (!od.ok || od.claimers === null || od.amountRaw === null) {
       oracleErrors.push(`day ${od.day}: ${od.errors.join("; ")}`);
       verdicts.push({
         day: od.day, oracleCount: -1, oracleAmountRaw: 0n,
         storedRows: w.stored, distinctRows: w.distinct, warehouseAmountRaw: w.amountRaw,
+        unreadableRows: w.unreadable,
         countGap: 0, amountGapRaw: 0n, verdict: "oracle_unreadable",
       });
       continue;
@@ -172,7 +194,10 @@ export async function reconcileDaily(
     const amountGap = od.amountRaw - w.amountRaw;
 
     let verdict: DayVerdict["verdict"];
-    if (countGap === 0 && amountGap === 0n && w.stored === w.distinct) verdict = "exact";
+    // A value that could not be decoded out of log_data is NOT a zero. Summing it as one would
+    // report a false amount gap, or worse, hide a real one.
+    if (w.unreadable > 0) verdict = "amount_unreadable";
+    else if (countGap === 0 && amountGap === 0n && w.stored === w.distinct) verdict = "exact";
     else if (countGap > 0) verdict = "missing";
     else if (countGap < 0) verdict = "surplus";
     else verdict = "duplicated";
@@ -180,13 +205,15 @@ export async function reconcileDaily(
     verdicts.push({
       day: od.day, oracleCount, oracleAmountRaw: od.amountRaw,
       storedRows: w.stored, distinctRows: w.distinct, warehouseAmountRaw: w.amountRaw,
+      unreadableRows: w.unreadable,
       countGap, amountGapRaw: amountGap, verdict,
     });
   }
 
   const exact = verdicts.filter((v) => v.verdict === "exact").length;
   const result: ReconcileResult = {
-    tableId, network: networkName, pinnedBlock: block,
+    chainId: network.chainId, network: network.name, contractAddress: oracle.address,
+    pinnedBlock: block,
     firstDay, lastDay, interiorDays: verdicts.length, exactDays: exact,
     days: verdicts, edgeDays: [span.first, span.last],
     oracleErrors,
@@ -195,8 +222,9 @@ export async function reconcileDaily(
 
   await recordReconciliation(verdicts.map((v) => ({
     run_id: RUN_ID,
-    network: networkName,
-    table_id: tableId,
+    chain_id: network.chainId,
+    network: network.name,
+    contract_address: oracle.address,
     protocol_day: v.day,
     oracle_block: block,
     oracle_count: v.oracleCount,
@@ -214,8 +242,9 @@ export async function reconcileDaily(
 }
 
 export interface StatsVerdict {
-  tableId: string;
+  chainId: number;
   network: string;
+  contractAddress: string;
   pinnedBlock: number;
   windowStartBlock: number;
   windowEndBlock: number;
@@ -230,29 +259,30 @@ export interface StatsVerdict {
 }
 
 /**
- * Reconcile the invites table against the contract's lifetime counters.
+ * Reconcile the invite bounty logs against the contract's lifetime counters.
  *
  * stats() is cumulative, so the warehouse's own block window is isolated by subtraction: read
  * the counter at the block before the first stored event and at the last stored event. No log
  * query appears anywhere in this chain of evidence.
+ *
+ * The rows are selected by computed topic0 rather than by an event_name column, because there is
+ * no event_name column any more and because binding on a name is what L0-3 forbids.
  */
-export async function reconcileInviteStats(
-  tableId: string,
-  networkName: string
-): Promise<StatsVerdict | null> {
-  const oracle = oracleFor(tableId, networkName);
-  if (!oracle || oracle.kind !== "invites_stats") return null;
+export async function reconcileInviteStats(oracle: OracleConfig): Promise<StatsVerdict | null> {
+  if (oracle.kind !== "invites_stats") return null;
   const network = oracle.network;
+  const topic0 = topic0Of(oracle.eventSignature);
 
   const rows = await bqQuery(
     `SELECT MIN(block_number) AS lo, MAX(block_number) AS hi,
-            COUNTIF(event_name = 'InviterBounty') AS bounty_rows,
-            COUNT(DISTINCT IF(event_name = 'InviterBounty', FORMAT('%s|%d', tx_hash, log_index), NULL)) AS bounty_keys
-     FROM ${fullTableName(tableId)} WHERE network = @network`,
-    { network: networkName }
+            COUNT(*) AS bounty_rows,
+            COUNT(DISTINCT FORMAT('%s|%d', tx_hash, log_index)) AS bounty_keys
+     FROM ${allHistory(RAW_LOGS_TABLE)}
+     WHERE chain_id = @chainId AND contract_address = @address AND topic0 = @topic0`,
+    { chainId: network.chainId, address: oracle.address, topic0 }
   );
   if (!rows[0]?.lo) {
-    log.warn(`${tableId}/${networkName} holds no rows; nothing to reconcile`);
+    log.warn(`${RAW_LOGS_TABLE} holds no ${oracle.eventSignature} rows for ${oracle.address}; nothing to reconcile`);
     return null;
   }
 
@@ -268,7 +298,8 @@ export async function reconcileInviteStats(
   if (!end.ok) errors.push(`stats() at ${windowEndBlock}: ${end.errors.join("; ")}`);
   if (!start.ok || !end.ok || !start.value || !end.value) {
     return {
-      tableId, network: networkName, pinnedBlock: pin.value ?? 0,
+      chainId: network.chainId, network: network.name, contractAddress: oracle.address,
+      pinnedBlock: pin.value ?? 0,
       windowStartBlock, windowEndBlock,
       bountiesAtStart: 0n, bountiesAtEnd: 0n, bountyDelta: 0n,
       warehouseBountyRows: Number(rows[0].bounty_rows ?? 0),
@@ -282,7 +313,8 @@ export async function reconcileInviteStats(
   const gap = Number(delta) - distinct;
 
   return {
-    tableId, network: networkName, pinnedBlock: pin.value ?? 0,
+    chainId: network.chainId, network: network.name, contractAddress: oracle.address,
+    pinnedBlock: pin.value ?? 0,
     windowStartBlock, windowEndBlock,
     bountiesAtStart: start.value.bountiesPaid,
     bountiesAtEnd: end.value.bountiesPaid,
@@ -295,61 +327,64 @@ export async function reconcileInviteStats(
   };
 }
 
-/** The verify mode. Returns true when everything reconciles. */
+/**
+ * The verify mode. Returns true when everything reconciles.
+ *
+ * TWO CONTRACTS OUT OF 146 PUBLISH A USABLE LEDGER, and that is stated here rather than implied
+ * by silence. This is the only EXTERNAL evidence this warehouse has, and it covers about 1.4
+ * percent of its surface. Coverage, which covers all of it, is a different question and is
+ * answered by the coverage mode.
+ */
 export async function runVerify(opts: PipelineOpts): Promise<boolean> {
-  const wanted = opts.contracts;
   let clean = true;
+  const oracles = oraclesFor(selectedNetworks(opts.chains));
 
-  for (const cfg of CONTRACTS) {
-    if (wanted && !wanted.includes(cfg.tableId)) continue;
-    for (const binding of cfg.networkBindings) {
-      const oracle = oracleFor(cfg.tableId, binding.network.name);
-      if (!oracle) {
-        log.warn(`No oracle for ${cfg.tableId}/${binding.network.name}: cannot reconcile, only self-check`);
-        continue;
-      }
+  if (oracles.length === 0) {
+    log.warn(`No contract oracle exists on the selected chain(s), so nothing can be checked against the chain here`);
+    return true;
+  }
 
-      if (oracle.kind === "ubi_daily") {
-        const r = await reconcileDaily(cfg.tableId, binding.network.name, "amount", opts.days);
-        if (!r) continue;
-        const bad = r.days.filter((d) => d.verdict !== "exact");
-        log.info(
-          `${cfg.tableId}/${binding.network.name}: ${r.exactDays}/${r.interiorDays} protocol days reconcile exactly ` +
-          `at block ${r.pinnedBlock}`
+  for (const oracle of oracles) {
+    const label = `${oracle.address} on ${oracle.network.name}`;
+
+    if (oracle.kind === "ubi_daily") {
+      const r = await reconcileDaily(oracle, opts.days);
+      if (!r) continue;
+      const bad = r.days.filter((d) => d.verdict !== "exact");
+      log.info(
+        `${label}: ${r.exactDays}/${r.interiorDays} protocol days reconcile exactly at block ${r.pinnedBlock}`
+      );
+      for (const d of bad.slice(0, 50)) {
+        log.error(
+          `  day ${d.day} ${d.verdict}: contract ${d.oracleCount}, warehouse ${d.distinctRows} distinct ` +
+          `(${d.storedRows} stored), count gap ${d.countGap}, amount gap ${d.amountGapRaw} raw units` +
+          (d.unreadableRows > 0 ? `, ${d.unreadableRows} row(s) whose amount could not be decoded` : "")
         );
-        for (const d of bad.slice(0, 50)) {
-          log.error(
-            `  day ${d.day} ${d.verdict}: contract ${d.oracleCount}, warehouse ${d.distinctRows} distinct ` +
-            `(${d.storedRows} stored), count gap ${d.countGap}, amount gap ${d.amountGapRaw} raw units`
-          );
-        }
-        if (r.oracleErrors.length > 0) {
-          log.error(`  ${r.oracleErrors.length} day(s) the oracle could not be read, which is not a pass`);
-        }
-        log.info(`  edge days ${r.edgeDays.join(" and ")} are partial by construction and excluded`);
-        if (!r.clean) clean = false;
       }
-
-      if (oracle.kind === "invites_stats") {
-        const r = await reconcileInviteStats(cfg.tableId, binding.network.name);
-        if (!r) continue;
-        log.info(
-          `${cfg.tableId}/${binding.network.name}: contract counted ${r.bountyDelta} bounties over blocks ` +
-          `${r.windowStartBlock}..${r.windowEndBlock}, warehouse holds ${r.warehouseDistinctBounties} distinct ` +
-          `(${r.warehouseBountyRows} stored)`
-        );
-        if (!r.clean) {
-          log.error(`  gap ${r.gap}, phantom rows ${r.warehouseBountyRows - r.warehouseDistinctBounties}`);
-          for (const e of r.errors) log.error(`  ${e}`);
-          clean = false;
-        }
+      if (r.oracleErrors.length > 0) {
+        log.error(`  ${r.oracleErrors.length} day(s) the oracle could not be read, which is not a pass`);
       }
+      log.info(`  edge days ${r.edgeDays.join(" and ")} are partial by construction and excluded`);
+      if (!r.clean) clean = false;
+    }
 
-      const maxTs = await getMaxBlockTimestamp(cfg.tableId, binding.network.name);
-      if (maxTs) {
-        log.info(`  newest block_timestamp: ${maxTs.toISOString()}`);
+    if (oracle.kind === "invites_stats") {
+      const r = await reconcileInviteStats(oracle);
+      if (!r) continue;
+      log.info(
+        `${label}: contract counted ${r.bountyDelta} bounties over blocks ` +
+        `${r.windowStartBlock}..${r.windowEndBlock}, warehouse holds ${r.warehouseDistinctBounties} distinct ` +
+        `(${r.warehouseBountyRows} stored)`
+      );
+      if (!r.clean) {
+        log.error(`  gap ${r.gap}, phantom rows ${r.warehouseBountyRows - r.warehouseDistinctBounties}`);
+        for (const e of r.errors) log.error(`  ${e}`);
+        clean = false;
       }
     }
+
+    const maxTs = await getMaxBlockTimestamp(RAW_LOGS_TABLE, oracle.network.chainId);
+    if (maxTs) log.info(`  newest block_timestamp on chain ${oracle.network.chainId}: ${maxTs.toISOString()}`);
   }
 
   return clean;
