@@ -50,10 +50,19 @@ Tracks the full invite lifecycle: signup → claiming activity → eligibility �
 
 ## Networks
 
-GoodDollar operates across three blockchains:
-- **XDC** — Primary network (majority of activity)
-- **CELO** — Secondary network
-- **Ethereum/Fuse** — Legacy network (minimal current activity)
+**This release covers Celo, XDC and Ethereum. Fuse is out, dropped 2026-09-28.**
+
+- **XDC** - in the release and ingested. Majority of current activity.
+- **CELO** - in the release and ingested.
+- **Ethereum** - in the release, deliberately not ingested here. No model reads an Ethereum
+  contract today.
+- **Fuse** - dropped from the release. Its reference-seed rows are retained as a record of what
+  was measured, so you will still see Fuse rows in the `chains`, `contract_deployments`,
+  `event_surface` and `tokens` seeds. **No model above the raw layer reads them.** If a number on
+  this site looks like it should include Fuse, it does not.
+
+Full record, including why Fuse was dropped and what it would take to bring it back:
+`docs/release-scope.md` in the repository.
 
 ## How to Use This Site
 
