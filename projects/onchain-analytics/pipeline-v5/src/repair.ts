@@ -35,7 +35,7 @@
 import { selectedNetworks, RAW_LOGS_TABLE, TRANSACTIONS_TABLE, oraclesFor, networkByChainId } from "./config.js";
 import { log } from "./log.js";
 import { dedupTable } from "./bq.js";
-import { targetsFor } from "./registry.js";
+import { targetsFor, releaseScopedNetworks } from "./registry.js";
 import { loadCoverage, openGaps } from "./coverage.js";
 import { processTarget } from "./pipeline.js";
 import { reconcileDaily } from "./reconcile.js";
@@ -45,7 +45,7 @@ import type { PipelineOpts } from "./types.js";
 export async function runDedup(opts: PipelineOpts): Promise<boolean> {
   let clean = true;
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const tableId of [RAW_LOGS_TABLE, TRANSACTIONS_TABLE]) {
       const r = await dedupTable(tableId, network.chainId, !!opts.dryRun);
       if (opts.dryRun) {
@@ -77,7 +77,7 @@ export async function runDedup(opts: PipelineOpts): Promise<boolean> {
 export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
   let clean = true;
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const target of targetsFor(network, { addresses: opts.addresses })) {
       const captures = await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address);
       const gaps = openGaps(captures);
@@ -114,7 +114,7 @@ export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
 export async function runRepair(opts: PipelineOpts): Promise<boolean> {
   let allClean = true;
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const target of targetsFor(network, { addresses: opts.addresses })) {
       const captures = await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address);
       const gaps = openGaps(captures);
@@ -133,7 +133,13 @@ export async function runRepair(opts: PipelineOpts): Promise<boolean> {
         try {
           // The same code path an ordinary ingestion uses, over a named range. Re-reading is free
           // of duplicates under MERGE, so over-covering a gap costs time and nothing else.
-          await processTarget(target, { mode: "backfill", fromBlock: from, toBlock: to });
+          const outcome = await processTarget(target, { mode: "backfill", fromBlock: from, toBlock: to });
+          // A repair that was REFUSED is not a repair. Before the outcome type existed this
+          // returned 0 and read here as a clean re-read, so a refused gap was reported healed.
+          if (outcome.kind !== "completed") {
+            log.error(`  repair of ${from}..${to} did not complete (${outcome.kind}): ${outcome.detail}`);
+            allClean = false;
+          }
         } catch (e: any) {
           log.error(`  repair of ${from}..${to} did not complete: ${e.message}`);
           allClean = false;

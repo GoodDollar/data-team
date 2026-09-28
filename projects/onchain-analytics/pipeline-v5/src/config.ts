@@ -46,6 +46,18 @@ export const CONFIG = {
   /** Written onto every PipelineRuns row, so a defect is attributable to the code that wrote it. */
   PIPELINE_VERSION: env("PIPELINE_VERSION", "6.0.0-l0v4"),
 
+  /**
+   * The release this binary was built from, and the remediation plan it is bound to.
+   *
+   * Plan section 1.1: every executable writer is bound to an immutable plan hash. Both are NULL
+   * until a release process sets them, and NULL is the honest value: a hash invented by the
+   * program it is supposed to bind would bind nothing. Phase 13 sets `RELEASE_SHA` at publish and
+   * `PLAN_HASH` is the 64-character lowercase hex SHA-256 of the plan file, which is
+   * 9dcde225459127c4da2beadf9094fd894fe193010f39cb70c0753dd874853e26 today.
+   */
+  RELEASE_SHA: env("RELEASE_SHA", "") || null,
+  PLAN_HASH: env("PLAN_HASH", "") || null,
+
   /** Rows buffered before a write. Writes are always flushed on a BLOCK boundary regardless. */
   CHUNK_SIZE_TARGET: envInt("CHUNK_SIZE_TARGET", 50_000),
 

@@ -22,6 +22,7 @@
 
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
+import { getRpcTransport } from "./adapters.js";
 import type { NetworkConfig } from "./types.js";
 
 let idCounter = 0;
@@ -44,7 +45,10 @@ export async function rpcCall(
 ): Promise<RpcResult> {
   const body = JSON.stringify({ jsonrpc: "2.0", id: ++idCounter, method, params });
   try {
-    const res = await fetch(url, {
+    // Through the transport adapter rather than global fetch, so a test can read the exact
+    // envelope this call puts on the wire. SA-C7 was a defect that only exists on the wire: a
+    // read the caller believed was pinned sent `latest`, and no return value could show it.
+    const res = await getRpcTransport()(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body,

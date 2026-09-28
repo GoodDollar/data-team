@@ -33,10 +33,19 @@ import {
 } from "./config.js";
 import { log } from "./log.js";
 import { windowPredicate, windowForSpan, partitionsSpanned } from "./window.js";
+import {
+  getBigQueryClient, setBigQueryFactory, getWriteLock,
+  type BigQueryClientLike,
+} from "./adapters.js";
 import type { SchemaField, PipelineRunRecord, CoverageRecord, MergeWindow } from "./types.js";
 
-export const bigquery = new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID });
-const dataset = bigquery.dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
+// The real client is registered as a FACTORY rather than constructed here. Constructing it at
+// import time resolved credentials as a side effect of importing this module, so any test that
+// reached bq.ts transitively needed a credential to run at all.
+setBigQueryFactory(() => new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID }) as unknown as BigQueryClientLike);
+
+const datasetHandle = () =>
+  getBigQueryClient().dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
 
 // -- Retry helpers --
 
@@ -77,7 +86,7 @@ export async function bqQuery(
   let lastErr: any;
   for (let attempt = 1; attempt <= CONFIG.BQ_RETRIES; attempt++) {
     try {
-      const [rows] = await bigquery.query({
+      const [rows] = await getBigQueryClient().query({
         query: sql, params, types, projectId: CONFIG.GCP_PROJECT_ID,
       });
       return rows;
@@ -161,7 +170,7 @@ export async function countRowsInRange(
  * path survive the table gaining columns, which it already has once.
  */
 export async function liveColumns(tableId: string): Promise<Set<string>> {
-  const [metadata] = await dataset.table(tableId).getMetadata();
+  const [metadata] = await datasetHandle().table(tableId).getMetadata();
   return new Set<string>((metadata.schema?.fields ?? []).map((f: any) => f.name));
 }
 
@@ -197,7 +206,33 @@ export async function ensureInfraTables(): Promise<void> {
       captures_planned INT64,
       captures_ok INT64,
       captures_failed INT64,
-      pipeline_version STRING
+      pipeline_version STRING,
+      execution_status STRING,
+      units_planned INT64,
+      units_attempted INT64,
+      units_completed INT64,
+      units_noop INT64,
+      units_refused INT64,
+      units_unsupported INT64,
+      units_failed INT64,
+      outcome_counts_by_grain JSON,
+      release_sha STRING,
+      plan_hash STRING,
+      parent_run_id STRING,
+      child_plan_stage STRING,
+      child_plan_root_hash STRING,
+      child_plan_hash STRING,
+      child_ordinal INT64,
+      stage_child_ordinal INT64,
+      stage_child_count INT64,
+      bigquery_job_ledger JSON,
+      job_ledger_hash STRING,
+      work_jobs_terminal BOOL,
+      terminalizer_job_id STRING,
+      closure_status STRING,
+      terminalized_at TIMESTAMP,
+      terminalized_row_hash STRING,
+      closure_receipt_uri STRING
     )
     PARTITION BY DATE(started_at)
   `);
@@ -274,6 +309,20 @@ export async function ensureInfraTables(): Promise<void> {
   ]);
   await assertColumns("PipelineRuns", [
     "chains_processed", "captures_planned", "captures_ok", "captures_failed", "pipeline_version",
+    // Plan Phase 3 task 11. A dataset that predates the outcome migration fails HERE, at startup,
+    // naming the file to run, rather than at the INSERT after a whole run has already happened.
+    "execution_status", "units_planned", "units_attempted", "units_completed", "units_noop",
+    "units_refused", "units_unsupported", "units_failed", "outcome_counts_by_grain",
+    "release_sha", "plan_hash",
+    // The job-ledger and closure columns. This pipeline writes none of them; the mutation broker
+    // and the terminalizer do, in Phases 5 and 14. They are asserted here anyway, because a
+    // half-applied migration is the state that produces a run which believes it can close itself
+    // and then cannot.
+    "parent_run_id", "child_plan_stage", "child_plan_root_hash", "child_plan_hash",
+    "child_ordinal", "stage_child_ordinal", "stage_child_count",
+    "bigquery_job_ledger", "job_ledger_hash", "work_jobs_terminal",
+    "terminalizer_job_id", "closure_status", "terminalized_at",
+    "terminalized_row_hash", "closure_receipt_uri",
   ]);
 }
 
@@ -304,10 +353,14 @@ export async function recordPipelineRun(record: PipelineRunRecord): Promise<void
     `INSERT INTO ${fullTableName("PipelineRuns")}
      (run_id, mode, started_at, completed_at, exit_code, total_rows_merged, contracts_processed,
       contracts_failed, host, error_message, chains_processed, captures_planned, captures_ok,
-      captures_failed, pipeline_version)
+      captures_failed, pipeline_version, execution_status, units_planned, units_attempted,
+      units_completed, units_noop, units_refused, units_unsupported, units_failed,
+      outcome_counts_by_grain, release_sha, plan_hash)
      VALUES (@runId, @mode, TIMESTAMP(@startedAt), TIMESTAMP(@completedAt), @exitCode, @totalRowsMerged,
       @contractsProcessed, @contractsFailed, @host, @errorMessage, @chainsProcessed, @capturesPlanned,
-      @capturesOk, @capturesFailed, @pipelineVersion)`,
+      @capturesOk, @capturesFailed, @pipelineVersion, @executionStatus, @unitsPlanned, @unitsAttempted,
+      @unitsCompleted, @unitsNoop, @unitsRefused, @unitsUnsupported, @unitsFailed,
+      PARSE_JSON(@outcomeCountsByGrain), @releaseSha, @planHash)`,
     {
       runId: record.runId,
       mode: record.mode,
@@ -324,6 +377,17 @@ export async function recordPipelineRun(record: PipelineRunRecord): Promise<void
       capturesOk: record.capturesOk,
       capturesFailed: record.capturesFailed,
       pipelineVersion: record.pipelineVersion,
+      executionStatus: record.executionStatus,
+      unitsPlanned: record.unitsPlanned,
+      unitsAttempted: record.unitsAttempted,
+      unitsCompleted: record.unitsCompleted,
+      unitsNoop: record.unitsNoop,
+      unitsRefused: record.unitsRefused,
+      unitsUnsupported: record.unitsUnsupported,
+      unitsFailed: record.unitsFailed,
+      outcomeCountsByGrain: record.outcomeCountsByGrain,
+      releaseSha: record.releaseSha,
+      planHash: record.planHash,
     },
     {
       runId: "STRING", mode: "STRING", startedAt: "STRING", completedAt: "STRING",
@@ -331,6 +395,14 @@ export async function recordPipelineRun(record: PipelineRunRecord): Promise<void
       contractsFailed: "INT64", host: "STRING", errorMessage: "STRING",
       chainsProcessed: "STRING", capturesPlanned: "INT64", capturesOk: "INT64",
       capturesFailed: "INT64", pipelineVersion: "STRING",
+      // Every one of these is typed even though none is nullable today, because two of them ARE
+      // legitimately null before a release sets them and the client cannot infer a type from a
+      // JS null: it rejects the whole statement with "Parameter types must be provided for null
+      // values". A live run of this pipeline lost a coverage row to exactly that.
+      executionStatus: "STRING", unitsPlanned: "INT64", unitsAttempted: "INT64",
+      unitsCompleted: "INT64", unitsNoop: "INT64", unitsRefused: "INT64",
+      unitsUnsupported: "INT64", unitsFailed: "INT64", outcomeCountsByGrain: "STRING",
+      releaseSha: "STRING", planHash: "STRING",
     }
   );
 }
@@ -492,12 +564,24 @@ export async function stageAndMerge(
         WHERE ${keyJoin}
       )`;
 
+  // THE SEAM WHERE THE MISSING CONTROL WOULD GO. C1: nothing here excludes a second process from
+  // measuring, merging and measuring the same key at the same time. The default lock grants
+  // instantly and serialises nothing, which is exactly what this pipeline does today. It is named
+  // rather than absent so a test can install a real one and show the difference, and so the phase
+  // that owns the fix has one place to put it. Acquiring it changes no behaviour.
+  const lockHandle = await getWriteLock().acquire(tableId, window);
+  if (lockHandle === null) {
+    throw new Error(
+      `WRITE_LOCK_REFUSED: another writer holds ${tableId} over ${window.fromTs}..${window.toTs}`
+    );
+  }
+
   try {
     const ndjson = deduped.map((r) => JSON.stringify(r)).join("\n");
     const tmpFile = join(tmpdir(), `bq_staging_${runId}_${randomUUID().slice(0, 8)}.ndjson`);
     writeFileSync(tmpFile, ndjson);
 
-    const tbl = dataset.table(staging);
+    const tbl = datasetHandle().table(staging);
     const metadata = {
       sourceFormat: "NEWLINE_DELIMITED_JSON" as const,
       writeDisposition: "WRITE_TRUNCATE" as const,
@@ -580,6 +664,7 @@ export async function stageAndMerge(
     } catch (e: any) {
       log.warn(`Failed to drop staging table ${staging}`, { error: e.message });
     }
+    await lockHandle.release();
   }
 }
 
@@ -882,7 +967,7 @@ export async function warehouseDailyTotals(
 
 export async function recordReconciliation(rows: Record<string, any>[]): Promise<void> {
   if (rows.length === 0) return;
-  const tbl = dataset.table("OracleReconciliation");
+  const tbl = datasetHandle().table("OracleReconciliation");
   const tmpFile = join(tmpdir(), `bq_recon_${randomUUID().slice(0, 8)}.ndjson`);
   writeFileSync(tmpFile, rows.map((r) => JSON.stringify(r)).join("\n"));
   try {

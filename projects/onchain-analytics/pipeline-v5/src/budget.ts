@@ -44,6 +44,38 @@ export const DEFAULT_MAX_CAPTURE_DAYS = 30;
 /** Default number of contracts one run may attempt. Above this, name them or raise it. */
 export const DEFAULT_MAX_CAPTURES = 12;
 
+/**
+ * Explicit upper bounds on the two override flags. Plan task 8.
+ *
+ * WHY A CEILING ON A FLAG WHOSE WHOLE JOB IS TO RAISE A CEILING. A limit that can be set to any
+ * number is not a limit, it is a formality: `--max-captures=99999999999` disables the guard while
+ * looking like an adjustment to it, and once the value passes `Number.MAX_SAFE_INTEGER` the
+ * comparison stops being arithmetic at all. This project has already been bitten by exactly that
+ * class of defect, where `Number("9223372036854775807")` produced a DIFFERENT integer and 134
+ * registry rows silently carried it. So the override has a stated maximum and exceeding it is a
+ * usage error, not a bigger run.
+ *
+ * Both numbers are chosen, not derived, and the reasoning is here so the next agent can argue
+ * with it rather than inherit it.
+ */
+
+/**
+ * The control plane holds 148 contracts across the four addressable chains (measured 2026-09-28,
+ * `contract_deployments` 362 records over 148 contracts). A run cannot legitimately attempt more
+ * captures than there are contracts to capture, so an order of magnitude above the whole registry
+ * is already far past any real intention.
+ */
+export const MAX_CAPTURES_CEILING = 1_000;
+
+/**
+ * The deepest chain in the release is XDC, whose head was measured at 107,770,039 on 2026-09-28.
+ * A single capture spanning more than 100 million blocks is a genuine genesis-to-head backfill,
+ * which is A5, and plan section 1.1 forbids executing A5 from anywhere in this remediation. An
+ * explicit `--from` and `--to` still bypasses the span guard entirely, by design, so this bounds
+ * only the flag that raises the default.
+ */
+export const MAX_CAPTURE_BLOCKS_CEILING = 100_000_000;
+
 export interface BudgetVerdict {
   allowed: boolean;
   /** Null when allowed. Otherwise the full sentence a human needs, including the way through. */
@@ -61,9 +93,16 @@ export function maxCaptureBlocks(network: NetworkConfig, opts: PipelineOpts): nu
 /**
  * May this capture run?
  *
- * An explicit range is always allowed. `--from` and `--to` are a person naming a span, which is
- * the acknowledgement this guard exists to require, so demanding a second one would only teach
- * people to pass the override by reflex.
+ * An explicit range is allowed up to the absolute ceiling. `--from` and `--to` are a person naming
+ * a span, which is the acknowledgement this guard exists to require, so demanding a second one
+ * would only teach people to pass the override by reflex.
+ *
+ * THE CEILING IS NOT DECORATION AND IT WAS ADDED FOR A MEASURED REASON. Phase 3 made a bare
+ * `backfill` a usage error, because plan section 1.1 forbids one. The consequence is that EVERY
+ * backfill is now explicit, so "an explicit range is always allowed" would have left the span
+ * guard bounding nothing at all: `--from=0 --to=107000000` is a genesis-to-head run of the
+ * deepest chain in the release, which is A5, and plan section 1.1 forbids executing A5 from
+ * anywhere in this remediation. Tightening one control must not quietly disarm another.
  */
 export function checkCaptureSpan(
   network: NetworkConfig,
@@ -75,7 +114,20 @@ export function checkCaptureSpan(
   const limit = maxCaptureBlocks(network, opts);
 
   if (opts.fromBlock !== undefined && opts.toBlock !== undefined) {
-    return { allowed: true, reason: null, limit, requested };
+    if (requested <= MAX_CAPTURE_BLOCKS_CEILING) {
+      return { allowed: true, reason: null, limit, requested };
+    }
+    return {
+      allowed: false,
+      limit: MAX_CAPTURE_BLOCKS_CEILING,
+      requested,
+      reason:
+        `Refusing an explicitly named capture of ${requested.toLocaleString()} blocks on ` +
+        `${network.name}, blocks ${fromBlock} to ${toBlock}. Naming a range deliberately raises the ` +
+        `ordinary ${limit.toLocaleString()}-block limit, but not past the absolute ceiling of ` +
+        `${MAX_CAPTURE_BLOCKS_CEILING.toLocaleString()} blocks. A span this size is a full history ` +
+        `read, which is A5, and the remediation plan forbids executing A5. Nothing was read.`,
+    };
   }
   if (requested <= limit) {
     return { allowed: true, reason: null, limit, requested };

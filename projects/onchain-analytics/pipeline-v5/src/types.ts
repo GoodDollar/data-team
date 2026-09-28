@@ -7,6 +7,8 @@
  * range of which contract, how far the result can be trusted, and what it failed on.
  */
 
+import type { RunSummary } from "./outcome.js";
+
 // ---------------------------------------------------------------------------------------------
 // Chains and readers
 // ---------------------------------------------------------------------------------------------
@@ -199,7 +201,7 @@ export interface MergeWindow {
 }
 
 export interface PipelineOpts {
-  mode: "daily" | "backfill" | "verify" | "dedup" | "repair" | "calibrate" | "coverage";
+  mode: "daily" | "backfill" | "plan" | "verify" | "dedup" | "repair" | "calibrate" | "coverage";
   /** Limit to these chain names, for example CELO,XDC. */
   chains?: string[];
   /** Limit to these contract addresses. */
@@ -220,6 +222,15 @@ export interface PipelineResult {
   succeeded: number;
   failed: number;
   totalRows: number;
+  /**
+   * The typed outcome of every unit this run produced. C2's fix.
+   *
+   * `succeeded` and `failed` are kept as the flattened projection of it, because they are what
+   * the two `PipelineRuns` count columns have always held and renaming a column is a warehouse
+   * change rather than a control-flow one. They are DERIVED from the summary now, never
+   * incremented independently, so the two can no longer disagree.
+   */
+  summary: RunSummary;
 }
 
 /**
@@ -287,4 +298,25 @@ export interface PipelineRunRecord {
   capturesOk: number;
   capturesFailed: number;
   pipelineVersion: string;
+
+  // -- Plan Phase 3 task 11. Additive outcome columns. --
+  //
+  // The migration that adds them to an existing table is one statement in one file at
+  // `warehouse/L1/08_PipelineRunsOutcome_v1.sql`. Phase 8 rehearses and applies it; nothing here
+  // applies anything. `host` and `pipeline_version` are REUSED for runner identity and release
+  // version rather than aliased, which plan task 11 names explicitly.
+
+  /** `completed`, `partial`, `refused`, `unsupported`, `empty` or `failed`. Never plain success. */
+  executionStatus: string;
+  unitsPlanned: number;
+  unitsAttempted: number;
+  unitsCompleted: number;
+  unitsNoop: number;
+  unitsRefused: number;
+  unitsUnsupported: number;
+  unitsFailed: number;
+  /** `OutcomeCounters` per target grain, as JSON. Reconciles exactly to the unit counts. */
+  outcomeCountsByGrain: string;
+  releaseSha: string | null;
+  planHash: string | null;
 }

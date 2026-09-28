@@ -27,6 +27,7 @@
 
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
+import { getReaderOverride } from "./adapters.js";
 import { rpcCall } from "./rpc.js";
 import { normaliseChunk } from "./normalise.js";
 import { fetchRange as hsFetchRange, getChainTip as hsChainTip, hasHypersync } from "./hypersync.js";
@@ -358,6 +359,10 @@ export function fetchRange(
   toBlock: number,
   onChunk: (chunk: ChunkResult) => Promise<void>
 ): Promise<FetchResult> {
+  // A replaced reader takes precedence. The index path runs in a child process and the RPC path
+  // needs a live endpoint rotation, so neither can be exercised in a test any other way.
+  const replacement = getReaderOverride();
+  if (replacement) return replacement(network, addresses, fromBlock, toBlock, onChunk) as Promise<FetchResult>;
   if (hasHypersync(network)) return hsFetchRange(network, addresses, fromBlock, toBlock, onChunk);
   if (network.readers.rpcUrls.length > 0) return rpcFetchRange(network, addresses, fromBlock, toBlock, onChunk);
   throw new Error(`NO_READER: ${network.name} has neither a HyperSync index nor a JSON-RPC endpoint configured`);
@@ -405,3 +410,4 @@ export function gradeCapture(
   if (confirmationResult === "identical") return "B";
   return "C";
 }
+
