@@ -1,20 +1,28 @@
 name: pipeline-daily
 
-# Runs the onchain analytics pipeline daily at 01:00 UTC (1h after midnight
-# to ensure yesterday's data is fully finalized on all chains), then refreshes
-# the dbt models so dashboards show the latest data.
+# Manual only. The daily cron trigger was removed deliberately.
+#
+# Scheduled ingestion stays off until the readiness remediation is complete. Until then this
+# workflow runs only on an explicit manual dispatch, and only against a caller supplied dataset
+# that is not the production dataset. The guard below enforces that at the workflow boundary, so
+# a mistyped or forgotten input stops the run instead of writing to production.
 #
 # Required secrets:
-#   ENVIO_API_TOKEN        -- HyperSync API token
-#   GCP_SA_KEY             -- GCP service account JSON key (BigQuery access)
-#   SLACK_WEBHOOK_URL      -- Slack incoming webhook for alerts (optional)
-#
-# Manual trigger: use workflow_dispatch to run on demand.
+#   ENVIO_API_TOKEN        HyperSync API token
+#   GCP_SA_KEY             GCP service account JSON key (BigQuery access)
+#   SLACK_WEBHOOK_URL      Slack incoming webhook for alerts (optional)
 
 on:
-  schedule:
-    - cron: '0 1 * * *'   # 01:00 UTC daily
-  workflow_dispatch:       # Manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      dataset_id:
+        description: 'Target BigQuery dataset. Must not be the production dataset.'
+        required: true
+        type: string
+      confirm:
+        description: 'Type RUN-AGAINST-SANDBOX to confirm the target is not production.'
+        required: true
+        type: string
 
 concurrency:
   group: pipeline-daily
@@ -30,6 +38,24 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Refuse a production or unconfirmed target
+        working-directory: .
+        env:
+          DATASET_ID: ${{ inputs.dataset_id }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "RUN-AGAINST-SANDBOX" ]; then
+            echo "Refused: confirmation phrase missing or wrong."
+            exit 1
+          fi
+          case "$DATASET_ID" in
+            ""|BlockchainEvents|Staging|Semantic|Marts)
+              echo "Refused: '$DATASET_ID' is a production dataset or is empty."
+              exit 1
+              ;;
+          esac
+          echo "Target dataset accepted: $DATASET_ID"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -48,6 +74,7 @@ jobs:
 
       - name: Run pipeline (daily)
         env:
+          DATASET_ID: ${{ inputs.dataset_id }}
           ENVIO_API_TOKEN: ${{ secrets.ENVIO_API_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: npx tsx src/index.ts daily

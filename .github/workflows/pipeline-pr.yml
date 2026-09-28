@@ -1,0 +1,115 @@
+name: pipeline-pr
+
+# The pull-request gate for the ingestion pipeline. NO CREDENTIALS, BY DESIGN.
+#
+# Nothing in this workflow authenticates to anything. It uses no `secrets.*` value, invokes no
+# cloud authentication action, and reaches no chain, so a fork pull request runs it in full and a
+# compromised dependency has nothing to steal. That is a deliberate property and the reason the
+# test harness is built the way it is: every edge the pipeline has is replaceable in process, so
+# proving the code works needs no BigQuery and no RPC endpoint.
+#
+# WHAT IT DOES NOT DO, AND WHEN THAT CHANGES. It does not run the known-failures suite. That suite
+# reproduces defects other phases own, so gating pull requests on it would make every pull request
+# red for reasons its author cannot act on. `npm run verify:local` runs both and is the command
+# that decides whether the candidate is releasable; enforcement of the full suite in CI is added
+# by the phase that makes the last known failure green.
+
+on:
+  pull_request:
+    paths:
+      - 'projects/onchain-analytics/pipeline-v5/**'
+      - 'projects/onchain-analytics/gd_dbt/**'
+      - '.github/workflows/pipeline-pr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    name: Pipeline lint, typecheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: projects/onchain-analytics/pipeline-v5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: projects/onchain-analytics/pipeline-v5/package-lock.json
+
+      # `ci`, not `install`. It fails when package.json and the lockfile disagree, which is the
+      # only way a dependency change can be noticed in review rather than in production.
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Strict typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-coverage
+          path: projects/onchain-analytics/pipeline-v5/coverage
+          retention-days: 7
+
+  dbt:
+    name: dbt dependency resolution and parse
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: projects/onchain-analytics/gd_dbt
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install "dbt-bigquery==1.8.*"
+
+      - name: Resolve packages
+        run: dbt deps
+
+      # `parse` builds the manifest from the project alone. It compiles the graph, resolves every
+      # ref and source, and validates the YAML, all without a warehouse connection, which is what
+      # lets this job run with no credentials. A broken ref or a malformed schema file fails here.
+      - name: Parse the project
+        env:
+          # A profile must exist for the parse to resolve, and these values are never connected
+          # to. There is no key, so no authentication can occur even if something tried.
+          DBT_PROFILES_DIR: ${{ github.workspace }}/projects/onchain-analytics/gd_dbt/.ci
+        run: |
+          mkdir -p "$DBT_PROFILES_DIR"
+          cat > "$DBT_PROFILES_DIR/profiles.yml" <<'YAML'
+          gd_dbt:
+            target: parse_only
+            outputs:
+              parse_only:
+                type: bigquery
+                method: oauth
+                project: parse-only-no-such-project
+                dataset: parse_only
+                threads: 1
+                location: US
+          YAML
+          dbt parse --no-partial-parse
