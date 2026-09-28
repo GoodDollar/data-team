@@ -168,6 +168,121 @@ seeds:
             - proxy_address
             - valid_from_block
 
+  - name: event_surface
+    description: >
+      **What this is:** Every event every contract era can emit, keyed by the selector the chain
+      actually puts in `topic0`. 2,824 rows, 301 distinct selectors, one row per event per era.
+
+
+      **Why it exists:** Ingestion binds on `topic0` and never on an event name, and decoding needs
+      the parameter types and the indexed positions for the exact era the log was emitted in. This
+      seed is that mapping. Without it a decoder has to carry hardcoded selectors, which is how the
+      two defects below reached production.
+
+
+      **The two traps this shape exists to prevent, both of which already happened here.** A type
+      change alters the selector: A decoder written for `ReserveRatioUpdated(bytes32,uint256)`
+      against a deployed `(bytes32,uint32)` finds zero events forever and raises nothing. Indexed
+      flags do NOT alter the selector: A wrong-but-plausible interface returns exactly the expected
+      row count while writing business fields into the wrong columns. So `param_types` and
+      `indexed_positions` are recorded per parameter, from the same verified source the selector
+      was computed from.
+
+
+      **Every selector here was computed, not recalled.** Each was produced by hashing a signature
+      rebuilt from the verified interface's own parameter types, tuples included, and then checked
+      a second time by an independent reader: 2,823 of 2,823 selectors recomputed identically, with
+      zero mismatches, and 301 signatures map to 301 selectors as a bijection must.
+
+
+      **This is the callable surface, not a record of what fired.** An event listed here may never
+      have been emitted. One case is already known: A transfer fee event exists on the token and
+      has been measured as never charged.
+
+
+      **One row carries no selector and that is correct.** It is an anonymous event, which by
+      definition puts no signature hash in `topic0`. It cannot be matched by selector and is
+      recorded rather than filled in.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CELO', 'XDC', 'FUSE', 'ETHEREUM']
+      - name: chain_id
+        tests: [not_null]
+      - name: contract_name
+        tests: [not_null]
+        description: "Logical contract name. A label, never a binding key."
+      - name: proxy_address
+        tests: [not_null]
+        description: >
+          The address the log is emitted from. Lowercase. Joins to
+          `contract_deployments.proxy_address`, but NOT on its own: the binding key is the triple
+          (chain, proxy_address, era_index) and it is enforced by the singular test
+          `assert_event_surface_binds_to_a_real_era`. A `relationships` test on this column alone
+          used to stand here; it was removed because it constrains nothing about the era. Measured
+          on this seed: an era_index corrupted to one past that contract's real maximum passes it
+          on 2,824 of 2,824 rows.
+      - name: era_index
+        tests: [not_null]
+        description: >
+          Which era of that contract this row describes. Joins to
+          `contract_deployments.era_index` as part of the composite key above. Era resolution is
+          mandatory rather than cosmetic: two (chain, address, topic0) keys in this seed change
+          their indexed layout across their own eras, so the same selector decodes differently
+          depending on the era, and a lookup that cannot fail returns a confident wrong answer.
+      - name: implementation_address
+        description: "The implementation whose verified interface this row was read from."
+      - name: event_name
+        tests: [not_null]
+        description: >
+          The name in the interface. Informational only. The token declares two different events
+          both named `Transfer`, a 3-argument and a 4-argument form, with different selectors.
+          Binding on this column would fuse them.
+      - name: event_signature
+        tests: [not_null]
+        description: "Canonical signature, the exact string that was hashed to produce `topic0`."
+      - name: topic0
+        description: "Keccak hash of `event_signature`, lowercase. NULL only for the single anonymous event. **This is the only sound binding key.**"
+      - name: anonymous
+        description: "True for an anonymous event, which emits no selector at all."
+      - name: indexed_positions
+        description: >
+          Space-separated 0-based parameter positions that are indexed, and therefore arrive in
+          `topic1` through `topic3` rather than in the data blob. Empty means every parameter is in
+          the data section. Getting this wrong does not change the row count, only which column the
+          value lands in.
+      - name: param_types
+        description: "Space-separated ABI types in declaration order."
+      - name: param_names
+        description: "Space-separated parameter names in declaration order."
+      - name: era_bound
+        description: >
+          True when this event is NOT present in every era of its contract, so a decoder must check
+          the era before expecting it. 59 combinations are removed from one era and restored in a
+          later one; a first-and-last era comparison renders those as continuously present.
+      - name: era_bound_from_block
+        description: "First block this event can be emitted at, for era-bound rows."
+      - name: era_bound_to_block
+        description: "Exclusive upper bound for era-bound rows."
+      - name: abi_source
+        description: "Where the verified interface came from."
+      - name: source
+        tests: [not_null]
+        description: "How this row was established."
+      - name: notes
+        description: "Free text."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain
+            - proxy_address
+            - era_index
+            - event_signature
+
   - name: chains
     description: >
       **What this is:** One row per blockchain the system covers.
