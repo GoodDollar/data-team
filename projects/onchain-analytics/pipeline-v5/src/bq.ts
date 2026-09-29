@@ -359,6 +359,18 @@ export async function ensureInfraTables(): Promise<void> {
     "terminalizer_job_id", "closure_status", "terminalized_at",
     "terminalized_row_hash", "closure_receipt_uri",
   ]);
+
+  // MEASURED: the production copy of this table predates the chain dimension. It carries 14
+  // columns with `table_id` where this file declares `chain_id` and `contract_address`, so the
+  // rows `recordReconciliation` builds would be rejected by it -- and the create-if-absent above
+  // can never correct that. Without this assertion the run fails at the load step, after a
+  // reconciliation has already read a year of contract state, and the message names a column
+  // rather than the migration.
+  await assertColumns("OracleReconciliation", [
+    "run_id", "chain_id", "network", "contract_address", "protocol_day", "oracle_block",
+    "oracle_count", "oracle_amount_raw", "warehouse_stored", "warehouse_distinct",
+    "warehouse_amount_raw", "count_gap", "amount_gap_raw", "verdict", "checked_at",
+  ]);
 }
 
 /** Fail at startup, naming the fix, rather than at the first write, naming a column. */

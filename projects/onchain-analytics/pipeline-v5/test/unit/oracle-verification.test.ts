@@ -29,6 +29,7 @@ import { keccak256, toHex } from "viem";
 import { NETWORKS, ORACLES, oracleFor, oraclesFor } from "../../src/config.js";
 import { dayOf, dayWindow } from "../../src/oracle.js";
 import { runVerify, topic0Of } from "../../src/reconcile.js";
+import { ensureInfraTables } from "../../src/bq.js";
 import { readOnlyExitCode } from "../../src/outcome.js";
 import { setBigQueryClient, setRpcTransport, resetAdapters } from "../../src/adapters.js";
 import type { BigQueryClientLike } from "../../src/adapters.js";
@@ -347,6 +348,72 @@ describe("C4: a verification result says what was compared, not just whether it 
     expect(report.checks[0].outcome).toBe("unreadable");
     expect(report.checks[0].detail).toContain("could not be read");
     expect(readOnlyExitCode(report.outcome)).toBe(2);
+  });
+});
+
+// =========================================================================================
+describe("a dataset whose reconciliation table predates the chain dimension fails at startup", () => {
+  /**
+   * A dataset whose tables have exactly the columns the shipped DDL declares, except for the ones
+   * the test overrides.
+   *
+   * The schemas are DERIVED FROM THE DDL the code itself issues rather than transcribed here. A
+   * first version of this test hand-listed them, missed two columns on an unrelated table, and
+   * failed for a reason that had nothing to do with what it was testing -- and it would have
+   * broken again the next time a column was added.
+   */
+  function datasetAsDeclared(overrides: Record<string, string[]>): BigQueryClientLike {
+    const declared: Record<string, string[]> = {};
+    return {
+      async query(request) {
+        const m = /CREATE TABLE IF NOT EXISTS\s+(\S+)\s*\(([\s\S]*?)\n\s*\)/i.exec(request.query);
+        if (m) {
+          const tableId = m[1].replace(/`/g, "").split(".").pop()!;
+          declared[tableId] = m[2].split("\n")
+            .map((line) => /^\s*(\w+)\s+\w+/.exec(line)?.[1])
+            .filter((c): c is string => !!c);
+        }
+        return [[]];
+      },
+      dataset() {
+        return {
+          table(tableId: string) {
+            return {
+              async load() { return []; },
+              async getMetadata() {
+                const names = overrides[tableId] ?? declared[tableId] ?? [];
+                return [{ schema: { fields: names.map((name) => ({ name })) } }] as any;
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+
+  // The 14 columns the production copy actually carries, measured. Note `table_id` standing where
+  // `chain_id` and `contract_address` belong: it predates the second chain.
+  const LEGACY_RECONCILIATION = [
+    "run_id", "network", "table_id", "protocol_day", "oracle_block", "oracle_count",
+    "oracle_amount_raw", "warehouse_stored", "warehouse_distinct", "warehouse_amount_raw",
+    "count_gap", "amount_gap_raw", "verdict", "checked_at",
+  ];
+
+  it("names the missing columns at startup rather than failing inside the load", async () => {
+    setBigQueryClient(datasetAsDeclared({ OracleReconciliation: LEGACY_RECONCILIATION }));
+
+    await expect(
+      ensureInfraTables(),
+      `A create-if-absent cannot migrate a table that already exists, so a dataset carrying the ` +
+      `pre-chain-dimension reconciliation table keeps it forever. Without this check the run ` +
+      `reaches the load step -- after reading a year of contract state -- and fails naming a ` +
+      `column instead of the migration.`
+    ).rejects.toThrow(/SCHEMA_MISMATCH: OracleReconciliation has no column\(s\).*chain_id/);
+  });
+
+  it("passes on a dataset that carries the shape the DDL declares", async () => {
+    setBigQueryClient(datasetAsDeclared({}));
+    await expect(ensureInfraTables()).resolves.toBeUndefined();
   });
 });
 
