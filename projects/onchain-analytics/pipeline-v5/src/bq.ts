@@ -283,7 +283,7 @@ export async function ensureInfraTables(): Promise<void> {
       table_id STRING,
       from_block INT64,
       to_block INT64,
-      status STRING OPTIONS(description="complete, incomplete, unconfirmed_empty, nothing_to_fetch, refused_budget or capability_gap. Never plain success."),
+      status STRING OPTIONS(description="complete, incomplete, unconfirmed_empty, rollback_eligible, nothing_to_fetch, refused_budget or capability_gap. Never plain success."),
       chunks_planned INT64,
       chunks_ok INT64,
       skipped_ranges STRING,

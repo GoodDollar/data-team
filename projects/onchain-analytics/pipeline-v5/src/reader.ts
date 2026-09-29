@@ -401,7 +401,14 @@ export function gradeCapture(
   confirmationResult: string
 ): Assurance {
   if (!fetch.complete) return "C";
-  if (confirmationResult === "refuted_emptiness" || confirmationResult === "disagreed") return "C";
+  if (
+    confirmationResult === "refuted_emptiness" ||
+    confirmationResult === "disagreed" ||
+    // An empty range only one endpoint could vouch for. It is the ordinary outcome on a chain
+    // whose second endpoint is intermittent, and it must not reach A on the strength of the
+    // chunk enumeration alone: the thing left uncorroborated is precisely an absence.
+    confirmationResult === "uncorroborated"
+  ) return "C";
   if (!network.readers.hasIndependentConfirmingReader) return "C";
   // A: two independent sources enumerated this range and returned identical results.
   if (fetch.enumeratingSources >= 2) return "A";

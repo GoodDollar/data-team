@@ -196,6 +196,35 @@ export function getReaderOverride(): FetchRangeFn | null {
   return readerOverride;
 }
 
+// --------------------------------------------------------------------------- HyperSync worker
+
+/**
+ * The HyperSync worker call, replaceable.
+ *
+ * `setReaderOverride` replaces the WHOLE reader, which is the right seam for a test about the
+ * pipeline and the wrong one for a test about the index reader itself: everything in
+ * `hypersync.ts` -- chunk planning, bounded retries, the short-collection refusal, empty-chunk
+ * tracking and rollback-guard forwarding -- sits BELOW that override and is unreachable through
+ * it. The only thing underneath is `spawn`, so this is the seam.
+ *
+ * It replaces one request/response, not the logic around it, so a test exercises the real
+ * chunking and the real retry policy against a scripted worker.
+ */
+export type WorkerRunner = (
+  request: Record<string, unknown>,
+  timeoutMs: number
+) => Promise<Record<string, any>>;
+
+let workerRunner: WorkerRunner | null = null;
+
+export function setWorkerRunner(replacement: WorkerRunner | null): void {
+  workerRunner = replacement;
+}
+
+export function getWorkerRunner(): WorkerRunner | null {
+  return workerRunner;
+}
+
 // --------------------------------------------------------------------------- Notifier
 
 export interface Notifier {
@@ -227,4 +256,5 @@ export function resetAdapters(): void {
   setWriteLock(null);
   setNotifier(null);
   setReaderOverride(null);
+  setWorkerRunner(null);
 }

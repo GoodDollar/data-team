@@ -183,7 +183,18 @@ export const NETWORKS: Record<string, NetworkConfig> = {
         "HyperSync answers. forno's false-zero rate is a function of RANGE AGE, not width and not " +
         "answer size, and was measured at 30 percent one day and 70 percent the next on the " +
         "identical query. rpc.ankr.com/celo holds no state before block 31,056,500, the L1 to L2 " +
-        "migration block.",
+        "migration block. " +
+        "ARCHIVE QUORUM, MEASURED 2026-09-29, five attempts per question per endpoint: only ONE " +
+        "of the three listed archive endpoints qualifies. forno passed everything, including an " +
+        "eth_getCode tripwire across the UBIScheme's own creation block (1,446 bytes after, 0 " +
+        "before), which is what proves genuine archive state rather than latest state answering " +
+        "a historical call. celo.drpc.org answered eth_chainId 5 of 5 and rejected " +
+        "eth_getBlockByNumber, eth_getCode AND eth_call with -32601 'method does not exist', so " +
+        "it is not intermittent, it is RESTRICTED, and a liveness probe would score it 5 of 5 " +
+        "and put it in the quorum. celo.blockscout.com rate-limits with HTTP 429. So R4's " +
+        "two-endpoint rule CANNOT be met for Celo historical state today: consensusRead " +
+        "correctly refuses with INSUFFICIENT_AGREEMENT, and the missing thing is an endpoint, " +
+        "not a mechanism. Provisioning one is an operator decision because it is spend.",
     },
   },
 

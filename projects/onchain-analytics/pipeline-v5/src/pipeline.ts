@@ -40,6 +40,7 @@ import { fetchRange, getChainTip, readerFor, gradeCapture } from "./reader.js";
 import { confirmEmptyRange } from "./rpc.js";
 import { targetsFor, eraIndexFor, partitionByReleaseScope } from "./registry.js";
 import { rawLogRows, transactionRows, missingTransactionCount } from "./rawrow.js";
+import { projectChunk, projectFetchResult, unionRange } from "./batch.js";
 import { windowForRows, widen } from "./window.js";
 import {
   ensureInfraTables, stageAndMerge, recordCoverage, getMaxBlockTimestamp, setCaptureAssurance,
@@ -51,7 +52,7 @@ import { nowIso } from "./adapters.js";
 import { RunSummary, unit, PARENT_GRAIN, type UnitOutcome } from "./outcome.js";
 import type {
   PipelineOpts, PipelineResult, CaptureTarget, CoverageRecord, FetchResult, NetworkConfig,
-  MergeWindow,
+  MergeWindow, ChunkResult, EraMapEntry,
 } from "./types.js";
 
 export class IncompleteFetchError extends Error {}
@@ -151,8 +152,17 @@ async function recordCapabilityGap(network: NetworkConfig, reason: string): Prom
  * the count relegated to an error message. Both rows now carry their own status and both grains
  * now return their own outcome, so a grain that did not finish reaches the counters and the exit
  * code instead of stopping at a string nobody reads.
+ *
+ * PREPARATION IS SEPARATE FROM READING, and that is what closing H2 needed. Resolving a range and
+ * declining it against the budget are per contract; the READ is per chain. Splitting them lets
+ * many prepared targets share one batched read while each still decides its own range and writes
+ * its own verdict. A target refused here never reaches the read at all, so a declined contract
+ * costs nothing and still leaves the two coverage rows that say it was declined.
  */
-export async function processTarget(target: CaptureTarget, opts: PipelineOpts): Promise<UnitOutcome[]> {
+async function prepareTarget(
+  target: CaptureTarget,
+  opts: PipelineOpts
+): Promise<{ sink: CaptureSink } | { outcomes: UnitOutcome[] }> {
   const { network } = target;
   const startedAt = nowIso();
   const label = `${target.contractName} ${target.address} on ${network.name}`;
@@ -205,11 +215,11 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
     row.sourceId = readerFor(network).id;
     await recordCoverage(row);
     log.warn(`Nothing to fetch for ${label}: toBlock ${toBlock} is below fromBlock ${fromBlock}`);
-    return [unit(
+    return { outcomes: [unit(
       "nothing_to_fetch", RAW_LOGS_TABLE,
       `${label}: toBlock ${toBlock} is below fromBlock ${fromBlock}, so there was no range to read`,
       { chainId: target.chainId, address: target.address, fromBlock, toBlock },
-    )];
+    )] };
   }
 
   // The span budget. A refusal is a ROW, not a silence: a range nobody read and nothing recorded
@@ -244,7 +254,7 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
       requestedBlocks: span.requested, limitBlocks: span.limit,
       grainsRecorded: `${RAW_LOGS_TABLE},${TRANSACTIONS_TABLE}`,
     });
-    return refusals;
+    return { outcomes: refusals };
   }
 
   // --------------------------------------------------------------------- fetch and write
@@ -256,6 +266,34 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
     log.warn(`No era map for ${label}; every row will carry era_resolution 'unresolved'`);
   }
 
+  return { sink: makeSink({ target, network, captureId, fromBlock, toBlock, startedAt, label, eras }) };
+}
+
+/** Everything one target needs to consume chunks and then write its own verdict. */
+interface PreparedCapture {
+  target: CaptureTarget;
+  network: NetworkConfig;
+  captureId: string;
+  fromBlock: number;
+  toBlock: number;
+  startedAt: string;
+  label: string;
+  eras: EraMapEntry[];
+}
+
+/**
+ * One target's share of a capture: its buffers, its counters, and its own verdict at the end.
+ *
+ * WHY THIS IS AN OBJECT NOW. It used to be a page of local variables inside `processTarget`,
+ * which was fine while one target owned one fetch. Closing H2 means ONE fetch feeds MANY targets,
+ * so the per-target state has to be something a chunk can be handed to. Extracting it is what
+ * keeps a single capture implementation: the single-target path and the batched path run this
+ * same code, so a fix to one cannot leave the other behind -- which is the defect the previous
+ * repair path shipped, sixty-five lines duplicated almost verbatim.
+ */
+function makeSink(p: PreparedCapture) {
+  const { target, network, captureId, fromBlock, toBlock, startedAt, label, eras } = p;
+
   let logBuffer: Record<string, any>[] = [];
   let txBuffer: Record<string, any>[] = [];
   let lastBlockInBuffer = -1;
@@ -266,6 +304,8 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
   let txInserted = 0;
   let txUpdated = 0;
   let missingTx = 0;
+  let logsSeen = 0;
+  const emptyChunks: [number, number][] = [];
   const ingestedAt = nowIso();
   // The widest window any flush of this capture actually wrote under, kept so the grade can be
   // applied afterwards over exactly the partitions the rows landed in and no more.
@@ -304,13 +344,15 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
     }
   };
 
-  // THE FETCH AND THE WRITE SIT INSIDE A try, AND THAT IS NOT DEFENSIVE HABIT. If this throws
-  // part way, rows are already in the table and, without the catch below, no coverage row would
-  // exist for the range that produced them. That is the one state L0-8 exists to prevent: data
-  // present, and nothing recording that anybody looked. A live run found this by failing here.
-  let fetch: FetchResult;
-  try {
-    fetch = await fetchRange(network, [target.address], fromBlock, toBlock, async (chunk) => {
+  return {
+    member: { address: target.address.toLowerCase(), fromBlock, toBlock },
+    captureId,
+    label,
+    /** Per-member figures the batched FetchResult cannot carry, because they are per address. */
+    tally: () => ({ logsSeen, emptyChunks }),
+
+    /** Consume one chunk ALREADY PROJECTED onto this target. */
+    accept: async (chunk: ChunkResult) => {
       const ctx = {
         chainId: target.chainId,
         captureId, runId: RUN_ID,
@@ -322,6 +364,11 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
         headAtCapture: chunk.archiveHeight,
         ingestedAt,
       };
+
+      logsSeen += chunk.logs.length;
+      // Empty FOR THIS TARGET. A batched chunk full of another contract's logs is not empty for
+      // the batch and is empty for this one, and it is this one that has to confirm the negative.
+      if (chunk.logs.length === 0) emptyChunks.push([chunk.fromBlock, chunk.toBlock]);
 
       const logs = rawLogRows(chunk, ctx, eras);
       const txs = transactionRows(chunk, ctx);
@@ -338,195 +385,400 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
         if (row.block_number > lastBlockInBuffer) lastBlockInBuffer = row.block_number;
       }
       txBuffer.push(...txs);
-    });
+    },
 
-    await flush();
+    flush,
+
+    /**
+     * Record that the capture threw part way.
+     *
+     * If the fetch throws, rows are already in the table and without this no coverage row would
+     * exist for the range that produced them. That is the one state L0-8 exists to prevent: data
+     * present, and nothing recording that anybody looked. A live run found this by failing here.
+     */
+    recordThrow: async (e: any) => {
+      const failed = baseCoverage(target, captureId, fromBlock, toBlock, startedAt);
+      failed.status = "incomplete";
+      failed.rowsInserted = inserted;
+      failed.rowsUpdated = updated;
+      failed.rowsMerged = distinctOffered;
+      failed.sourceKind = readerFor(network).kind === "index" ? "index" : "rpc";
+      failed.sourceId = readerFor(network).id;
+      failed.errorMessage =
+        `CAPTURE_THREW: ${String(e?.message ?? e)}. Any rows already written for this range are ` +
+        `present without a clean capture, so the resume point stays at or below ${fromBlock}.`.slice(0, 4000);
+      // A failure to record the failure is worse than the failure, so it is logged rather than
+      // allowed to replace the original error.
+      try { await recordCoverage(failed); } catch (e2: any) {
+        log.error(`Could not record the coverage row for a failed capture: ${e2.message}`, { capture: captureId });
+      }
+    },
+
+    /** Write this target's two coverage rows and return its two outcomes. */
+    finish: async (fetch: FetchResult): Promise<UnitOutcome[]> => {
+      // ------------------------------------------- every empty chunk is a negative to confirm
+      const unconfirmed: string[] = [];
+      let confirmationResult = "unavailable";
+      let confirmingSourceId: string | null = null;
+      // FINDING C6. The admissibility grade the reader put ON its answer, read here rather than
+      // re-decided. The worst grade any empty chunk earned is what the capture carries, because a
+      // capture is only as corroborated as its weakest unconfirmed range.
+      const evidenceGrades: string[] = [];
+      if (CONFIG.CONFIRM_EMPTY_CHUNKS && fetch.emptyChunks.length > 0) {
+        log.info(`Confirming ${fetch.emptyChunks.length} empty chunk(s) against independent endpoints`, {
+          capture: captureId,
+        });
+        let anyConfirmed = false;
+        let refuted = false;
+        for (const [lo, hi] of fetch.emptyChunks) {
+          const c = await confirmEmptyRange(network, [target.address], lo, hi);
+          evidenceGrades.push(c.evidence.grade);
+          const corroborating = c.probe.perEndpoint.filter((e) => e.failures === 0 && e.found === 0);
+          if (corroborating.length > 0) confirmingSourceId = corroborating.map((e) => new URL(e.url).host).join("+");
+          if (c.evidence.grade === "refutation") refuted = true;
+          if (!c.confirmed) {
+            unconfirmed.push(`${lo}..${hi} [${c.evidence.grade}]: ${c.reason}`);
+            // A REFUTATION is an error: the primary reader missed data that demonstrably exists.
+            // An uncorroborated empty range is NOT. It is the ordinary result of asking endpoints
+            // that this project has measured returning false zeros, and its consequence is already
+            // correct and sufficient: the coverage frontier does not move past it and it is read
+            // again. Logging it at error level trained readers to ignore the level.
+            if (c.evidence.grade === "refutation") {
+              log.error(`REFUTED EMPTY RANGE ${lo}..${hi}`, {
+                capture: captureId, reason: c.reason, probeErrors: c.probe.errors.slice(0, 5),
+              });
+            } else {
+              log.warn(`UNCORROBORATED EMPTY RANGE ${lo}..${hi}`, {
+                capture: captureId, grade: c.evidence.grade, reason: c.reason,
+                cleanEndpoints: c.evidence.cleanEndpoints,
+                zeroLogAnswers: c.probe.zeroLogAnswers,
+                falseZeroSuspects: c.probe.falseZeroSuspects,
+                probeErrors: c.probe.errors.slice(0, 5),
+              });
+            }
+          } else anyConfirmed = true;
+        }
+        // `disagreed` is not produced here any more, and the reason is worth stating: in an
+        // emptiness probe, an endpoint finding logs where another found none IS the refutation
+        // case, so the two labels named one fact. What the old code actually wrote `disagreed` on
+        // was the case where a second endpoint never answered at all, which is a missing opinion,
+        // not a conflict -- the same false label reader.ts already corrected on the chunk path.
+        confirmationResult = refuted
+          ? "refuted_emptiness"
+          : unconfirmed.length > 0 ? "uncorroborated"
+            : anyConfirmed ? "identical" : "unavailable";
+      }
+
+      // FINDING SA-C23a, the remaining half. PR 71 fixed the half that DROPPED the guard, and
+      // hs-worker.mjs forwards it now. The half left was that the guard changed nothing: status
+      // was computed before the guard was read, and all the guard did was append a sentence to
+      // `error_message`. So a range the reader ITSELF says is still reorganisable was recorded
+      // `complete`, and because `isClean` in coverage.ts is `status === "complete" && no skips`,
+      // the resume frontier moved straight past it and nothing ever read it again.
+      //
+      // The guard is the reader saying "I am still holding blocks from here down, and they may be
+      // replaced". When the block it names is at or below this capture's own start, the whole
+      // capture sits inside that window. That is a status, not a note.
+      const rollbackHeld = fetch.rollbackGuards.filter((g) => g.firstBlockNumber <= fromBlock);
+
+      const status = !fetch.complete ? "incomplete"
+        : rollbackHeld.length > 0 ? "rollback_eligible"
+          : unconfirmed.length > 0 ? "unconfirmed_empty"
+            : "complete";
+
+      // FINDING H5. The transaction grain gets its own verdict, because it can fail on its own. A
+      // reader that returns every log and omits one of the transactions those logs point at has
+      // produced a complete RawLogs range and an incomplete Transactions range, and the previous
+      // code copied the log verdict onto the transaction row verbatim. The count was detected,
+      // written into `error_message`, and contradicted by the `status` column beside it -- and
+      // downstream, an absent Transactions row is indistinguishable from one that does not exist.
+      const txStatus = missingTx > 0 ? "incomplete" : status;
+      const assurance = gradeCapture(network, fetch, confirmationResult);
+
+      // The rows were written with the conservative provisional grade C, because a grade is a
+      // property of the whole capture and is not known while the rows are streaming. Correct them
+      // now that the range is settled. Without this the ledger and the rows disagree, which a live
+      // run produced: a capture recorded as grade A over rows that every one of them said were C.
+      if (assurance !== "C" && writtenWindow !== null) {
+        try {
+          await setCaptureAssurance(RAW_LOGS_TABLE, captureId, assurance, writtenWindow);
+          await setCaptureAssurance(TRANSACTIONS_TABLE, captureId, assurance, writtenWindow);
+        } catch (e: any) {
+          // Leaving C in place under-claims, which is the only safe direction for this to be wrong.
+          log.error(
+            `Could not raise the assurance grade on the rows of ${captureId} to ${assurance}: ${e.message}. ` +
+            `They keep the conservative grade C while the coverage row carries ${assurance}.`
+          );
+        }
+      }
+
+      const notes = [...fetch.errors, ...unconfirmed];
+      if (reorgSuspects > 0) {
+        notes.push(
+          `REORG_APPLIED: ${reorgSuspects} row(s) changed block_hash under an existing key and were ` +
+          `rewritten whole, including block_number, block_hash, block_timestamp and provenance`
+        );
+      }
+      if (missingTx > 0) {
+        notes.push(
+          `MISSING_TRANSACTIONS: ${missingTx} transaction(s) were pointed at by a captured log and ` +
+          `were not returned by the reader, so no Transactions row exists for them`
+        );
+      }
+      for (const g of rollbackHeld) {
+        notes.push(
+          `ROLLBACK_GUARD: the reader holds blocks from ${g.firstBlockNumber} in memory, which is at ` +
+          `or below this capture's start ${fromBlock}, so part of this range is still ` +
+          `rollback-eligible at the source. The capture is recorded 'rollback_eligible' rather than ` +
+          `complete, so the resume frontier stays at or below ${fromBlock} and this range is read ` +
+          `again once it settles`
+        );
+      }
+      if (evidenceGrades.length > 0) {
+        notes.push(`EVIDENCE_GRADES: ${[...new Set(evidenceGrades)].sort().join(",")}`);
+      }
+
+      const row = baseCoverage(target, captureId, fromBlock, toBlock, startedAt);
+      row.status = status;
+      row.chunksPlanned = fetch.chunksPlanned;
+      row.chunksOk = fetch.chunksOk;
+      row.skippedRanges = JSON.stringify(fetch.skipped);
+      row.rowsMerged = distinctOffered;
+      row.rowsInserted = inserted;
+      row.rowsUpdated = updated;
+      row.logsSeen = fetch.logsSeen;
+      row.sourceKind = fetch.sourceKind;
+      row.sourceId = fetch.sourceId;
+      row.confirmingSourceKind = confirmingSourceId ? "rpc" : null;
+      row.confirmingSourceId = confirmingSourceId;
+      row.confirmationResult = confirmationResult;
+      row.assurance = assurance;
+      row.headAtCapture = fetch.headAtCapture;
+      row.completedAt = nowIso();
+      row.errorMessage = notes.join(" | ").slice(0, 4000);
+      await recordCoverage(row);
+
+      // The transactions written by this capture get their own coverage row, because they are a
+      // different grain into a different table and an empty Transactions table for a range has to
+      // be interpretable on its own terms.
+      const txRow = baseCoverage(target, `${captureId}:tx`, fromBlock, toBlock, startedAt);
+      txRow.targetTable = TRANSACTIONS_TABLE;
+      txRow.tableId = TRANSACTIONS_TABLE;
+      txRow.status = txStatus;
+      txRow.chunksPlanned = fetch.chunksPlanned;
+      txRow.chunksOk = fetch.chunksOk;
+      txRow.skippedRanges = JSON.stringify(fetch.skipped);
+      txRow.rowsInserted = txInserted;
+      txRow.rowsUpdated = txUpdated;
+      txRow.rowsMerged = txInserted + txUpdated;
+      txRow.logsSeen = fetch.logsSeen;
+      txRow.sourceKind = fetch.sourceKind;
+      txRow.sourceId = fetch.sourceId;
+      txRow.confirmationResult = confirmationResult;
+      txRow.assurance = assurance;
+      txRow.headAtCapture = fetch.headAtCapture;
+      txRow.completedAt = nowIso();
+      txRow.errorMessage = missingTx > 0
+        ? `MISSING_TRANSACTIONS: ${missingTx} transaction(s) pointed at by a captured log were not ` +
+          `returned by the reader, so this range is NOT complete for the transaction grain`
+        : "";
+      await recordCoverage(txRow);
+
+      if (status !== "complete") {
+        throw new IncompleteFetchError(
+          `${label} ${fromBlock}..${toBlock} is ${status}: ${fetch.skipped.length} skipped chunk(s), ` +
+          `${unconfirmed.length} uncorroborated empty range(s), ${rollbackHeld.length} rollback ` +
+          `guard(s) holding blocks at or below the start. The coverage row records the gap, so the ` +
+          `next run resumes at the edge of the last clean capture rather than above it.`
+        );
+      }
+
+      if (txStatus !== "complete") {
+        log.error(
+          `${label} ${fromBlock}..${toBlock}: the RawLogs range is complete and the Transactions ` +
+          `range is ${txStatus}. ${missingTx} transaction(s) are missing.`,
+          { capture: captureId }
+        );
+      }
+
+      log.info(
+        `Done ${label}: ${inserted} log(s) inserted, ${updated} updated, ${txInserted} transaction(s) ` +
+        `inserted, ${fetch.chunksOk}/${fetch.chunksPlanned} chunks, assurance ${assurance}`,
+        { capture: captureId }
+      );
+
+      // One outcome per grain, matching the two coverage rows just written. Returning only the
+      // first is what let a complete log range speak for an incomplete transaction range.
+      return [
+        unit(
+          "completed", RAW_LOGS_TABLE,
+          `${label} ${fromBlock}..${toBlock} complete at assurance ${assurance}`,
+          {
+            chainId: target.chainId, address: target.address, fromBlock, toBlock,
+            rows: inserted + updated,
+          },
+        ),
+        unit(
+          txStatus === "complete" ? "completed" : "incomplete", TRANSACTIONS_TABLE,
+          txStatus === "complete"
+            ? `${label} ${fromBlock}..${toBlock}: ${txInserted + txUpdated} transaction(s) merged`
+            : `${label} ${fromBlock}..${toBlock}: ${missingTx} transaction(s) pointed at by a captured ` +
+              `log were not returned by the reader, so the transaction grain is incomplete`,
+          {
+            chainId: target.chainId, address: target.address, fromBlock, toBlock,
+            rows: txInserted + txUpdated,
+          },
+        ),
+      ];
+    },
+  };
+}
+
+type CaptureSink = ReturnType<typeof makeSink>;
+
+/**
+ * Read one block range ONCE for every target in it, and give each target its own verdict.
+ *
+ * THIS IS THE H2 FIX. Every reader in this codebase has always taken a LIST of addresses; the
+ * pipeline only ever handed it one, inside a loop, so a chain with N contracts issued N chunk
+ * streams over overlapping ranges. The cost model the project is budgeted against assumes one
+ * batched address query per chain range, and the gap between the two was measured in tens of
+ * times, not percentages.
+ *
+ * THE RANGE IS THE UNION of the members' ranges, and the projection back onto each member is what
+ * keeps the coverage ledger honest: a contract created late is not told about blocks below its
+ * own creation, and a chunk that failed is recorded against exactly the contracts whose declared
+ * range it overlaps. `batch.ts` owns that projection and is tested on its own, because a
+ * plausible-looking wrong attribution here is invisible in the warehouse afterwards.
+ */
+async function captureBatch(
+  network: NetworkConfig,
+  sinks: CaptureSink[],
+  opts: PipelineOpts
+): Promise<Map<string, UnitOutcome[]>> {
+  const results = new Map<string, UnitOutcome[]>();
+  if (sinks.length === 0) return results;
+
+  const span = unionRange(sinks.map((s) => s.member))!;
+  const addresses = sinks.map((s) => s.member.address);
+  const chunkRanges: [number, number][] = [];
+
+  log.info(
+    `${network.name}: one batched read of ${addresses.length} address(es) over ` +
+    `${span.fromBlock}..${span.toBlock}`,
+    { mode: opts.mode, reader: readerFor(network).id, addresses: addresses.length }
+  );
+
+  let fetch: FetchResult;
+  try {
+    fetch = await fetchRange(network, addresses, span.fromBlock, span.toBlock, async (chunk) => {
+      chunkRanges.push([chunk.fromBlock, chunk.toBlock]);
+      // Sequentially, never in parallel. Two concurrent MERGEs into one table is finding C1, and
+      // it is still open, so this loop must not be the thing that starts producing it.
+      for (const s of sinks) await s.accept(projectChunk(chunk, s.member));
+    });
+    for (const s of sinks) await s.flush();
   } catch (e: any) {
-    const failed = baseCoverage(target, captureId, fromBlock, toBlock, startedAt);
-    failed.status = "incomplete";
-    failed.rowsInserted = inserted;
-    failed.rowsUpdated = updated;
-    failed.rowsMerged = distinctOffered;
-    failed.sourceKind = readerFor(network).kind === "index" ? "index" : "rpc";
-    failed.sourceId = readerFor(network).id;
-    failed.errorMessage =
-      `CAPTURE_THREW: ${String(e?.message ?? e)}. Any rows already written for this range are ` +
-      `present without a clean capture, so the resume point stays at or below ${fromBlock}.`.slice(0, 4000);
-    // A failure to record the failure is worse than the failure, so it is logged rather than
-    // allowed to replace the original error.
-    try { await recordCoverage(failed); } catch (e2: any) {
-      log.error(`Could not record the coverage row for a failed capture: ${e2.message}`, { capture: captureId });
-    }
+    // The batched read failed, so EVERY member of it is incomplete. Recording the failure against
+    // only the member being written when it threw would leave the others with rows in the table
+    // and no coverage row saying anybody looked.
+    for (const s of sinks) await s.recordThrow(e);
     throw e;
   }
 
-  // ------------------------------------------- every empty chunk is a negative to confirm
-  const unconfirmed: string[] = [];
-  let confirmationResult = "unavailable";
-  let confirmingSourceId: string | null = null;
-  if (CONFIG.CONFIRM_EMPTY_CHUNKS && fetch.emptyChunks.length > 0) {
-    log.info(`Confirming ${fetch.emptyChunks.length} empty chunk(s) against independent endpoints`, {
-      capture: captureId,
-    });
-    let anyConfirmed = false;
-    for (const [lo, hi] of fetch.emptyChunks) {
-      const c = await confirmEmptyRange(network, [target.address], lo, hi);
-      confirmingSourceId = c.probe.answeredFully[0] ?? null;
-      if (!c.confirmed) {
-        unconfirmed.push(`${lo}..${hi}: ${c.reason}`);
-        log.error(`UNCONFIRMED EMPTY RANGE ${lo}..${hi}`, {
-          capture: captureId, reason: c.reason, probeErrors: c.probe.errors.slice(0, 5),
-        });
-      } else anyConfirmed = true;
-    }
-    confirmationResult = unconfirmed.length > 0
-      ? (unconfirmed.some((u) => u.includes("REFUTED")) ? "refuted_emptiness" : "disagreed")
-      : anyConfirmed ? "identical" : "unavailable";
+  // A chunk range the reader never reported is still planned work. `skipped` carries the ranges
+  // that failed before a chunk existed, so they are added here or a member could see a skip that
+  // overlaps no chunk it knows about and compute chunksOk above chunksPlanned.
+  for (const [a, b] of fetch.skipped) {
+    if (!chunkRanges.some(([x, y]) => x === a && y === b)) chunkRanges.push([a, b]);
   }
 
-  const status = !fetch.complete ? "incomplete" : unconfirmed.length > 0 ? "unconfirmed_empty" : "complete";
-
-  // FINDING H5. The transaction grain gets its own verdict, because it can fail on its own. A
-  // reader that returns every log and omits one of the transactions those logs point at has
-  // produced a complete RawLogs range and an incomplete Transactions range, and the previous code
-  // copied the log verdict onto the transaction row verbatim. The count was detected, written into
-  // `error_message`, and contradicted by the `status` column beside it -- and downstream, an
-  // absent Transactions row is indistinguishable from a transaction that does not exist.
-  const txStatus = missingTx > 0 ? "incomplete" : status;
-  const assurance = gradeCapture(network, fetch, confirmationResult);
-
-  // The rows were written with the conservative provisional grade C, because a grade is a
-  // property of the whole capture and is not known while the rows are streaming. Correct them now
-  // that the range is settled. Without this the ledger and the rows disagree, which a live run
-  // produced: a capture recorded as grade A over rows that every one of them said were C.
-  if (assurance !== "C" && writtenWindow !== null) {
+  for (const s of sinks) {
+    const mine = projectFetchResult(fetch, s.member, chunkRanges, s.tally());
     try {
-      await setCaptureAssurance(RAW_LOGS_TABLE, captureId, assurance, writtenWindow);
-      await setCaptureAssurance(TRANSACTIONS_TABLE, captureId, assurance, writtenWindow);
+      results.set(s.member.address, await s.finish(mine));
     } catch (e: any) {
-      // Leaving C in place under-claims, which is the only safe direction for this to be wrong.
-      log.error(
-        `Could not raise the assurance grade on the rows of ${captureId} to ${assurance}: ${e.message}. ` +
-        `They keep the conservative grade C while the coverage row carries ${assurance}.`
-      );
+      results.set(s.member.address, [unit(
+        e instanceof IncompleteFetchError ? "incomplete" : "failed",
+        RAW_LOGS_TABLE, `${s.label}: ${e.message}`,
+        { chainId: network.chainId, address: s.member.address },
+      )]);
+    }
+  }
+  return results;
+}
+
+/**
+ * Ingest ONE contract over its own range. Throws on an incomplete fetch rather than recording a
+ * success, because a partial range recorded as a success is precisely how a gap becomes permanent.
+ *
+ * Exported because repair drives the SAME code path over a named range. The previous repair
+ * carried its own copy of the fetch, decode and write loop, about sixty-five lines duplicated
+ * almost verbatim, so a fix to one path silently left the other behind. This is a batch of one,
+ * so it is not a second implementation either.
+ */
+export async function processTarget(target: CaptureTarget, opts: PipelineOpts): Promise<UnitOutcome[]> {
+  const prepared = await prepareTarget(target, opts);
+  if ("outcomes" in prepared) return prepared.outcomes;
+
+  const results = await captureBatch(target.network, [prepared.sink], opts);
+  const mine = results.get(prepared.sink.member.address) ?? [];
+  // A batch of one that produced an incomplete outcome has to throw, because every existing
+  // caller of this function reads a throw as "this target did not finish". `captureBatch` catches
+  // per member so one member cannot abort the others; here there is only one, so the catch is
+  // rethrown rather than swallowed into a returned outcome.
+  const bad = mine.find((o) => o.kind === "incomplete" || o.kind === "failed");
+  if (bad && mine.length === 1) throw new IncompleteFetchError(bad.detail);
+  return mine;
+}
+
+/**
+ * Ingest every target on one chain with ONE batched read per chain, which is finding H2.
+ *
+ * Targets that resolve to the same reader are read together; a target the budget declines never
+ * reaches the read and returns its refusal outcomes directly.
+ */
+async function captureChain(
+  network: NetworkConfig,
+  targets: CaptureTarget[],
+  opts: PipelineOpts
+): Promise<UnitOutcome[]> {
+  const outcomes: UnitOutcome[] = [];
+  const sinks: CaptureSink[] = [];
+
+  for (const target of targets) {
+    try {
+      const prepared = await prepareTarget(target, opts);
+      if ("outcomes" in prepared) outcomes.push(...prepared.outcomes);
+      else sinks.push(prepared.sink);
+    } catch (e: any) {
+      log.error(`Failed to prepare ${target.contractName} ${target.address} on ${network.name}: ${e.message}`);
+      outcomes.push(unit(
+        "failed", RAW_LOGS_TABLE,
+        `${target.contractName} ${target.address} on ${network.name}: ${e.message}`,
+        { chainId: target.chainId, address: target.address },
+      ));
     }
   }
 
-  const notes = [...fetch.errors, ...unconfirmed];
-  if (reorgSuspects > 0) {
-    notes.push(
-      `REORG_APPLIED: ${reorgSuspects} row(s) changed block_hash under an existing key and were ` +
-      `rewritten whole, including block_number, block_hash, block_timestamp and provenance`
-    );
-  }
-  if (missingTx > 0) {
-    notes.push(
-      `MISSING_TRANSACTIONS: ${missingTx} transaction(s) were pointed at by a captured log and ` +
-      `were not returned by the reader, so no Transactions row exists for them`
-    );
-  }
-  for (const g of fetch.rollbackGuards) {
-    // The reader's own reorganisation detector. It was dropped entirely by the previous worker, so
-    // the disappearing-log shape was undetectable: the client offers this and nothing read it.
-    if (g.firstBlockNumber <= fromBlock) {
-      notes.push(
-        `ROLLBACK_GUARD: the reader holds blocks from ${g.firstBlockNumber} in memory, which is at ` +
-        `or below this capture's start, so part of this range is still rollback-eligible at the source`
-      );
+  if (sinks.length === 0) return outcomes;
+
+  try {
+    for (const list of (await captureBatch(network, sinks, opts)).values()) outcomes.push(...list);
+  } catch (e: any) {
+    // The batched read itself threw, so no member got a verdict. Every one of them has had its
+    // failure recorded by `recordThrow`; this turns that into an outcome per member so the run
+    // record and the exit code see the same number of failures the ledger does.
+    log.error(`Batched read failed on ${network.name}: ${e.message}`, { targets: sinks.length });
+    for (const s of sinks) {
+      outcomes.push(unit(
+        e instanceof IncompleteFetchError ? "incomplete" : "failed",
+        RAW_LOGS_TABLE, `${s.label}: ${e.message}`,
+        { chainId: network.chainId, address: s.member.address },
+      ));
     }
   }
-
-  const row = baseCoverage(target, captureId, fromBlock, toBlock, startedAt);
-  row.status = status;
-  row.chunksPlanned = fetch.chunksPlanned;
-  row.chunksOk = fetch.chunksOk;
-  row.skippedRanges = JSON.stringify(fetch.skipped);
-  row.rowsMerged = distinctOffered;
-  row.rowsInserted = inserted;
-  row.rowsUpdated = updated;
-  row.logsSeen = fetch.logsSeen;
-  row.sourceKind = fetch.sourceKind;
-  row.sourceId = fetch.sourceId;
-  row.confirmingSourceKind = confirmingSourceId ? "rpc" : null;
-  row.confirmingSourceId = confirmingSourceId;
-  row.confirmationResult = confirmationResult;
-  row.assurance = assurance;
-  row.headAtCapture = fetch.headAtCapture;
-  row.completedAt = nowIso();
-  row.errorMessage = notes.join(" | ").slice(0, 4000);
-  await recordCoverage(row);
-
-  // The transactions written by this capture get their own coverage row, because they are a
-  // different grain into a different table and an empty Transactions table for a range has to be
-  // interpretable on its own terms.
-  const txRow = baseCoverage(target, `${captureId}:tx`, fromBlock, toBlock, startedAt);
-  txRow.targetTable = TRANSACTIONS_TABLE;
-  txRow.tableId = TRANSACTIONS_TABLE;
-  txRow.status = txStatus;
-  txRow.chunksPlanned = fetch.chunksPlanned;
-  txRow.chunksOk = fetch.chunksOk;
-  txRow.skippedRanges = JSON.stringify(fetch.skipped);
-  txRow.rowsInserted = txInserted;
-  txRow.rowsUpdated = txUpdated;
-  txRow.rowsMerged = txInserted + txUpdated;
-  txRow.logsSeen = fetch.logsSeen;
-  txRow.sourceKind = fetch.sourceKind;
-  txRow.sourceId = fetch.sourceId;
-  txRow.confirmationResult = confirmationResult;
-  txRow.assurance = assurance;
-  txRow.headAtCapture = fetch.headAtCapture;
-  txRow.completedAt = nowIso();
-  txRow.errorMessage = missingTx > 0
-    ? `MISSING_TRANSACTIONS: ${missingTx} transaction(s) pointed at by a captured log were not ` +
-      `returned by the reader, so this range is NOT complete for the transaction grain`
-    : "";
-  await recordCoverage(txRow);
-
-  if (status !== "complete") {
-    throw new IncompleteFetchError(
-      `${label} ${fromBlock}..${toBlock} is ${status}: ${fetch.skipped.length} skipped chunk(s), ` +
-      `${unconfirmed.length} unconfirmed empty range(s). The coverage row records the gap, so the ` +
-      `next run resumes at the edge of the last clean capture rather than above it.`
-    );
-  }
-
-  if (txStatus !== "complete") {
-    log.error(
-      `${label} ${fromBlock}..${toBlock}: the RawLogs range is complete and the Transactions ` +
-      `range is ${txStatus}. ${missingTx} transaction(s) are missing.`,
-      { capture: captureId }
-    );
-  }
-
-  log.info(
-    `Done ${label}: ${inserted} log(s) inserted, ${updated} updated, ${txInserted} transaction(s) ` +
-    `inserted, ${fetch.chunksOk}/${fetch.chunksPlanned} chunks, assurance ${assurance}`,
-    { capture: captureId }
-  );
-
-  // One outcome per grain, matching the two coverage rows just written. Returning only the first
-  // is what let a complete log range speak for an incomplete transaction range.
-  return [
-    unit(
-      "completed", RAW_LOGS_TABLE,
-      `${label} ${fromBlock}..${toBlock} complete at assurance ${assurance}`,
-      {
-        chainId: target.chainId, address: target.address, fromBlock, toBlock,
-        rows: inserted + updated,
-      },
-    ),
-    unit(
-      txStatus === "complete" ? "completed" : "incomplete", TRANSACTIONS_TABLE,
-      txStatus === "complete"
-        ? `${label} ${fromBlock}..${toBlock}: ${txInserted + txUpdated} transaction(s) merged`
-        : `${label} ${fromBlock}..${toBlock}: ${missingTx} transaction(s) pointed at by a captured ` +
-          `log were not returned by the reader, so the transaction grain is incomplete`,
-      {
-        chainId: target.chainId, address: target.address, fromBlock, toBlock,
-        rows: txInserted + txUpdated,
-      },
-    ),
-  ];
+  return outcomes;
 }
 
 /** Alert when a chain's newest captured block is older than the threshold. */
@@ -696,26 +948,15 @@ export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
       reason: reader.reason,
     });
 
-    for (const target of targets) {
-      try {
-        for (const outcome of await processTarget(target, opts)) {
-          summary.add(outcome);
-          // Only the log grain feeds this counter. It is persisted as `totalRowsMerged` and has
-          // always meant RawLogs rows; adding the transaction rows to it would change what a
-          // shipped column means rather than report a new fact.
-          if (outcome.grain === RAW_LOGS_TABLE) totalRows += outcome.rows;
-        }
-      } catch (e: any) {
-        log.error(`Failed: ${target.contractName} ${target.address} on ${network.name}: ${e.message}`, {
-          error: e.message,
-        });
-        summary.add(unit(
-          e instanceof IncompleteFetchError ? "incomplete" : "failed",
-          RAW_LOGS_TABLE,
-          `${target.contractName} ${target.address} on ${network.name}: ${e.message}`,
-          { chainId: target.chainId, address: target.address },
-        ));
-      }
+    // ONE batched read for the whole chain, which is finding H2. The loop that used to sit here
+    // called the reader once per contract over overlapping ranges, while every reader in this
+    // codebase has always accepted a list of addresses.
+    for (const outcome of await captureChain(network, targets, opts)) {
+      summary.add(outcome);
+      // Only the log grain feeds this counter. It is persisted as `totalRowsMerged` and has
+      // always meant RawLogs rows; adding the transaction rows to it would change what a
+      // shipped column means rather than report a new fact.
+      if (outcome.grain === RAW_LOGS_TABLE) totalRows += outcome.rows;
     }
   }
 

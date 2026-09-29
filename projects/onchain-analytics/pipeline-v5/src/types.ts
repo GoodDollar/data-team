@@ -257,7 +257,14 @@ export interface CoverageRecord {
   tableId: string;
   fromBlock: number;
   toBlock: number;
-  /** complete, incomplete, unconfirmed_empty, nothing_to_fetch, or capability_gap. Never "success". */
+  /**
+   * complete, incomplete, unconfirmed_empty, rollback_eligible, nothing_to_fetch, refused_budget
+   * or capability_gap. Never "success".
+   *
+   * `rollback_eligible` means the reader reported it still holds blocks at or below this
+   * capture's start, so the source itself says the range can still be reorganised. Only
+   * `complete` is clean, so anything else holds the resume frontier at or below the range.
+   */
   status: string;
   chunksPlanned: number;
   chunksOk: number;
