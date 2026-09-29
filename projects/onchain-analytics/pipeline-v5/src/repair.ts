@@ -195,7 +195,10 @@ export async function runRepair(opts: PipelineOpts): Promise<boolean> {
   // The external check, where one exists. Two contracts out of 146 publish a usable ledger, so
   // this cannot be the only route to a re-read, but it is the only evidence in this system that
   // does not come from the system itself.
-  for (const oracle of oraclesFor(selectedNetworks(opts.chains))) {
+  //
+  // Release-scoped like every other loop in this file. It was not, and that was inert only while
+  // ORACLES held entries for one chain; it stops being inert the moment a second chain is added.
+  for (const oracle of oraclesFor(releaseScopedNetworks(selectedNetworks(opts.chains)))) {
     if (oracle.kind !== "ubi_daily") continue;
     const network = networkByChainId(oracle.network.chainId);
     if (!network) continue;

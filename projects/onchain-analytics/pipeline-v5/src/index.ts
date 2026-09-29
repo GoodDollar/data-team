@@ -26,7 +26,8 @@ import { buildPlan, renderPlan } from "./plan.js";
 import { MAX_CAPTURES_CEILING, MAX_CAPTURE_BLOCKS_CEILING } from "./budget.js";
 import {
   RunSummary, unit, captureExitCodeFor, assertExitAgreesWithSummary, readOnlyExitCode,
-  executionStatusOf, PARENT_GRAIN, type ReadOnlyOutcome,
+  executionStatusOf, PARENT_GRAIN,
+  type ReadOnlyOutcome, type ReadOnlyResult, type UnitOutcome,
 } from "./outcome.js";
 import type { PipelineOpts } from "./types.js";
 
@@ -225,17 +226,21 @@ function parseArgvOrExit(): PipelineOpts {
 }
 
 /**
- * Map a read-only command's boolean to the read-only matrix.
+ * Map a read-only command's result to the read-only matrix.
  *
- * `false` means the command found something, which is a REPORT and exits 1, not a crash. This is
- * the seam Phase 4 replaces: `runVerify` returns a boolean today, so "nothing could be checked"
- * and "everything checked out" arrive here as the same value and this function cannot tell them
- * apart either. That is finding C4 and it is Phase 4's to fix, in the return type. What this
- * phase can do, and does, is make sure the mapping exists in one place with the third state
- * already named, so the fix is a value change rather than a control-flow change.
+ * A command that reports its own outcome is believed. A command that still returns a boolean is
+ * mapped the only way a boolean can be mapped, and that ambiguity is now confined to the four
+ * commands that have not been given an outcome type yet: `false` means the command found
+ * something, which is a REPORT and exits 1, while `true` cannot distinguish "checked everything
+ * and it was fine" from "checked nothing".
+ *
+ * `verify` no longer has that problem. Finding C4 was exactly this ambiguity in `runVerify`, and
+ * it was fixed where it lived -- in the return type -- so the third state that was named here
+ * before it could be produced, `nothing_to_check`, now arrives as a real value and exits 2.
  */
-function readOnlyOutcomeOf(clean: boolean): ReadOnlyOutcome {
-  return clean ? "clean" : "finding";
+function readOnlyOutcomeOf(result: boolean | ReadOnlyResult): ReadOnlyOutcome {
+  if (typeof result === "boolean") return result ? "clean" : "finding";
+  return result.outcome;
 }
 
 async function main(): Promise<void> {
@@ -329,15 +334,28 @@ async function main(): Promise<void> {
           calibrate: "at least one source returned no answer on any pass",
         }[opts.mode];
 
-        const outcome = readOnlyOutcomeOf(await runner(opts));
+        const result = await runner(opts);
+        const outcome = readOnlyOutcomeOf(result);
         exitCode = readOnlyExitCode(outcome);
+
+        // The run record has to say which of the three happened, not just that it was not clean.
+        // `nothing_to_check` is an EMPTY run, not a failed one: nothing went wrong, and nothing
+        // was learned. Collapsing it into `failed` would hide the distinction C4 exists to make
+        // one layer further on, in the table a reader actually queries.
+        const detail = typeof result === "boolean" ? message : result.summary;
+        const kind: UnitOutcome["kind"] =
+          outcome === "clean" ? "completed"
+          : outcome === "nothing_to_check" ? "nothing_to_fetch"
+          : outcome === "unsupported" ? "unsupported"
+          : "failed";
+
         summary.plan(PARENT_GRAIN, 1);
         summary.add(unit(
-          outcome === "clean" ? "completed" : "failed",
+          kind,
           PARENT_GRAIN,
-          outcome === "clean" ? `${opts.mode} found nothing to report` : message,
+          outcome === "clean" ? `${opts.mode} found nothing to report` : detail,
         ));
-        if (outcome !== "clean") errorMessage = message;
+        if (outcome !== "clean") errorMessage = detail;
         break;
       }
     }

@@ -406,8 +406,23 @@ export interface OracleConfig {
 
 export const ORACLES: OracleConfig[] = [
   {
+    network: NETWORKS.CELO,
+    address: "0x43d72ff17701b2da814620735c39c620ce0ea4a1",
+    // MEASURED from the contract at a pinned block, three endpoints agreeing, zero errors:
+    // periodStart() = 1677672000 = 2023-03-01T12:00:00Z. Exactly noon UTC, so a comparison keyed
+    // on the calendar date of a log's timestamp disagrees with the contract on every claim made
+    // before noon, and does so quietly.
+    periodStart: 1_677_672_000,
+    kind: "ubi_daily",
+    // Same event as XDC, and the layout is taken from the event surface seed rather than recalled:
+    // claimer is the only indexed parameter, so amount is word 0 of log_data.
+    eventSignature: "UBIClaimed(address,uint256)",
+    amountWordIndex: 0,
+  },
+  {
     network: NETWORKS.XDC,
     address: "0x22867567e2d80f2049200e25c6f31cb6ec2f0faf",
+    // MEASURED the same way: periodStart() = 1761393600 = 2025-10-25T12:00:00Z, also noon UTC.
     periodStart: 1_761_393_600,
     kind: "ubi_daily",
     // UBIClaimed(address indexed claimer, uint256 amount): claimer is indexed so it occupies
@@ -433,7 +448,14 @@ export function oracleFor(chainId: number, address: string): OracleConfig | unde
   return ORACLES.find((o) => o.network.chainId === chainId && o.address === a);
 }
 
-/** Every oracle whose chain is in this run's selection. */
+/**
+ * Every oracle whose chain is in this run's selection.
+ *
+ * Pass networks that have ALREADY been filtered by release scope, through
+ * `releaseScopedNetworks()`. This function cannot do it itself: the scope module lives in
+ * `registry.ts`, which imports this file, so calling it from here would be a cycle. The
+ * obligation is therefore on the caller, and both callers now honour it.
+ */
 export function oraclesFor(networks: NetworkConfig[]): OracleConfig[] {
   const ids = new Set(networks.map((n) => n.chainId));
   return ORACLES.filter((o) => ids.has(o.network.chainId));

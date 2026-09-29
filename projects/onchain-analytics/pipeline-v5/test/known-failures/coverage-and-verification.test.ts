@@ -29,6 +29,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { openGaps, computeResumePoint } from "../../src/coverage.js";
 import { runPipeline } from "../../src/pipeline.js";
 import { runVerify } from "../../src/reconcile.js";
+import { readOnlyExitCode } from "../../src/outcome.js";
 import { missingTransactionCount } from "../../src/rawrow.js";
 import { setBigQueryClient, setReaderOverride, resetAdapters } from "../../src/adapters.js";
 import { BigQuerySimulator } from "../helpers/bq-simulator.js";
@@ -185,17 +186,34 @@ describe("H5: a missing transaction leaves the transaction grain complete", () =
 
 describe("C4: verification reports success when nothing was compared", () => {
   it("does not return clean for a chain that has no oracle at all", async () => {
-    // Ethereum has no contract oracle. The audit ran exactly this and got exit 0.
-    const clean = await runVerify({ mode: "verify", chains: ["ETHEREUM"] });
+    // Ethereum is IN the frozen release scope and has no contract oracle, so this is the exact
+    // shape the audit ran: a chain the run is allowed to touch, where nothing can be compared.
+    // The audit got exit 0. No network or warehouse call happens on this path.
+    const report = await runVerify({ mode: "verify", chains: ["ETHEREUM"] });
 
     expect(
-      clean,
-      `C4 reproduced: runVerify() returned ${clean} for a chain with zero oracles. ` +
-      `pipeline-v5/src/reconcile.ts returns true from the no-oracle branch, so "nothing could be ` +
-      `checked" and "everything checked out" are the same value. The CLI maps true to exit 0, so ` +
-      `A5 can appear verified while no comparison occurred. The return type is boolean, which ` +
-      `cannot express exact, not_applicable, insufficient_data, unsupported and failed as ` +
-      `distinct outcomes. Owner: Phase 4.`
-    ).toBe(false);
+      report.comparedUnits,
+      `C4: runVerify() compared ${report.comparedUnits} unit(s) on a chain with zero oracles. ` +
+      `Nothing can be compared here, so this must be 0 and the run must not be clean.`
+    ).toBe(0);
+
+    expect(
+      report.outcome,
+      `C4: runVerify() reported outcome '${report.outcome}' for a chain with zero oracles. ` +
+      `"nothing could be checked" and "everything checked out" must not be the same value: ` +
+      `the return type carries what was compared, and clean requires comparedUnits > 0.`
+    ).toBe("nothing_to_check");
+
+    expect(
+      readOnlyExitCode(report.outcome),
+      `C4: the CLI would exit ${readOnlyExitCode(report.outcome)} for a run that compared nothing. ` +
+      `A verification with no report is exit 2, not exit 0, and not the exit 1 that means a real ` +
+      `finding was produced.`
+    ).toBe(2);
+
+    // The report says WHICH chains had no oracle, so a reader is told what was not checked
+    // rather than left to infer it from a missing line.
+    expect(report.chainsWithNoOracle).toContain("ETHEREUM");
+    expect(report.oraclesSelected).toBe(0);
   });
 });

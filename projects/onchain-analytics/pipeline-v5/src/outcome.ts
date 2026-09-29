@@ -218,10 +218,21 @@ export function captureExitCode(succeeded: number, failed: number): number {
  *
  * The distinction that matters here is between "I looked and found a problem" (exit 1, the report
  * is the product) and "I could not look" (exit 2, there is no report). A verification that
- * compared nothing is the second kind, which is finding C4 and belongs to Phase 4; this mapping
- * is the place that will hold its answer once its outcome type exists.
+ * compared nothing is the second kind. That was finding C4, and `runVerify` now returns a report
+ * carrying `outcome` so this mapping receives the real answer instead of inferring one from a
+ * boolean that cannot carry it.
  */
 export type ReadOnlyOutcome = "clean" | "finding" | "nothing_to_check" | "unsupported" | "failed";
+
+/**
+ * What a read-only command returns once it can say which of the five happened.
+ *
+ * The minimum a command has to carry for the exit mapping to be a lookup rather than a guess.
+ * Commands still returning `boolean` are mapped on two of the five and cannot express the rest.
+ */
+export interface ReadOnlyResult {
+  outcome: ReadOnlyOutcome;
+}
 
 export function readOnlyExitCode(outcome: ReadOnlyOutcome): number {
   switch (outcome) {
