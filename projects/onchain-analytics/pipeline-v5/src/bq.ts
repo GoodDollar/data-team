@@ -37,12 +37,47 @@ import {
   getBigQueryClient, setBigQueryFactory, getWriteLock,
   type BigQueryClientLike,
 } from "./adapters.js";
+import { setDatasetAdminFactory, type DatasetAdmin } from "./sandbox.js";
 import type { SchemaField, PipelineRunRecord, CoverageRecord, MergeWindow } from "./types.js";
 
 // The real client is registered as a FACTORY rather than constructed here. Constructing it at
 // import time resolved credentials as a side effect of importing this module, so any test that
 // reached bq.ts transitively needed a credential to run at all.
 setBigQueryFactory(() => new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID }) as unknown as BigQueryClientLike);
+
+// The sandbox guard's administrative client, registered the same way and for the same reason.
+// Dataset create, list, get and delete are metadata operations: they submit no query job and bill
+// no bytes. The guard's own refusals live in sandbox.ts and this client cannot bypass them,
+// because nothing here is reachable except through the exported functions there.
+setDatasetAdminFactory((): DatasetAdmin => {
+  const client = new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID });
+  return {
+    async listDatasets() {
+      const [datasets] = await client.getDatasets({ all: true });
+      return datasets.map((d) => d.id!).filter((id): id is string => typeof id === "string");
+    },
+    async createDataset(datasetId, options) {
+      await client.createDataset(datasetId, {
+        location: options.location,
+        labels: options.labels,
+        description: options.description,
+        defaultTableExpirationMs: String(options.defaultTableExpirationMs),
+      });
+    },
+    async labelsOf(datasetId) {
+      try {
+        const [metadata] = await client.dataset(datasetId).getMetadata();
+        return (metadata.labels ?? {}) as Record<string, string>;
+      } catch (e: any) {
+        if (e?.code === 404) return null;
+        throw e;
+      }
+    },
+    async deleteDataset(datasetId, options) {
+      await client.dataset(datasetId).delete({ force: options.deleteContents });
+    },
+  };
+});
 
 const datasetHandle = () =>
   getBigQueryClient().dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });

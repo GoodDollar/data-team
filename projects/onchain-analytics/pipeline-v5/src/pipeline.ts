@@ -142,8 +142,17 @@ async function recordCapabilityGap(network: NetworkConfig, reason: string): Prom
  * a clean capture of an empty range returns. Two different facts, one value, and every caller
  * downstream inherited the ambiguity: the run loop treated any non-throwing return as a success,
  * so a refused contract was counted as processed and the process exited 0.
+ *
+ * ONE OUTCOME PER GRAIN, WHICH IS FINDING H5. A capture writes coverage rows for two grains,
+ * RawLogs and Transactions, and used to return a single outcome describing only the first. The
+ * transaction grain therefore inherited a completeness judgement made about logs: the reader
+ * returned two logs pointing at two transactions and produced one, the detector at
+ * `rawrow.ts` counted the missing one, and the Transactions row was still written `complete` with
+ * the count relegated to an error message. Both rows now carry their own status and both grains
+ * now return their own outcome, so a grain that did not finish reaches the counters and the exit
+ * code instead of stopping at a string nobody reads.
  */
-export async function processTarget(target: CaptureTarget, opts: PipelineOpts): Promise<UnitOutcome> {
+export async function processTarget(target: CaptureTarget, opts: PipelineOpts): Promise<UnitOutcome[]> {
   const { network } = target;
   const startedAt = nowIso();
   const label = `${target.contractName} ${target.address} on ${network.name}`;
@@ -196,11 +205,11 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
     row.sourceId = readerFor(network).id;
     await recordCoverage(row);
     log.warn(`Nothing to fetch for ${label}: toBlock ${toBlock} is below fromBlock ${fromBlock}`);
-    return unit(
+    return [unit(
       "nothing_to_fetch", RAW_LOGS_TABLE,
       `${label}: toBlock ${toBlock} is below fromBlock ${fromBlock}, so there was no range to read`,
       { chainId: target.chainId, address: target.address, fromBlock, toBlock },
-    );
+    )];
   }
 
   // The span budget. A refusal is a ROW, not a silence: a range nobody read and nothing recorded
@@ -215,6 +224,7 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
   const span = checkCaptureSpan(network, fromBlock, toBlock, opts);
   if (!span.allowed) {
     const reason = (span.reason ?? "").slice(0, 4000);
+    const refusals: UnitOutcome[] = [];
     for (const [grain, id] of [[RAW_LOGS_TABLE, captureId], [TRANSACTIONS_TABLE, `${captureId}:tx`]] as const) {
       const row = baseCoverage(target, id, fromBlock, toBlock, startedAt);
       row.targetTable = grain;
@@ -224,16 +234,17 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
       row.sourceId = readerFor(network).id;
       row.errorMessage = reason;
       await recordCoverage(row);
+      refusals.push(unit(
+        "refused_budget", grain,
+        `${label} blocks ${fromBlock}..${toBlock}: ${span.reason}`,
+        { chainId: target.chainId, address: target.address, fromBlock, toBlock },
+      ));
     }
     log.error(`REFUSED ${label}: ${span.reason}`, {
       requestedBlocks: span.requested, limitBlocks: span.limit,
       grainsRecorded: `${RAW_LOGS_TABLE},${TRANSACTIONS_TABLE}`,
     });
-    return unit(
-      "refused_budget", RAW_LOGS_TABLE,
-      `${label} blocks ${fromBlock}..${toBlock}: ${span.reason}`,
-      { chainId: target.chainId, address: target.address, fromBlock, toBlock },
-    );
+    return refusals;
   }
 
   // --------------------------------------------------------------------- fetch and write
@@ -374,6 +385,14 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
   }
 
   const status = !fetch.complete ? "incomplete" : unconfirmed.length > 0 ? "unconfirmed_empty" : "complete";
+
+  // FINDING H5. The transaction grain gets its own verdict, because it can fail on its own. A
+  // reader that returns every log and omits one of the transactions those logs point at has
+  // produced a complete RawLogs range and an incomplete Transactions range, and the previous code
+  // copied the log verdict onto the transaction row verbatim. The count was detected, written into
+  // `error_message`, and contradicted by the `status` column beside it -- and downstream, an
+  // absent Transactions row is indistinguishable from a transaction that does not exist.
+  const txStatus = missingTx > 0 ? "incomplete" : status;
   const assurance = gradeCapture(network, fetch, confirmationResult);
 
   // The rows were written with the conservative provisional grade C, because a grade is a
@@ -443,7 +462,7 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
   const txRow = baseCoverage(target, `${captureId}:tx`, fromBlock, toBlock, startedAt);
   txRow.targetTable = TRANSACTIONS_TABLE;
   txRow.tableId = TRANSACTIONS_TABLE;
-  txRow.status = status;
+  txRow.status = txStatus;
   txRow.chunksPlanned = fetch.chunksPlanned;
   txRow.chunksOk = fetch.chunksOk;
   txRow.skippedRanges = JSON.stringify(fetch.skipped);
@@ -457,7 +476,10 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
   txRow.assurance = assurance;
   txRow.headAtCapture = fetch.headAtCapture;
   txRow.completedAt = nowIso();
-  txRow.errorMessage = missingTx > 0 ? `MISSING_TRANSACTIONS: ${missingTx}` : "";
+  txRow.errorMessage = missingTx > 0
+    ? `MISSING_TRANSACTIONS: ${missingTx} transaction(s) pointed at by a captured log were not ` +
+      `returned by the reader, so this range is NOT complete for the transaction grain`
+    : "";
   await recordCoverage(txRow);
 
   if (status !== "complete") {
@@ -468,19 +490,43 @@ export async function processTarget(target: CaptureTarget, opts: PipelineOpts): 
     );
   }
 
+  if (txStatus !== "complete") {
+    log.error(
+      `${label} ${fromBlock}..${toBlock}: the RawLogs range is complete and the Transactions ` +
+      `range is ${txStatus}. ${missingTx} transaction(s) are missing.`,
+      { capture: captureId }
+    );
+  }
+
   log.info(
     `Done ${label}: ${inserted} log(s) inserted, ${updated} updated, ${txInserted} transaction(s) ` +
     `inserted, ${fetch.chunksOk}/${fetch.chunksPlanned} chunks, assurance ${assurance}`,
     { capture: captureId }
   );
-  return unit(
-    "completed", RAW_LOGS_TABLE,
-    `${label} ${fromBlock}..${toBlock} complete at assurance ${assurance}`,
-    {
-      chainId: target.chainId, address: target.address, fromBlock, toBlock,
-      rows: inserted + updated,
-    },
-  );
+
+  // One outcome per grain, matching the two coverage rows just written. Returning only the first
+  // is what let a complete log range speak for an incomplete transaction range.
+  return [
+    unit(
+      "completed", RAW_LOGS_TABLE,
+      `${label} ${fromBlock}..${toBlock} complete at assurance ${assurance}`,
+      {
+        chainId: target.chainId, address: target.address, fromBlock, toBlock,
+        rows: inserted + updated,
+      },
+    ),
+    unit(
+      txStatus === "complete" ? "completed" : "incomplete", TRANSACTIONS_TABLE,
+      txStatus === "complete"
+        ? `${label} ${fromBlock}..${toBlock}: ${txInserted + txUpdated} transaction(s) merged`
+        : `${label} ${fromBlock}..${toBlock}: ${missingTx} transaction(s) pointed at by a captured ` +
+          `log were not returned by the reader, so the transaction grain is incomplete`,
+      {
+        chainId: target.chainId, address: target.address, fromBlock, toBlock,
+        rows: txInserted + txUpdated,
+      },
+    ),
+  ];
 }
 
 /** Alert when a chain's newest captured block is older than the threshold. */
@@ -652,8 +698,13 @@ export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
 
     for (const target of targets) {
       try {
-        const outcome = summary.add(await processTarget(target, opts));
-        totalRows += outcome.rows;
+        for (const outcome of await processTarget(target, opts)) {
+          summary.add(outcome);
+          // Only the log grain feeds this counter. It is persisted as `totalRowsMerged` and has
+          // always meant RawLogs rows; adding the transaction rows to it would change what a
+          // shipped column means rather than report a new fact.
+          if (outcome.grain === RAW_LOGS_TABLE) totalRows += outcome.rows;
+        }
       } catch (e: any) {
         log.error(`Failed: ${target.contractName} ${target.address} on ${network.name}: ${e.message}`, {
           error: e.message,
