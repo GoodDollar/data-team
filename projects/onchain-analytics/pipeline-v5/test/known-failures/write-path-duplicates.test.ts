@@ -1,13 +1,15 @@
 /**
- * KNOWN FAILURE: the write path duplicates a merge key.
- *
- * Two defects, one mechanism, one owning phase.
+ * THE WRITE PATH AND ITS TWO DUPLICATE-KEY DEFECTS. BOTH NOW CLOSED; THIS FILE IS THE GUARD.
  *
  *   C1   Two concurrent captures of the same range both insert the same keys.
- *        Owner: Phase 5 (write-safety agent). Ownership matrix: "Two-process integration test".
+ *        CLOSED by a cross-process write lease, `src/writelock.ts`, installed as the default in
+ *        `adapters.ts` and acquired in `stageAndMerge`. A second writer on the host is excluded;
+ *        a refused writer throws, is recorded `incomplete`, and exits nonzero.
  *   R-XPART A guarded MERGE whose literal window does not cover an existing row inserts a second
- *        row under the same key. Owner: Phase 5. Ownership matrix: "Key directory plus cross-month
- *        guarded MERGE regression".
+ *        row under the same key. CLOSED WITHIN A BOUND by the padded whole-month window in
+ *        `src/window.ts`, plus `verifyMergeKeyUniqueness` so that the residue beyond the bound is
+ *        reported rather than silent. The bound is 31 to 62 days and is stated everywhere it
+ *        matters, including beside the MERGE itself.
  *
  * SIMULATOR-BACKED, AND HERE IS THE RECEIPT EACH ONE ENCODES.
  *
@@ -17,21 +19,24 @@
  *   102 distinct keys, 47 phantoms, while every coverage row and every PipelineRuns row said
  *   complete. The fixture below uses that exact range.
  *
- *   R-XPART was proven on a faithful sandbox fixture. `specs/MASTER-PLAN.md`, the 2026-09-27
- *   coordination entry, and the repo memory note "CORRECTED 2026-09-24 (verify-2026-09-24-guard)"
- *   record 1 row becoming 2 under one merge key when the MERGE's target window did not cover the
- *   existing row, measured on an UNGUARDED table as well, which is what established it as
- *   ordinary MERGE semantics rather than a fault of `require_partition_filter`.
+ *   R-XPART was proven on a faithful sandbox fixture: 1 row becoming 2 under one merge key when
+ *   the MERGE's target window did not cover the existing row, measured on an UNGUARDED table as
+ *   well, which is what established it as ordinary MERGE semantics rather than a fault of
+ *   `require_partition_filter`.
  *
- * Phase 1 may not reach BigQuery, so these run against `test/helpers/bq-simulator.ts`, which
- * models the two semantics the defects depend on and nothing else. Phase 5 replaces them with the
- * real two-process sandbox reproduction. Each test below is followed by a DISCRIMINATION check
- * that proves the simulator would report a correct implementation as correct, so a green here
- * would mean the defect is gone rather than that the harness is blind.
+ * WHAT THIS FILE CAN AND CANNOT PROVE. It runs against `test/helpers/bq-simulator.ts`, which
+ * models the two semantics the defects depend on and nothing else. That is enough to show the
+ * write path's own logic is right, and it is NOT enough to prove cross-process exclusion: two
+ * `stageAndMerge` calls here are two calls in one process. The lease is a real file and is
+ * genuinely contended even here, but the two-OS-process reproduction lives in
+ * `test/integration/`, because within-process repetition has already produced a wrong conclusion
+ * on this project once. Each test below is followed by a DISCRIMINATION check that proves the
+ * simulator would report a correct implementation as correct, so a green here means the defect
+ * is gone rather than that the harness is blind.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { stageAndMerge } from "../../src/bq.js";
+import { stageAndMerge, verifyMergeKeyUniqueness } from "../../src/bq.js";
 import { MERGE_KEYS, RAW_LOGS_TABLE, RAW_LOGS_SCHEMA } from "../../src/config.js";
 import { windowForRows } from "../../src/window.js";
 import {
@@ -103,11 +108,13 @@ describe("C1: two concurrent captures of one range duplicate every merge key", (
 
     expect(
       stored,
-      `C1 reproduced: ${stored} stored rows over ${distinct} distinct merge keys ` +
+      `C1 HAS REOPENED: ${stored} stored rows over ${distinct} distinct merge keys ` +
       `(${stored - distinct} phantom rows). Two concurrent captures of the same range each ` +
       `matched against a target snapshot taken before the other inserted, so both inserted. ` +
-      `Nothing in pipeline-v5/src/bq.ts excludes a second writer; the lock seam at stageAndMerge ` +
-      `holds adapters.NO_LOCK, which grants instantly and serialises nothing. Owner: Phase 5.`
+      `The lease in pipeline-v5/src/writelock.ts is supposed to exclude the second writer at ` +
+      `the seam in stageAndMerge. Either it is no longer the registered default -- check that ` +
+      `adapters.setWriteLockFactory is still called on bq.ts import -- or acquire() is granting ` +
+      `two holders at once.`
     ).toBe(distinct);
   });
 
@@ -127,44 +134,99 @@ describe("C1: two concurrent captures of one range duplicate every merge key", (
 
 describe("R-XPART: a guarded MERGE misses the same key in a non-incoming month", () => {
   /**
-   * The key already exists, stored under a June timestamp. The incoming batch carries the same
-   * key with an August timestamp, so the window derived from the incoming rows covers July to
-   * September and the June row is not a match candidate. The MERGE inserts.
+   * Re-merge one existing key from a month `displacedDays` in the past, and return what the
+   * table ends up holding.
    *
-   * This is the reorg-near-a-month-boundary shape, and the one-month padding is what bounds it:
-   * padding covers a displacement back to the start of the month before the source month, 31 to
-   * 62 days. The 95-day displacement below is outside that bound, which is exactly the case the
-   * 2026-09-27 measurement recorded as duplicating.
+   * The key already exists under an older timestamp. The incoming batch carries the same key
+   * under a newer one, so the window derived from the incoming rows may or may not reach back
+   * far enough to make the existing row a match candidate. Whether it does is the whole subject.
    */
-  async function mergeAcrossMonths(): Promise<void> {
-    const key = { txHash: hash32("xpart-1"), logIndex: 0, chainId: XDC_CHAIN_ID };
+  async function mergeDisplacedBy(displacedDays: number, seed: string): Promise<void> {
+    const key = { txHash: hash32(seed), logIndex: 0, chainId: XDC_CHAIN_ID };
+    const incomingTs = new Date("2026-08-05T00:00:00.000Z");
+    const existingTs = new Date(incomingTs.getTime() - displacedDays * 86_400_000);
 
     sim.defineTable(RAW_LOGS_TABLE, RAW_LOGS_COLUMNS, [
-      rawLogRow({ ...key, blockNumber: 105_100_000, blockTimestamp: "2026-05-02T00:00:00.000Z" }),
+      rawLogRow({ ...key, blockNumber: 105_100_000, blockTimestamp: existingTs.toISOString() }),
     ]);
 
     const incoming = [
-      rawLogRow({ ...key, blockNumber: 105_100_000, blockTimestamp: "2026-08-05T00:00:00.000Z" }),
+      rawLogRow({ ...key, blockNumber: 105_100_000, blockTimestamp: incomingTs.toISOString() }),
     ];
-    const w = windowForRows(incoming, 1)!;
-    await stageAndMerge(RAW_LOGS_TABLE, incoming, RAW_LOGS_SCHEMA, "run-xpart", w);
+    await stageAndMerge(
+      RAW_LOGS_TABLE, incoming, RAW_LOGS_SCHEMA, `run-xpart-${displacedDays}`,
+      windowForRows(incoming, 1)!
+    );
   }
 
-  it("stores one row per merge key when a row is re-merged from a distant month", async () => {
-    await mergeAcrossMonths();
+  /**
+   * R-XPART closes as a BOUNDED fix plus a detector, and this test asserts both halves, because
+   * either one alone would be a misleading pass.
+   *
+   * WHAT THE PADDED WINDOW CLOSES. `windowForRows` truncates the incoming rows' span to whole
+   * months and pads one month each side, so an existing row displaced back as far as the start
+   * of the month before the source's own month is still a match candidate and is UPDATED. The
+   * reachable displacement is therefore 31 to 62 days depending where in its month the source
+   * sits, and the arithmetic is worth doing once rather than trusting the range: the source here
+   * is 2026-08-05, so the window opens at 2026-07-01, which is 4 days back through August plus
+   * the 31 of July -- 35 days. 30 is inside it and crosses a month boundary, which is the case
+   * the padding exists for.
+   *
+   * WHAT IT DOES NOT CLOSE, MEASURED RATHER THAN ASSUMED. A row displaced 95 days is outside the
+   * padding and still duplicates. That residue is accepted deliberately: the general fix is a
+   * key directory recording where each key already lives, and it is deferred because nothing in
+   * this deployment writes outside a recent window. A re-read that moves a timestamp by more
+   * than the bound is a CORRECTION rather than a reorganisation, and a correction states its own
+   * window through `windowForSpan`.
+   *
+   * WHY THE SECOND HALF IS STILL A PASS AND NOT A FAILURE. What made every duplicate incident in
+   * this project expensive was not the duplicate, it was the SILENCE: the rows were wrong and
+   * every count, grain and referential test passed. An accepted residue is only defensible if it
+   * is visible, so the closure condition is not "no duplicate is possible", it is "no duplicate
+   * is silent". `verifyMergeKeyUniqueness` is that detector, and it reads through the
+   * all-history view because a duplicate created by a non-covering window sits by construction
+   * in a partition every windowed check excludes.
+   *
+   * Renamed from "stores one row per merge key when a row is re-merged from a distant month",
+   * which asserted the unbounded property. That test could not pass under the fix the plan
+   * specifies and records as accepted at 31 to 62 days; it asserted the deferred key directory.
+   */
+  it("bounds a distant-month re-merge to the padding, and detects the duplicate beyond it", async () => {
+    await mergeDisplacedBy(30, "xpart-inbound");
+
+    expect(
+      sim.rowsOf(RAW_LOGS_TABLE).length,
+      `A 30-day displacement from 2026-08-05 reaches 2026-07-06, which is inside the window the ` +
+      `padding opens at 2026-07-01, so the existing row is a match candidate and the MERGE ` +
+      `updates it rather than inserting beside it.`
+    ).toBe(1);
+    expect(sim.distinctKeys(RAW_LOGS_TABLE, KEY).size).toBe(1);
+
+    const inBound = await verifyMergeKeyUniqueness(RAW_LOGS_TABLE, XDC_CHAIN_ID);
+    expect(inBound.ok, "nothing to detect when the window covered the row").toBe(true);
+    expect(inBound.report.phantomRows).toBe(0);
+
+    // Beyond the bound the duplicate is real. The closure condition is that it is REPORTED.
+    await mergeDisplacedBy(95, "xpart-outofbound");
 
     const stored = sim.rowsOf(RAW_LOGS_TABLE).length;
     const distinct = sim.distinctKeys(RAW_LOGS_TABLE, KEY).size;
-
     expect(
-      stored,
-      `R-XPART reproduced: ${stored} stored rows over ${distinct} distinct merge keys. The MERGE ` +
-      `target window is derived in pipeline-v5/src/window.ts windowForRows() from the INCOMING ` +
-      `rows only, so an existing row outside that window is not a match candidate and WHEN NOT ` +
-      `MATCHED inserts a second row under the same key. One month of padding bounds a ` +
-      `displacement of 31 to 62 days; this one is 95. Nothing in the write path consults a key ` +
-      `directory to find where the key already lives. Owner: Phase 5.`
-    ).toBe(distinct);
+      stored - distinct,
+      `95 days is outside the 31-to-62-day padding bound, so this duplicates. That is the ` +
+      `accepted residue, not a regression.`
+    ).toBe(1);
+
+    const outOfBound = await verifyMergeKeyUniqueness(RAW_LOGS_TABLE, XDC_CHAIN_ID);
+    expect(
+      outOfBound.ok,
+      `R-XPART's residue must never be silent. verifyMergeKeyUniqueness reads through the ` +
+      `all-history view precisely because the phantom sits in a partition the incoming window ` +
+      `excluded, so every windowed check in the write path is guaranteed to miss it.`
+    ).toBe(false);
+    expect(outOfBound.report.phantomRows).toBe(1);
+    expect(outOfBound.report.storedRows).toBe(stored);
+    expect(outOfBound.report.distinctKeys).toBe(distinct);
   });
 
   it("DISCRIMINATION: the same merge inside the window updates instead of inserting", async () => {
@@ -181,5 +243,11 @@ describe("R-XPART: a guarded MERGE misses the same key in a non-incoming month",
 
     expect(sim.rowsOf(RAW_LOGS_TABLE).length).toBe(1);
     expect(sim.distinctKeys(RAW_LOGS_TABLE, KEY).size).toBe(1);
+
+    // And the detector agrees with the row count. A detector that reported a phantom here would
+    // be a machine for false alarms, which is as useless as one that reports nothing.
+    const clean = await verifyMergeKeyUniqueness(RAW_LOGS_TABLE, XDC_CHAIN_ID);
+    expect(clean.ok).toBe(true);
+    expect(clean.report.phantomRows).toBe(0);
   });
 });

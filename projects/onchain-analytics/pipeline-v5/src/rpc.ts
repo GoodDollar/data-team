@@ -107,12 +107,21 @@ export async function consensusRead(
   // another. A full-window reconciliation is two calls per protocol day; sequential querying
   // made that three times longer than it needed to be and long enough to be fragile.
   //
-  // Historical STATE is read from the ARCHIVE endpoints only. A pruned node answers a historical
+  // Historical STATE is read from the STATE endpoints only. A pruned node answers a historical
   // call with LATEST state, silently and with no error, so including one here would not produce
   // an error, it would produce agreement on the wrong value.
-  const urls = network.readers.archiveRpcUrls.length > 0
-    ? network.readers.archiveRpcUrls
-    : network.readers.rpcUrls;
+  //
+  // `stateRpcUrls` rather than `archiveRpcUrls`, and the distinction earns its keep. Every call
+  // that reaches here is a read at a RECENT pin, which a node that prunes deep history still
+  // answers correctly. Qualifying those reads against the DEEP-archive list scored Celo at one
+  // endpoint, made the two-endpoint rule unmeetable, and turned a solved problem into a request
+  // to buy an endpoint. A chain that names no state endpoints falls back to the deep-archive
+  // list and then to the general one, so a chain configured the old way still behaves.
+  const urls = network.readers.stateRpcUrls.length > 0
+    ? network.readers.stateRpcUrls
+    : network.readers.archiveRpcUrls.length > 0
+      ? network.readers.archiveRpcUrls
+      : network.readers.rpcUrls;
   const results = await Promise.all(
     urls.map(async (url) => ({ url, r: await rpcCall(url, method, params) }))
   );

@@ -1,0 +1,142 @@
+name: pipeline-sandbox-integration
+
+# DEFINED AND DISABLED. Do not enable this workflow yet.
+#
+# This is the credentialled half of the test strategy: the integration checks that genuinely need
+# a BigQuery sandbox, which the in-process simulator can only approximate. The definition lands
+# before the identity does, so the shape is reviewable before anything can run with it.
+#
+# WHY IT CANNOT RUN YET, precisely. It needs a workload-identity provider and a service account
+# that can write to a sandbox dataset and cannot touch `BlockchainEvents`. Neither exists:
+# `iam.serviceAccounts.create` is denied to the current identity at project scope, and no
+# previously disabled billable service may be activated to work around that. Creating the
+# identity is an administrator action on the Google Cloud project.
+#
+# THREE THINGS KEEP IT OFF UNTIL THEN, so forgetting one is not enough to start it:
+#   1. There is no `schedule` and no `pull_request` trigger. Manual dispatch only.
+#   2. The first step refuses unless `confirm` is typed exactly, and refuses every production
+#      dataset name outright.
+#   3. Every job is gated on `vars.SANDBOX_INTEGRATION_ENABLED == 'true'`, a repository variable
+#      that does not exist. Until someone creates it, dispatching this workflow does nothing.
+#
+# KEYLESS BY CONSTRUCTION. It authenticates through Workload Identity Federation, never a
+# downloaded key. `GCP_SA_KEY` is deliberately absent from this file: a long-lived JSON key in a
+# repository secret is the same class of standing credential this project is removing elsewhere.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_id:
+        description: 'Sandbox BigQuery dataset to create and drop. Must not be a production dataset.'
+        required: true
+        type: string
+      confirm:
+        description: 'Type RUN-AGAINST-SANDBOX to confirm the target is not production.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: pipeline-sandbox-integration
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Refuse unless explicitly enabled and confirmed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: This workflow is disabled
+        if: vars.SANDBOX_INTEGRATION_ENABLED != 'true'
+        run: |
+          echo "Refused: SANDBOX_INTEGRATION_ENABLED is not set to 'true'."
+          echo "This workflow is defined but disabled until its service account exists."
+          exit 1
+
+      - name: Refuse a production or unconfirmed target
+        env:
+          DATASET_ID: ${{ inputs.dataset_id }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "RUN-AGAINST-SANDBOX" ]; then
+            echo "Refused: confirmation phrase missing or wrong."
+            exit 1
+          fi
+          case "$DATASET_ID" in
+            ""|BlockchainEvents|Staging|Semantic|Marts|dev_sandbox)
+              echo "Refused: '$DATASET_ID' is a production or in-use dataset, or is empty."
+              exit 1
+              ;;
+          esac
+          echo "Target dataset accepted: $DATASET_ID"
+
+  integration:
+    name: Sandbox integration tests
+    needs: guard
+    if: vars.SANDBOX_INTEGRATION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: sandbox
+    defaults:
+      run:
+        working-directory: projects/onchain-analytics/pipeline-v5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: projects/onchain-analytics/pipeline-v5/package-lock.json
+
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      # Keyless. The provider and service account are supplied as repository variables, not
+      # secrets, because neither is a credential.
+      - name: Authenticate to GCP through Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SANDBOX_SERVICE_ACCOUNT }}
+
+      - name: Sandbox integration tests
+        env:
+          DATASET_ID: ${{ inputs.dataset_id }}
+          STAGING_DATASET_ID: ${{ inputs.dataset_id }}_staging
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ENVIO_API_TOKEN: ${{ secrets.ENVIO_API_TOKEN }}
+          # The name the pipeline actually reads. This previously set BQ_MAX_BYTES_BILLED, which
+          # nothing in the codebase looks at, so the cap it claimed to apply was never applied.
+          # 10 GiB per job.
+          MAX_BYTES_BILLED_PER_JOB: '10737418240'
+        run: npm run test:integration
+
+      # The two-process write-safety check. It cannot run in the credential-free suite: it needs
+      # a real table for two separate processes to contend over, which is the only way to
+      # demonstrate that one of them is excluded. Everything else about the write path is
+      # covered in-process, and in-process cannot answer this question.
+      - name: Write-safety gate, two concurrent processes against a real sandbox
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ENVIO_API_TOKEN: ${{ secrets.ENVIO_API_TOKEN }}
+          MAX_BYTES_BILLED_PER_JOB: '10737418240'
+        run: npm run gate:write-safety
+
+      # Runs even when the tests fail, because a sandbox left behind is a defect this project has
+      # already produced twice: two undocumented datasets exist in the project today, one of them
+      # recorded as deleted in a maintenance note and still present.
+      - name: Drop the sandbox dataset
+        if: always()
+        env:
+          DATASET_ID: ${{ inputs.dataset_id }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          echo "Cleanup for $GCP_PROJECT_ID:$DATASET_ID is supplied by the sandbox manager in"
+          echo "pipeline-v5/src/sandbox.ts, which checks the purpose label before deleting"
+          echo "anything and proves absence with a listing afterwards."
+          exit 1

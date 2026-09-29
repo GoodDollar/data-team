@@ -7,15 +7,15 @@
  * real infrastructure, which is how a warehouse gets a production incident during an audit.
  *
  * WHAT THIS FILE IS NOT. It is not a fix for anything. Every default below is the behaviour the
- * program has today, written down rather than changed. In particular `NO_LOCK` is the current
- * absence of a cross-process lock, stated as an object instead of as a silence, because a seam
- * that names the missing control is what lets a test prove the control is missing. Replacing a
- * default is a later phase's job; declaring the seam is this one's.
+ * program has today, written down rather than changed -- with one exception, now that the write
+ * lock behind `C1` has been built. `NO_LOCK` is still here and still means "no exclusion at
+ * all", but it is no longer what production gets: `bq.ts` registers the real lease as a factory
+ * on import. Keeping `NO_LOCK` exported is what lets a test install the absence deliberately and
+ * show the difference, which is how the control is proven rather than asserted.
  *
  * Each adapter is a module-level holder with a setter and a reset, rather than a parameter
  * threaded through every call site. That is a deliberate trade: threading would have touched
- * every function in the pipeline, and this phase is explicitly forbidden from changing
- * behaviour. A holder changes construction only.
+ * every function in the pipeline. A holder changes construction only.
  */
 
 import type { MergeWindow } from "./types.js";
@@ -42,6 +42,8 @@ export interface BigQueryClientLike {
     params?: Record<string, unknown>;
     types?: Record<string, string>;
     projectId?: string;
+    /** The per-job cost ceiling. A string because the REST field is an int64. */
+    maximumBytesBilled?: string;
   }): Promise<[any[], ...unknown[]]>;
   dataset(datasetId: string, options?: { projectId?: string }): BigQueryDatasetLike;
 }
@@ -131,16 +133,18 @@ export function nowIso(): string {
 // --------------------------------------------------------------------------- Write lock
 
 /**
- * The control that does not exist yet.
+ * The cross-process write lease.
  *
- * C1: two concurrent captures of the same range each stage their own batch, each measure the
- * target before and after their own MERGE, and both exit zero while the table holds two rows per
- * merge key. There is no cross-process lock anywhere in this pipeline, so the default here grants
- * immediately and serialises nothing. That IS today's behaviour; this interface only gives it a
- * name so a test can install a real one and show the difference.
+ * C1: two concurrent captures of the same range each staged their own batch, each measured the
+ * target before and after their own MERGE, and both exited zero while the table held two rows
+ * per merge key. The control is now real and lives in `writelock.ts`; `bq.ts` registers it as a
+ * FACTORY on import, for the same reason the BigQuery client is a factory -- building one at
+ * import time would make every test that transitively reaches this module touch the filesystem.
  *
- * Phase 5 owns the replacement. Its shape is not decided here: `acquire` may return null to mean
- * refused, which is enough for either a fence or a lease to satisfy this contract.
+ * `NO_LOCK` remains exported, and it is no longer the production default. It is the absence of
+ * the control written down, so a test can install it deliberately and show what the write path
+ * does without exclusion. `acquire` may return null to mean refused, which is what turns a
+ * losing writer into a nonzero exit rather than a duplicate row.
  */
 export interface WriteLockHandle {
   release(): Promise<void>;
@@ -156,13 +160,29 @@ const GRANTED: WriteLockHandle = { release: async () => { /* nothing is held */ 
 /** Grants every request instantly and excludes nothing. The absence of a lock, written down. */
 export const NO_LOCK: WriteLock = { acquire: async () => GRANTED };
 
-let writeLock: WriteLock = NO_LOCK;
+let writeLock: WriteLock | null = null;
+let writeLockFactory: (() => WriteLock) | null = null;
 
-export function setWriteLock(replacement: WriteLock | null): void {
-  writeLock = replacement ?? NO_LOCK;
+/** Register how the real lock is built, without building one. `bq.ts` calls this on import. */
+export function setWriteLockFactory(factory: () => WriteLock): void {
+  writeLockFactory = factory;
 }
 
+/** Replace the lock. Tests use this; nothing in `src/` does. */
+export function setWriteLock(replacement: WriteLock | null): void {
+  writeLock = replacement;
+}
+
+/**
+ * The lock in force.
+ *
+ * Falls back to `NO_LOCK` only when no factory has been registered at all, which means nothing
+ * has imported `bq.ts` and therefore nothing is about to write.
+ */
 export function getWriteLock(): WriteLock {
+  if (writeLock) return writeLock;
+  if (!writeLockFactory) return NO_LOCK;
+  writeLock = writeLockFactory();
   return writeLock;
 }
 

@@ -50,7 +50,7 @@ export interface SimulatedTable {
 export interface SimulatedStatement {
   kind:
     | "count_matched" | "count_reorg" | "merge" | "drop" | "select_max_ts"
-    | "create_table" | "insert" | "select_coverage" | "other";
+    | "create_table" | "insert" | "select_coverage" | "duplicate_report" | "other";
   sql: string;
   params?: Record<string, unknown>;
 }
@@ -102,6 +102,18 @@ export class BigQuerySimulator implements BigQueryClientLike {
   /** `project.dataset.Table` as `stageAndMerge` renders it, reduced to the bare table id. */
   private static shortName(ref: string): string {
     return ref.replace(/`/g, "").split(".").pop() ?? ref;
+  }
+
+  /**
+   * The base table behind an all-history view name.
+   *
+   * A read that legitimately spans everything goes through `RawLogsAllHistory` rather than
+   * `RawLogs`, because `require_partition_filter` refuses a whole-table GROUP BY and the view
+   * carries the wide filter in its own definition. The simulator holds one set of rows per base
+   * table, so the view resolves to it. Real BigQuery would see the same rows through either.
+   */
+  private static baseName(ref: string): string {
+    return BigQuerySimulator.shortName(ref).replace(/AllHistory$/, "");
   }
 
   defineTable(tableId: string, columns: string[], rows: Record<string, any>[] = []): void {
@@ -214,6 +226,11 @@ export class BigQuerySimulator implements BigQueryClientLike {
       return [[{ n: this.countReorg(sql) }]];
     }
 
+    if (/AS distinct_keys/i.test(sql) && /COUNT\(\*\) OVER \(PARTITION BY/i.test(sql)) {
+      this.statements.push({ kind: "duplicate_report", sql, params: request.params });
+      return [[this.duplicateReport(sql, request.params ?? {})]];
+    }
+
     if (/MAX\(block_timestamp\)\s+AS\s+max_ts/i.test(sql)) {
       this.statements.push({ kind: "select_max_ts", sql });
       return [[{ max_ts: null }]];
@@ -306,6 +323,44 @@ export class BigQuerySimulator implements BigQueryClientLike {
       const s = byKey.get(key(t));
       return !!s && t.block_hash != null && s.block_hash != null && t.block_hash !== s.block_hash;
     }).length;
+  }
+
+  /**
+   * `duplicateReport`'s statement: stored rows against distinct merge keys for one chain, with
+   * the block and timestamp span of whatever is duplicated.
+   *
+   * Modelled because it is the ONLY thing that can see an R-XPART duplicate. The duplicate lives,
+   * by construction, in a partition the incoming MERGE window excluded, so every windowed check
+   * in the write path is guaranteed to miss it. That is why this read goes through the
+   * all-history view, and why it has to be executable here rather than asserted about.
+   *
+   * The merge key comes from the statement's own PARTITION BY, never from a constant, so a test
+   * that changed the key would change what this counts.
+   */
+  private duplicateReport(sql: string, params: Record<string, any>): Record<string, any> {
+    const from = /FROM\s+(\S+)\s+WHERE\s+chain_id/i.exec(sql);
+    if (!from) throw new Error(`SIM_NO_TABLE_REF in duplicate report:\n${sql}`);
+    const table = BigQuerySimulator.baseName(from[1]);
+    const keyCols = /PARTITION BY\s+([\w,\s]+?)\)/i.exec(sql)?.[1].split(",").map((c) => c.trim())
+      ?? [];
+    if (keyCols.length === 0) throw new Error(`SIM_NO_MERGE_KEY parsed from:\n${sql}`);
+
+    const scoped = this.rowsOf(table).filter((r) => Number(r.chain_id) === Number(params.chainId));
+    const key = (r: Record<string, any>) => keyCols.map((k) => String(r[k])).join("|");
+    const copies = new Map<string, number>();
+    for (const r of scoped) copies.set(key(r), (copies.get(key(r)) ?? 0) + 1);
+
+    const dups = scoped.filter((r) => (copies.get(key(r)) ?? 0) > 1);
+    const blocks = dups.map((r) => Number(r.block_number));
+    const stamps = dups.map((r) => String(r.block_timestamp));
+    return {
+      stored_rows: scoped.length,
+      distinct_keys: copies.size,
+      min_dup_block: blocks.length > 0 ? Math.min(...blocks) : null,
+      max_dup_block: blocks.length > 0 ? Math.max(...blocks) : null,
+      min_dup_ts: stamps.length > 0 ? stamps.slice().sort()[0] : null,
+      max_dup_ts: stamps.length > 0 ? stamps.slice().sort()[stamps.length - 1] : null,
+    };
   }
 
   /**

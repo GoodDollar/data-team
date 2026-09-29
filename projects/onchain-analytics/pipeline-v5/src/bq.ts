@@ -29,14 +29,16 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import {
-  CONFIG, fullTableName, stagingTableId, MERGE_KEYS, ALL_HISTORY_VIEWS, RAW_LOGS_TABLE,
+  CONFIG, fullTableName, stagingTableId, stagingTableName, MERGE_KEYS, ALL_HISTORY_VIEWS,
+  RAW_LOGS_TABLE,
 } from "./config.js";
 import { log } from "./log.js";
 import { windowPredicate, windowForSpan, partitionsSpanned } from "./window.js";
 import {
-  getBigQueryClient, setBigQueryFactory, getWriteLock,
+  getBigQueryClient, setBigQueryFactory, getWriteLock, setWriteLockFactory,
   type BigQueryClientLike,
 } from "./adapters.js";
+import { fileWriteLock } from "./writelock.js";
 import { setDatasetAdminFactory, type DatasetAdmin } from "./sandbox.js";
 import type { SchemaField, PipelineRunRecord, CoverageRecord, MergeWindow } from "./types.js";
 
@@ -82,6 +84,18 @@ setDatasetAdminFactory((): DatasetAdmin => {
 const datasetHandle = () =>
   getBigQueryClient().dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
 
+// Staging tables are created and dropped, so they live in their own dataset and the handle that
+// reaches them is a different one. See `config.ts` on STAGING_DATASET_ID: while the two shared an
+// id, a writer identity needed `tables.delete` on the production raw layer, and an ingestion run
+// that failed at staging cleanup had already written production rows by the time it failed.
+const stagingDatasetHandle = () =>
+  getBigQueryClient().dataset(CONFIG.STAGING_DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
+
+// The cross-process write lease, registered as a factory for the same reason the client above is:
+// building one at import time would make every test that transitively imports this file touch the
+// filesystem. C1's fix; see writelock.ts.
+setWriteLockFactory(() => fileWriteLock());
+
 // -- Retry helpers --
 
 function isRetriable(e: any): boolean {
@@ -108,6 +122,24 @@ function sleep(ms: number): Promise<void> {
 /**
  * Run a query with retries.
  *
+ * EVERY STATEMENT THIS PIPELINE SUBMITS GOES THROUGH HERE, and that is what makes the cost
+ * ceiling below a control rather than a convention. `maximumBytesBilled` is attached at this one
+ * chokepoint instead of at each call site, so a statement added later carries it without anyone
+ * remembering to. BigQuery evaluates the ceiling against the job's estimate BEFORE running it and
+ * refuses the job outright if it is exceeded, which means an over-ceiling query bills nothing --
+ * the refusal is the control, not an alarm raised after the money is gone.
+ *
+ * A refusal is deliberately NOT retried. It is not a transient fault; the same statement will be
+ * refused identically every time, and retrying it five times only delays the error. `isRetriable`
+ * matches on transport failures and does not match this, so the refusal surfaces on the first
+ * attempt with BigQuery's own message naming the byte counts.
+ *
+ * Two job classes cannot carry it, both named rather than left to be discovered. Load jobs bill
+ * storage rather than query bytes and the jobs API rejects the setting on a load configuration,
+ * so the two `table.load` calls in this file are outside it by construction. Queries Looker
+ * Studio submits on its own behalf never reach this process and are bounded instead by the size
+ * of the tables exposed to them.
+ *
  * `types` is not optional decoration. The client infers a parameter's BigQuery type from its
  * JavaScript value, and a null has no type to infer, so a statement carrying even one nullable
  * parameter is rejected outright with "Parameter types must be provided for null values". Every
@@ -123,6 +155,9 @@ export async function bqQuery(
     try {
       const [rows] = await getBigQueryClient().query({
         query: sql, params, types, projectId: CONFIG.GCP_PROJECT_ID,
+        // A string, not a number. The REST field is an int64 and the client forwards it verbatim;
+        // a JavaScript number arrives as a float for large values and the API rejects it.
+        maximumBytesBilled: String(CONFIG.MAX_BYTES_BILLED_PER_JOB),
       });
       return rows;
     } catch (e: any) {
@@ -582,8 +617,33 @@ export async function stageAndMerge(
     );
   }
 
+  // R-XPART, AND THE BOUND OF THE FIX, STATED WHERE THE STATEMENT IS BUILT.
+  //
+  // The window below is a literal on the target, derived by `windowForRows` from the INCOMING
+  // rows: their min and max block_timestamp, truncated to whole months and padded one month each
+  // side. A target row OUTSIDE that window is not a match candidate, so WHEN NOT MATCHED inserts
+  // a second row under a key that already exists. That is ordinary MERGE semantics, it reproduced
+  // on an unguarded table of the same shape, and it is invisible to any comparison of values.
+  //
+  // THE PADDING IS WHAT BOUNDS IT, AND THE BOUND IS FINITE: one month of padding covers a
+  // displacement back to the start of the month BEFORE the source's own month, which is 31 to 62
+  // days depending where in its month the source sits. A row displaced 95 days WAS MEASURED TO
+  // DUPLICATE. So this is a fix within a bound, NOT a general solution -- the general solution is
+  // a key directory that records where each key already lives, and it is deliberately deferred
+  // because nothing here writes outside a recent window today.
+  //
+  // What closes the gap between the bound and the general case is not a wider window, it is that
+  // an out-of-bound duplicate is DETECTED rather than silent: see `verifyMergeKeyUniqueness`.
+  // A re-read that moves a row's timestamp by more than the bound is a correction rather than a
+  // reorganisation, and a correction states its own window through `windowForSpan`.
+
   const staging = stagingTableId(tableId, runId);
-  const stagingRef = fullTableName(staging);
+  // The staging table lives in the STAGING dataset and the target lives in production. They are
+  // composed by different helpers because they must resolve to different datasets: staging is
+  // created and dropped on every run, and a dataset that is written and then deleted from is the
+  // one place `tables.delete` is needed. `stagingTableName` refuses outright if the two dataset
+  // ids are ever configured the same, so the split cannot be undone by an environment variable.
+  const stagingRef = stagingTableName(staging);
   const productionRef = fullTableName(tableId);
 
   // Only write columns the live table actually has, so a schema that has moved ahead of this
@@ -611,11 +671,16 @@ export async function stageAndMerge(
         WHERE ${keyJoin}
       )`;
 
-  // THE SEAM WHERE THE MISSING CONTROL WOULD GO. C1: nothing here excludes a second process from
-  // measuring, merging and measuring the same key at the same time. The default lock grants
-  // instantly and serialises nothing, which is exactly what this pipeline does today. It is named
-  // rather than absent so a test can install a real one and show the difference, and so the phase
-  // that owns the fix has one place to put it. Acquiring it changes no behaviour.
+  // C1's control. Two concurrent captures of one range each measured the target before their own
+  // MERGE, each matched against a snapshot taken before the other inserted, and both inserted:
+  // 149 stored rows over 102 distinct keys, both processes exiting 0. The lease excludes the
+  // second writer on this host. A refusal is returned rather than thrown so the failure is
+  // explicit here, where the message can say what was held and by whom.
+  //
+  // THE FAILURE DIRECTION MATTERS AS MUCH AS THE EXCLUSION. A refused writer throws, its capture
+  // is recorded `incomplete`, and its process exits nonzero. That is the half of C1 the row count
+  // never showed: the original incident was invisible precisely because both processes exited 0
+  // and both wrote a coverage row saying complete.
   const lockHandle = await getWriteLock().acquire(tableId, window);
   if (lockHandle === null) {
     throw new Error(
@@ -628,7 +693,7 @@ export async function stageAndMerge(
     const tmpFile = join(tmpdir(), `bq_staging_${runId}_${randomUUID().slice(0, 8)}.ndjson`);
     writeFileSync(tmpFile, ndjson);
 
-    const tbl = datasetHandle().table(staging);
+    const tbl = stagingDatasetHandle().table(staging);
     const metadata = {
       sourceFormat: "NEWLINE_DELIMITED_JSON" as const,
       writeDisposition: "WRITE_TRUNCATE" as const,
@@ -812,6 +877,45 @@ export async function duplicateReport(tableId: string, chainId: number): Promise
     minTs: ts(r.min_dup_ts),
     maxTs: ts(r.max_dup_ts),
   };
+}
+
+/**
+ * Assert that a table holds exactly one row per merge key, and say so loudly when it does not.
+ *
+ * THIS IS THE OTHER HALF OF R-XPART, AND THE HALF THAT IS NOT BOUNDED. The padded MERGE window
+ * prevents a duplicate for a displacement of up to 31 to 62 days; a row displaced 95 days was
+ * measured to duplicate anyway. That residue is accepted deliberately -- the general fix is a key
+ * directory, which is deferred because nothing writes outside a recent window today -- but
+ * accepting a residue is only defensible if the residue is VISIBLE. Silence is what made every
+ * duplicate incident in this project expensive: the rows were wrong and every count, grain and
+ * referential test passed.
+ *
+ * So this is a post-condition on the key, not a repair. It reports; `dedupTable` repairs. Run it
+ * after a capture, or against any table anyone is about to trust.
+ *
+ * It reads through the all-history view because that is the only route the guard permits for this
+ * shape: a GROUP BY over the whole table looking for a repeated key has no window by definition.
+ * A duplicate created by a non-covering window is, by construction, in a partition the incoming
+ * window excluded, so a windowed check is the one check guaranteed not to find it.
+ */
+export async function verifyMergeKeyUniqueness(
+  tableId: string,
+  chainId: number
+): Promise<{ ok: boolean; report: DuplicateReport }> {
+  const report = await duplicateReport(tableId, chainId);
+  if (report.phantomRows > 0) {
+    log.error(
+      `MERGE_KEY_NOT_UNIQUE: ${tableId}/chain ${chainId} holds ${report.storedRows} rows over ` +
+      `${report.distinctKeys} distinct merge keys, so ${report.phantomRows} are phantoms. The ` +
+      `duplicated keys sit between blocks ${report.minBlock} and ${report.maxBlock} ` +
+      `(${report.minTs} to ${report.maxTs}). A MERGE whose target window did not cover an ` +
+      `already-present row inserts a second row under its key; one month of padding bounds that ` +
+      `to a displacement of 31 to 62 days and a larger one is not covered. Repair with ` +
+      `dedupTable, which deletes the surplus copies in place.`,
+      { tableId, chainId, phantomRows: report.phantomRows }
+    );
+  }
+  return { ok: report.phantomRows === 0, report };
 }
 
 /**

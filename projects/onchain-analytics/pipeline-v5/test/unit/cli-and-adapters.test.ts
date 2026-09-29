@@ -91,10 +91,22 @@ describe("every adapter is replaceable and resets to its real default", () => {
     expect(nowIso()).not.toBe("2020-01-02T03:04:05.000Z");
   });
 
-  it("defaults the write lock to NO_LOCK, which is the control that does not exist yet", async () => {
-    expect(getWriteLock()).toBe(NO_LOCK);
+  it("defaults the write lock to the real cross-process lease, not to NO_LOCK", async () => {
+    // Renamed from "defaults the write lock to NO_LOCK, which is the control that does not exist
+    // yet". The control now exists, so the assertion is inverted rather than relaxed: the point
+    // of the original test was that the default is whatever production actually gets, and that
+    // is the thing still being asserted.
+    //
+    // `bq.ts` registers the lease factory on import, so importing it is what makes the default
+    // real. A control you have to remember to install is not a control.
+    await import("../../src/bq.js");
+    const active = getWriteLock();
+    expect(active, "production must not get the do-nothing lock").not.toBe(NO_LOCK);
+
+    // NO_LOCK stays exported and stays meaningful: it is the absence of exclusion, which a test
+    // installs deliberately to show what the write path does without it.
     const handle = await NO_LOCK.acquire("RawLogs", null);
-    expect(handle, "the default grants every request instantly and excludes nothing").not.toBeNull();
+    expect(handle, "NO_LOCK grants every request instantly and excludes nothing").not.toBeNull();
 
     const refusing = { acquire: async () => null };
     setWriteLock(refusing);
@@ -114,13 +126,18 @@ describe("every adapter is replaceable and resets to its real default", () => {
   it("resetAdapters clears every seam, so one file cannot leak into the next", () => {
     setRpcTransport((async () => ({ ok: true, status: 200, text: async () => "{}" })) as any);
     setClock({ now: () => new Date(0) });
-    setWriteLock({ acquire: async () => null });
+    const refusing = { acquire: async () => null };
+    setWriteLock(refusing);
     setNotifier({ post: async () => {} });
     setReaderOverride((async () => ({})) as any);
 
     resetAdapters();
 
-    expect(getWriteLock()).toBe(NO_LOCK);
+    // The lock resets to whatever the process default is rather than to a fixed object, because
+    // the default is now built from a factory. What has to be true is that the double installed
+    // above is gone; asserting a specific identity here would make this test depend on whether
+    // some other file happened to import `bq.ts` first.
+    expect(getWriteLock()).not.toBe(refusing);
     expect(getNotifier()).toBeNull();
     expect(getReaderOverride()).toBeNull();
     expect(nowIso()).not.toBe(new Date(0).toISOString());

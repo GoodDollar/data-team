@@ -40,7 +40,24 @@ export interface ReaderCapability {
   hypersyncUrl: string | null;
   /** JSON-RPC endpoints, for confirming negatives, reading state, and enumerating logs where HyperSync cannot. */
   rpcUrls: string[];
-  /** Endpoints able to serve historical state. Empty means historical state is unreadable here. */
+  /**
+   * Endpoints able to serve state at a RECENT pinned block, which is what every state read this
+   * pipeline currently performs actually needs.
+   *
+   * Separate from `archiveRpcUrls` because the two answer different questions and an endpoint
+   * that fails one can pass the other. Treating them as one list scored Celo at a single
+   * qualified endpoint and produced a spend request; measured against the question actually
+   * being asked, four free endpoints qualify.
+   */
+  stateRpcUrls: string[];
+  /**
+   * Endpoints able to serve DEEP historical state -- state old enough that a pruned node has
+   * discarded it. Empty means deep historical state is unreadable here.
+   *
+   * A pruned node answers a historical call with LATEST state, silently and with no error, so
+   * this list is qualified by a tripwire that reads a value which MUST have changed, never by a
+   * liveness probe.
+   */
   archiveRpcUrls: string[];
   /** Largest block span this chain's RPC endpoints accept for eth_getLogs. */
   rpcLogRange: number;
