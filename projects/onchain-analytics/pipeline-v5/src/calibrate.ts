@@ -22,10 +22,11 @@
  * cross-check rather than a bet on how many tries is enough.
  */
 
-import { CONFIG, CONTRACTS } from "./config.js";
+import { CONFIG, selectedNetworks } from "./config.js";
 import { log } from "./log.js";
-import { fetchRange } from "./hypersync.js";
+import { fetchRange, readerFor } from "./reader.js";
 import { probeLogsPresent } from "./rpc.js";
+import { targetsFor } from "./registry.js";
 import type { PipelineOpts, NetworkConfig } from "./types.js";
 
 export interface Calibration {
@@ -83,7 +84,7 @@ function summarise(
   };
 }
 
-async function calibrateHyperSync(
+async function calibratePrimaryReader(
   network: NetworkConfig,
   contracts: string[],
   fromBlock: number,
@@ -92,19 +93,20 @@ async function calibrateHyperSync(
 ): Promise<Calibration> {
   const answers: number[] = [];
   let errors = 0;
+  const reader = readerFor(network);
 
   for (let i = 1; i <= repeats; i++) {
     const r = await fetchRange(network, contracts, fromBlock, toBlock, async () => { /* count only */ });
     if (!r.complete) {
       errors += 1;
-      log.warn(`  HyperSync pass ${i}/${repeats}: INCOMPLETE, ${r.skipped.length} skipped chunk(s)`);
+      log.warn(`  ${reader.id} pass ${i}/${repeats}: INCOMPLETE, ${r.skipped.length} skipped chunk(s)`);
     } else {
       answers.push(r.logsSeen);
-      log.info(`  HyperSync pass ${i}/${repeats}: ${r.logsSeen} log(s)`);
+      log.info(`  ${reader.id} pass ${i}/${repeats}: ${r.logsSeen} log(s)`);
     }
   }
 
-  return summarise(network.url, network.name, fromBlock, toBlock, answers, errors);
+  return summarise(reader.id, network.name, fromBlock, toBlock, answers, errors);
 }
 
 async function calibrateRpc(
@@ -116,8 +118,11 @@ async function calibrateRpc(
 ): Promise<Calibration[]> {
   const out: Calibration[] = [];
 
-  for (const url of network.rpcUrls) {
-    const single: NetworkConfig = { ...network, rpcUrls: [url] };
+  for (const url of network.readers.rpcUrls) {
+    // One endpoint at a time, because the question is what THIS endpoint does. A probe across
+    // several endpoints measures their union and hides the one that drops answers, which is the
+    // endpoint the whole rule exists for.
+    const single: NetworkConfig = { ...network, readers: { ...network.readers, rpcUrls: [url] } };
     const answers: number[] = [];
     let errors = 0;
 
@@ -149,18 +154,24 @@ export async function runCalibrate(opts: PipelineOpts): Promise<boolean> {
   const repeats = CONFIG.CALIBRATION_REPEATS;
   const results: Calibration[] = [];
 
-  for (const cfg of CONTRACTS) {
-    if (opts.contracts && !opts.contracts.includes(cfg.tableId)) continue;
+  for (const network of selectedNetworks(opts.chains)) {
+    const targets = targetsFor(network, { addresses: opts.addresses });
+    if (targets.length === 0) continue;
+    // One contract per chain unless the caller names addresses. Calibration measures the SOURCE,
+    // not the contract, and repeating it across 146 contracts would spend a lot of requests to
+    // measure the same endpoint over and over.
+    const chosen = opts.addresses ? targets : targets.slice(0, 1);
 
-    for (const binding of cfg.networkBindings) {
-      const network = binding.network;
-      // A range the caller names, or a small window inside the known-populated history.
-      const from = opts.fromBlock ?? binding.firstBlock;
-      const to = opts.toBlock ?? from + Math.min(network.rpcLogRange, 1_000) - 1;
+    for (const target of chosen) {
+      const from = opts.fromBlock ?? target.firstBlock;
+      const to = opts.toBlock ?? from + Math.min(network.readers.rpcLogRange, 1_000) - 1;
 
-      log.info(`Calibrating ${cfg.tableId}/${network.name} over blocks ${from}..${to}, ${repeats} repeats per source`);
-      results.push(await calibrateHyperSync(network, binding.contracts, from, to, repeats));
-      results.push(...(await calibrateRpc(network, binding.contracts, from, to, repeats)));
+      log.info(
+        `Calibrating ${target.contractName} ${target.address} on ${network.name} over blocks ` +
+        `${from}..${to}, ${repeats} repeats per source`
+      );
+      results.push(await calibratePrimaryReader(network, [target.address], from, to, repeats));
+      results.push(...(await calibrateRpc(network, [target.address], from, to, repeats)));
     }
   }
 

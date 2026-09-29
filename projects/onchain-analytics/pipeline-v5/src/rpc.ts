@@ -95,8 +95,15 @@ export async function consensusRead(
   // The endpoints are independent hosts, so they are queried together rather than one after
   // another. A full-window reconciliation is two calls per protocol day; sequential querying
   // made that three times longer than it needed to be and long enough to be fragile.
+  //
+  // Historical STATE is read from the ARCHIVE endpoints only. A pruned node answers a historical
+  // call with LATEST state, silently and with no error, so including one here would not produce
+  // an error, it would produce agreement on the wrong value.
+  const urls = network.readers.archiveRpcUrls.length > 0
+    ? network.readers.archiveRpcUrls
+    : network.readers.rpcUrls;
   const results = await Promise.all(
-    network.rpcUrls.map(async (url) => ({ url, r: await rpcCall(url, method, params) }))
+    urls.map(async (url) => ({ url, r: await rpcCall(url, method, params) }))
   );
 
   const answers: { url: string; raw: string }[] = [];
@@ -163,7 +170,7 @@ export async function probeLogsPresent(
   fromBlock: number,
   toBlock: number
 ): Promise<LogProbe> {
-  const cap = network.rpcLogRange;
+  const cap = network.readers.rpcLogRange;
   const ranges: [number, number][] = [];
   for (let lo = fromBlock; lo <= toBlock; lo += cap) {
     ranges.push([lo, Math.min(lo + cap - 1, toBlock)]);
@@ -172,7 +179,7 @@ export async function probeLogsPresent(
   const errors: string[] = [];
   const perEndpoint = new Map<string, { found: number; failures: number }>();
 
-  for (const url of network.rpcUrls) {
+  for (const url of network.readers.rpcUrls) {
     perEndpoint.set(url, { found: 0, failures: 0 });
     for (const [lo, hi] of ranges) {
       const r = await rpcCall(url, "eth_getLogs", [{

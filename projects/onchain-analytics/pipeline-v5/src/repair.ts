@@ -1,4 +1,4 @@
-/**
+﻿/**
  * repair.ts
  *
  * Two operations on history. MERGE prevents new damage; it does nothing about damage already
@@ -6,39 +6,51 @@
  *
  *   dedup   Collapses repeated natural keys. 43,000 phantom claim rows and 2,167 phantom invite
  *           rows were written by the predecessor's append path re-running a block range four
- *           months apart. Once this has run and the pipeline holds, the dbt staging QUALIFY
- *           de-duplication is a bandage on a healed wound.
+ *           months apart.
  *
- *   repair  Re-ingests the block ranges the contract oracle says are short. The four missing
+ *   repair  Re-reads the ranges the coverage ledger says were not covered. The four missing
  *           claims are not recoverable by de-duplicating anything: they were never written.
- *           The days are identified by reconciliation rather than by guesswork, the block range
- *           for each day is derived from the day's UTC window, and the re-ingest goes through
- *           the same MERGE as any other write, so running it twice changes nothing the second
- *           time.
+ *
+ * WHAT CHANGED, AND IT IS THE POINT OF THE PACKAGE. Repair used to be driven by a contract
+ * ORACLE: `runRepair` skipped any binding whose oracle was not of kind ubi_daily, and ORACLES has
+ * two entries. So the only route to re-reading a range covered one table on one network, against
+ * a surface of 146 contracts on four chains, and the other 144 contracts had no route at all
+ * because they publish no comparable ledger.
+ *
+ * Meanwhile the pipeline was already recording exactly what needed re-reading, and throwing it
+ * away. `skipped_ranges` is written in three places and, by an exhaustive search of all fourteen
+ * source files, read in none. A field written and never read is not a record, it is a comment in
+ * a table. Repair is now driven by it.
+ *
+ * THE ORACLE ROUTE STAYS, because it is the only EXTERNAL check this warehouse has. Every
+ * correctness argument before it compared the warehouse against itself, including the one that
+ * drove a shipped production fix, and a uniqueness assertion cannot prove a table holds what the
+ * chain produced. It is a second route, not the only one.
+ *
+ * ONE CODE PATH. Both routes call the pipeline's own `processTarget` over a named range. The
+ * previous version carried its own copy of the fetch, build and write loop, about sixty-five
+ * lines duplicated almost verbatim, so a fix to one path silently left the other behind.
  */
 
-import { CONTRACTS, oracleFor } from "./config.js";
-import { log, RUN_ID } from "./log.js";
-import { dedupTable, duplicateReport, stageAndMerge, recordCoverage, bqQuery } from "./bq.js";
-import { fullTableName } from "./config.js";
-import { fetchRange } from "./hypersync.js";
-import { confirmEmptyRange } from "./rpc.js";
+import { selectedNetworks, RAW_LOGS_TABLE, TRANSACTIONS_TABLE, oraclesFor, networkByChainId } from "./config.js";
+import { log } from "./log.js";
+import { dedupTable } from "./bq.js";
+import { targetsFor } from "./registry.js";
+import { loadCoverage, openGaps } from "./coverage.js";
+import { processTarget } from "./pipeline.js";
 import { reconcileDaily } from "./reconcile.js";
-import { readPeriodStart, pinBlock, dayWindow } from "./oracle.js";
-import { decodeEventLog } from "viem";
-import type { PipelineOpts, ContractConfig, LogContext, NetworkConfig } from "./types.js";
+import type { PipelineOpts } from "./types.js";
 
-/** Collapse repeated keys on every table this pipeline owns. */
+/** Collapse repeated keys on both L0 tables, for every selected chain. */
 export async function runDedup(opts: PipelineOpts): Promise<boolean> {
   let clean = true;
 
-  for (const cfg of CONTRACTS) {
-    if (opts.contracts && !opts.contracts.includes(cfg.tableId)) continue;
-    for (const binding of cfg.networkBindings) {
-      const r = await dedupTable(cfg.tableId, binding.network.name, !!opts.dryRun);
+  for (const network of selectedNetworks(opts.chains)) {
+    for (const tableId of [RAW_LOGS_TABLE, TRANSACTIONS_TABLE]) {
+      const r = await dedupTable(tableId, network.chainId, !!opts.dryRun);
       if (opts.dryRun) {
         log.info(
-          `[dry run] ${cfg.tableId}/${binding.network.name}: ${r.before.storedRows} stored, ` +
+          `[dry run] ${tableId}/${network.name}: ${r.before.storedRows} stored, ` +
           `${r.before.distinctKeys} distinct, ${r.before.phantomRows} phantom` +
           (r.before.phantomRows > 0 ? `, blocks ${r.before.minBlock}..${r.before.maxBlock}` : "")
         );
@@ -46,7 +58,7 @@ export async function runDedup(opts: PipelineOpts): Promise<boolean> {
         continue;
       }
       if (r.after && r.after.phantomRows > 0) {
-        log.error(`${cfg.tableId}/${binding.network.name}: ${r.after.phantomRows} phantom row(s) survived de-duplication`);
+        log.error(`${tableId}/${network.name}: ${r.after.phantomRows} phantom row(s) survived de-duplication`);
         clean = false;
       }
     }
@@ -56,246 +68,105 @@ export async function runDedup(opts: PipelineOpts): Promise<boolean> {
 }
 
 /**
- * Find the block range a protocol day occupies, by asking the chain rather than the warehouse.
+ * Report every open gap without changing anything. This is what `coverage` mode runs.
  *
- * Deriving the range from the stored rows is what hid the omission in the first place: a row
- * missing at a day edge sits outside a window computed from the rows that are present. The
- * range here is anchored on the stored rows and then widened by a margin on both sides, and
- * the widening is deliberate over-coverage, which MERGE makes free.
+ * Worth having as its own mode because the question "what does this warehouse not cover" was
+ * previously unanswerable: the data could not be asked, since an empty result has two causes, and
+ * the ledger was write only.
  */
-async function dayBlockRange(
-  tableId: string,
-  networkName: string,
-  day: number,
-  periodStart: number,
-  marginBlocks: number
-): Promise<{ from: number; to: number } | null> {
-  const [start, end] = dayWindow(day, periodStart);
-  const rows = await bqQuery(
-    `SELECT MIN(block_number) AS lo, MAX(block_number) AS hi
-     FROM ${fullTableName(tableId)}
-     WHERE network = @network
-       AND block_timestamp >= TIMESTAMP_SECONDS(@start)
-       AND block_timestamp <  TIMESTAMP_SECONDS(@end)`,
-    { network: networkName, start, end }
-  );
-  if (!rows[0]?.lo) return null;
-  return {
-    from: Math.max(0, Number(rows[0].lo) - marginBlocks),
-    to: Number(rows[0].hi) + marginBlocks,
-  };
-}
+export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
+  let clean = true;
 
-/** Decode and MERGE one block range for one binding. Shared by repair and by targeted backfill. */
-async function reingestRange(
-  cfg: ContractConfig,
-  network: NetworkConfig,
-  contracts: string[],
-  fromBlock: number,
-  toBlock: number
-): Promise<{ inserted: number; updated: number; complete: boolean; detail: string }> {
-  const startedAt = new Date().toISOString();
-  let buffer: Record<string, any>[] = [];
-  let lastBlockInBuffer = -1;
-  let inserted = 0;
-  let updated = 0;
-  let distinct = 0;
-  let reorgSuspects = 0;
-
-  const flush = async () => {
-    if (buffer.length === 0) return;
-    const r = await stageAndMerge(cfg.tableId, buffer, cfg.schema, RUN_ID);
-    inserted += r.inserted;
-    updated += r.updated;
-    distinct += r.distinct;
-    reorgSuspects += r.reorgSuspects;
-    buffer = [];
-  };
-
-  const fetch = await fetchRange(network, contracts, fromBlock, toBlock, async (chunk) => {
-    const txByHash = new Map<string, any>();
-    for (const tx of chunk.transactions ?? []) {
-      const h = String(tx.hash ?? "").toLowerCase();
-      if (h) txByHash.set(h, tx);
-    }
-    const blockByNumber = new Map<number, any>();
-    for (const b of chunk.blocks ?? []) {
-      const n = b.number === null || b.number === undefined ? -1 : Number(b.number);
-      if (n >= 0) blockByNumber.set(n, b);
-    }
-
-    for (const entry of chunk.logs ?? []) {
-      const rawTopics: (string | null)[] = [0, 1, 2, 3].map((i) => {
-        const t = (entry.topics ?? [])[i];
-        return typeof t === "string" ? t : null;
-      });
-      const decodeTopics = rawTopics.filter((t): t is string => typeof t === "string");
-      if (decodeTopics.length === 0) continue;
-
-      let decoded: { eventName: string; args: any };
-      try {
-        decoded = decodeEventLog({
-          abi: cfg.abi,
-          data: String(entry.data ?? "0x") as `0x${string}`,
-          topics: decodeTopics as [`0x${string}`, ...`0x${string}`[]],
-        }) as any;
-      } catch {
+  for (const network of selectedNetworks(opts.chains)) {
+    for (const target of targetsFor(network, { addresses: opts.addresses })) {
+      const captures = await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address);
+      const gaps = openGaps(captures);
+      if (captures.length === 0) {
+        log.warn(
+          `${network.name} ${target.contractName} ${target.address}: NO COVERAGE ROW. No range has ` +
+          `been read into ${RAW_LOGS_TABLE} for this contract, so an empty result over it means ` +
+          `"nobody looked" and not "nothing happened".`
+        );
+        clean = false;
         continue;
       }
-
-      const txHash = String(entry.transactionHash ?? "");
-      const tx = txByHash.get(txHash.toLowerCase());
-      const block = blockByNumber.get(Number(entry.blockNumber));
-
-      const ctx: LogContext = {
-        blockNumber: Number(entry.blockNumber),
-        blockHash: String(entry.blockHash ?? block?.hash ?? ""),
-        blockTimestamp: block?.timestamp ? Number(block.timestamp) : 0,
-        txHash,
-        txIndex: entry.transactionIndex === undefined ? 0 : Number(entry.transactionIndex),
-        logIndex: Number(entry.logIndex),
-        contractAddress: String(entry.address ?? ""),
-        topics: rawTopics,
-        logData: String(entry.data ?? "0x"),
-        txFrom: tx?.from ? String(tx.from) : null,
-        txTo: tx?.to ? String(tx.to) : null,
-        txValue: tx?.value === undefined || tx?.value === null ? null : String(tx.value),
-        txStatus: tx?.status === undefined || tx?.status === null ? null : Number(tx.status),
-        txNonce: tx?.nonce === undefined || tx?.nonce === null ? null : Number(tx.nonce),
-        gasUsed: tx?.gasUsed === undefined || tx?.gasUsed === null ? null : Number(tx.gasUsed),
-        effectiveGasPrice:
-          tx?.effectiveGasPrice === undefined || tx?.effectiveGasPrice === null
-            ? null
-            : String(tx.effectiveGasPrice),
-      };
-
-      const row = cfg.decodeToRow(decoded.eventName, decoded.args, ctx, network, RUN_ID);
-      if (row === null) continue;
-
-      if (buffer.length >= 50_000 && row.block_number > lastBlockInBuffer) await flush();
-      buffer.push(row);
-      if (row.block_number > lastBlockInBuffer) lastBlockInBuffer = row.block_number;
+      if (gaps.length === 0) {
+        log.info(`${network.name} ${target.contractName}: ${captures.length} capture(s), no open gap`);
+        continue;
+      }
+      clean = false;
+      log.error(
+        `${network.name} ${target.contractName} ${target.address}: ${gaps.length} open gap(s): ` +
+        gaps.map(([a, b]) => `${a}..${b}`).join(", ")
+      );
     }
-  });
-
-  await flush();
-
-  const unconfirmed: string[] = [];
-  for (const [lo, hi] of fetch.emptyChunks) {
-    const c = await confirmEmptyRange(network, contracts, lo, hi);
-    if (!c.confirmed) unconfirmed.push(`${lo}..${hi}: ${c.reason}`);
   }
 
-  const complete = fetch.complete && unconfirmed.length === 0;
-  const detail = [
-    ...fetch.errors,
-    ...unconfirmed,
-    ...(reorgSuspects > 0 ? [`REORG_SUSPECTED: ${reorgSuspects} row(s)`] : []),
-  ].join(" | ");
-
-  await recordCoverage({
-    runId: RUN_ID, network: network.name, tableId: cfg.tableId,
-    fromBlock, toBlock,
-    status: complete ? "complete" : fetch.complete ? "unconfirmed_empty" : "incomplete",
-    chunksPlanned: fetch.chunksPlanned, chunksOk: fetch.chunksOk,
-    skippedRanges: JSON.stringify(fetch.skipped),
-    rowsMerged: distinct, rowsInserted: inserted, rowsUpdated: updated,
-    logsSeen: fetch.logsSeen,
-    startedAt, completedAt: new Date().toISOString(),
-    errorMessage: detail.slice(0, 4000),
-  });
-
-  return { inserted, updated, complete, detail };
+  return clean;
 }
 
-export { reingestRange };
-
 /**
- * Re-ingest every protocol day the oracle says is short, then re-check those days.
+ * Re-read every range the coverage ledger records as not covered, then re-check.
  *
- * The re-check is the point. A repair that reports what it did is a claim; a repair that
- * reconciles the repaired days against the contract afterwards is a result.
+ * The re-check is the point. A repair that reports what it did is a claim; a repair that reads
+ * the ledger again afterwards, and reconciles against the contract where one exists, is a result.
  */
 export async function runRepair(opts: PipelineOpts): Promise<boolean> {
   let allClean = true;
 
-  for (const cfg of CONTRACTS) {
-    if (opts.contracts && !opts.contracts.includes(cfg.tableId)) continue;
+  for (const network of selectedNetworks(opts.chains)) {
+    for (const target of targetsFor(network, { addresses: opts.addresses })) {
+      const captures = await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address);
+      const gaps = openGaps(captures);
+      if (gaps.length === 0) continue;
 
-    for (const binding of cfg.networkBindings) {
-      const oracle = oracleFor(cfg.tableId, binding.network.name);
-      if (!oracle || oracle.kind !== "ubi_daily") continue;
-      const network = binding.network;
-
-      const dup = await duplicateReport(cfg.tableId, network.name);
-      if (dup.phantomRows > 0) {
-        log.warn(
-          `${cfg.tableId}/${network.name} still holds ${dup.phantomRows} phantom row(s). ` +
-          `Run dedup first: a duplicated day cannot be told apart from a repaired one by count alone.`
-        );
-      }
-
-      log.info(`Finding short days on ${cfg.tableId}/${network.name}`);
-      const before = await reconcileDaily(cfg.tableId, network.name, "amount", opts.days);
-      if (!before) continue;
-
-      const short = before.days.filter((d) => d.verdict === "missing").map((d) => d.day);
-      if (short.length === 0) {
-        log.info(`${cfg.tableId}/${network.name}: no short days, nothing to repair`);
-        continue;
-      }
-      log.warn(`${cfg.tableId}/${network.name}: ${short.length} short day(s): ${short.join(", ")}`);
+      const label = `${target.contractName} ${target.address} on ${network.name}`;
+      log.warn(`${label}: ${gaps.length} open gap(s) to re-read: ` + gaps.map(([a, b]) => `${a}..${b}`).join(", "));
 
       if (opts.dryRun) {
-        for (const d of before.days.filter((x) => x.verdict === "missing")) {
-          log.info(
-            `[dry run] day ${d.day}: contract ${d.oracleCount}, warehouse ${d.distinctRows}, ` +
-            `missing ${d.countGap} claim(s) worth ${d.amountGapRaw} raw units`
-          );
-        }
         allClean = false;
         continue;
       }
 
-      const pin = await pinBlock(network);
-      if (!pin.ok || pin.value === null) throw new Error(`Cannot pin a block: ${pin.errors.join("; ")}`);
-      const ps = await readPeriodStart(network, oracle.address, pin.value);
-      if (!ps.ok || ps.value === null) throw new Error(`Cannot read periodStart(): ${ps.errors.join("; ")}`);
-
-      // One block per side is enough for the mechanism found here, since the loss is always
-      // the tail of a boundary block. The margin is far wider so a day-edge loss is covered
-      // too, and over-coverage is free under MERGE.
-      const margin = Math.ceil(network.blocksPerDay / 24);
-
-      for (const day of short) {
-        const range = await dayBlockRange(cfg.tableId, network.name, day, ps.value, margin);
-        if (!range) {
-          log.error(`Day ${day}: no stored rows, cannot anchor a block range. Use backfill --from/--to.`);
-          allClean = false;
-          continue;
-        }
-        log.info(`Repairing day ${day} over blocks ${range.from}..${range.to}`);
-        const r = await reingestRange(cfg, network, binding.contracts, range.from, range.to);
-        log.info(
-          `  day ${day}: ${r.inserted} row(s) inserted, ${r.updated} updated, ` +
-          `${r.complete ? "range complete" : "RANGE INCOMPLETE"}`
-        );
-        if (!r.complete) {
-          log.error(`  day ${day} repair is not trustworthy: ${r.detail}`);
+      for (const [from, to] of gaps) {
+        log.info(`Repairing ${label} over blocks ${from}..${to}`);
+        try {
+          // The same code path an ordinary ingestion uses, over a named range. Re-reading is free
+          // of duplicates under MERGE, so over-covering a gap costs time and nothing else.
+          await processTarget(target, { mode: "backfill", fromBlock: from, toBlock: to });
+        } catch (e: any) {
+          log.error(`  repair of ${from}..${to} did not complete: ${e.message}`);
           allClean = false;
         }
       }
 
-      log.info(`Re-checking repaired day(s) against the contract`);
-      const after = await reconcileDaily(cfg.tableId, network.name, "amount", short);
-      if (!after) { allClean = false; continue; }
-      for (const d of after.days) {
-        log.info(
-          `  day ${d.day}: ${d.verdict}, contract ${d.oracleCount}, warehouse ${d.distinctRows} distinct, ` +
-          `count gap ${d.countGap}, amount gap ${d.amountGapRaw}`
-        );
+      const after = openGaps(await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address));
+      if (after.length > 0) {
+        log.error(`${label}: ${after.length} gap(s) remain after repair: ` + after.map(([a, b]) => `${a}..${b}`).join(", "));
+        allClean = false;
+      } else {
+        log.info(`${label}: every open gap is now covered by a clean capture`);
       }
-      if (!after.clean) allClean = false;
+    }
+  }
+
+  // The external check, where one exists. Two contracts out of 146 publish a usable ledger, so
+  // this cannot be the only route to a re-read, but it is the only evidence in this system that
+  // does not come from the system itself.
+  for (const oracle of oraclesFor(selectedNetworks(opts.chains))) {
+    if (oracle.kind !== "ubi_daily") continue;
+    const network = networkByChainId(oracle.network.chainId);
+    if (!network) continue;
+    const result = await reconcileDaily(oracle, opts.days);
+    if (!result) continue;
+    if (!result.clean) {
+      log.error(
+        `Oracle reconciliation on ${oracle.address} is NOT clean after repair: ` +
+        `${result.days.filter((d) => d.verdict !== "exact").length} day(s) disagree with the contract`
+      );
+      allClean = false;
+    } else {
+      log.info(`Oracle reconciliation on ${oracle.address} is exact across ${result.interiorDays} interior day(s)`);
     }
   }
 
