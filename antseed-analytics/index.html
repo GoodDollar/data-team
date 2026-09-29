@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodDollar Antseed AI Credits -- Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-secondary: #1a1d2e;
+            --bg-card: #222538;
+            --text-primary: #e8eaed;
+            --text-secondary: #9aa0b0;
+            --accent: #00b0ff;
+            --accent-dim: rgba(0, 176, 255, 0.15);
+            --success: #4caf50;
+            --warning: #ff9800;
+            --border: #2d3148;
+            --radius: 12px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 40px 32px;
+            text-align: center;
+            margin-bottom: 32px;
+            box-shadow: var(--shadow);
+        }
+        .hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+        .hero .subtitle { color: var(--text-secondary); font-size: 1rem; margin-bottom: 24px; }
+        .demo-badge { display: inline-block; background: var(--warning); color: #000; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; vertical-align: middle; margin-left: 8px; }
+        .demo-banner { background: rgba(255,152,0,0.12); border: 1px solid var(--warning); border-radius: 8px; padding: 12px 20px; margin-bottom: 24px; text-align: center; font-size: 0.85rem; color: var(--warning); }
+
+        .hero-stats { display: flex; justify-content: center; gap: 48px; flex-wrap: wrap; margin-bottom: 24px; }
+        .hero-stat { text-align: center; }
+        .hero-stat .value { font-size: 1.75rem; font-weight: 700; color: var(--accent); }
+        .hero-stat .label { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .last-updated { font-size: 0.75rem; color: var(--text-secondary); margin-top: 16px; }
+        .refresh-btn { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; margin-left: 8px; transition: all 0.2s; }
+        .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .refresh-btn.loading { opacity: 0.5; pointer-events: none; }
+
+        /* Data source toggle */
+        .toggle-bar { display: flex; gap: 4px; background: var(--bg-primary); border-radius: 8px; padding: 4px; width: fit-content; margin: 0 auto 20px; }
+        .toggle-btn { background: transparent; border: none; color: var(--text-secondary); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; transition: all 0.2s; }
+        .toggle-btn.active { background: var(--accent); color: #fff; }
+        .toggle-btn:hover:not(.active) { color: var(--text-primary); }
+        .toggle-btn:disabled { opacity: 0.4; cursor: default; }
+
+        /* Section */
+        .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; margin-bottom: 32px; box-shadow: var(--shadow); }
+        .section h2 { font-size: 1.4rem; margin-bottom: 20px; }
+
+        /* Charts */
+        .charts-grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+        .chart-container { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+        .chart-container h4 { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px; }
+        .chart-container canvas { width: 100% !important; height: 280px !important; }
+        .charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; margin-top: 24px; }
+
+        /* Table */
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .data-table th { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .data-table td { padding: 12px 8px; border-bottom: 1px solid rgba(45, 49, 72, 0.5); }
+        .data-table tr:hover td { background: rgba(0, 176, 255, 0.04); }
+        .data-table .accent { color: var(--accent); font-weight: 600; }
+
+        /* Pagination */
+        .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+        .pagination button { background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-secondary); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+        .pagination button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+        .pagination button:disabled { opacity: 0.3; cursor: default; }
+        .pagination .page-info { font-size: 0.85rem; color: var(--text-secondary); padding: 0 8px; }
+
+        /* System Info */
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+        .info-item { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .info-item .info-label { font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .info-item .info-value { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; word-break: break-all; }
+        .info-item a { color: var(--accent); text-decoration: none; }
+        .info-item a:hover { text-decoration: underline; }
+
+        /* Loading / Empty states */
+        .loading-overlay { display: flex; align-items: center; justify-content: center; padding: 60px; flex-direction: column; gap: 12px; }
+        .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+        .empty-state .emoji { font-size: 2.5rem; margin-bottom: 12px; }
+        .empty-state a { color: var(--accent); text-decoration: none; }
+        .empty-state a:hover { text-decoration: underline; }
+
+        .error-state { text-align: center; padding: 60px 20px; }
+        .error-state .emoji { font-size: 3rem; margin-bottom: 16px; }
+        .error-state h2 { color: var(--text-primary); margin-bottom: 12px; font-size: 1.3rem; }
+        .error-state p { color: var(--text-secondary); margin-bottom: 8px; font-size: 0.95rem; }
+        .error-state a { color: var(--accent); text-decoration: none; }
+        .error-state a:hover { text-decoration: underline; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero { padding: 24px 16px; }
+            .hero h1 { font-size: 1.5rem; }
+            .hero-stats { gap: 24px; }
+            .hero-stat .value { font-size: 1.4rem; }
+            .section { padding: 20px 16px; }
+            .data-table { font-size: 0.8rem; }
+            .data-table th, .data-table td { padding: 8px 4px; }
+            .charts-row { grid-template-columns: 1fr; }
+            .info-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="main-content">
+        <!-- Demo banner (hidden when live data loads) -->
+        <div class="demo-banner" id="demo-banner" style="display:none;">
+            Showing demo data -- the Worker endpoint is not yet deployed. Dashboard will switch to live data automatically once <a href="https://github.com/GoodDollar/antseed-integration/pull/19" target="_blank" rel="noopener" style="color:var(--warning);text-decoration:underline;">PR #19</a> merges.
+        </div>
+
+        <!-- Hero Scorecards -->
+        <section class="hero">
+            <h1>GoodDollar Antseed AI Credits <span class="demo-badge" id="demo-badge" style="display:none;">DEMO DATA</span></h1>
+            <p class="subtitle">G$ deposits and AI compute credit usage -- aggregated from on-chain events</p>
+            <div class="toggle-bar">
+                <button class="toggle-btn active" id="toggle-live" onclick="switchSource('live')">Live Data</button>
+                <button class="toggle-btn" id="toggle-demo" onclick="switchSource('demo')">Demo Preview</button>
+            </div>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="value" id="stat-total-gd">--</div>
+                    <div class="label">Total G$ Spent</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" id="stat-ai-credits">--</div>
+                    <div class="label">AI Credits Used (USD)</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" id="stat-flow-rate">--</div>
+                    <div class="label">Flow Rate (G$/day)</div>
+                </div>
+            </div>
+            <div class="last-updated">
+                <span id="last-updated-text">Loading...</span>
+                <button class="refresh-btn" id="refresh-btn" onclick="triggerRefresh()">Refresh</button>
+            </div>
+        </section>
+
+        <!-- Charts Section -->
+        <section class="section" id="charts-section">
+            <h2>Daily Trends</h2>
+            <div id="charts-content" style="display:none;">
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h4>G$ Volume (One-time Deposits + Streamed)</h4>
+                        <canvas id="volume-chart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-row">
+                    <div class="chart-container">
+                        <h4>AI Credits Used per Day (USD)</h4>
+                        <canvas id="credits-chart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Unique Wallets per Day</h4>
+                        <canvas id="wallets-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="loading-overlay" id="charts-loading">
+                <div class="loading-spinner"></div>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">Loading analytics...</span>
+            </div>
+        </section>
+
+        <!-- Summary Table -->
+        <section class="section" id="table-section">
+            <h2>Daily Summary</h2>
+            <div id="table-content"></div>
+            <div class="pagination" id="pagination" style="display:none;">
+                <button id="page-first" onclick="goToPage(1)">&laquo;</button>
+                <button id="page-prev" onclick="goToPage(currentPage - 1)">&lsaquo; Prev</button>
+                <span class="page-info" id="page-info">Page 1 of 1</span>
+                <button id="page-next" onclick="goToPage(currentPage + 1)">Next &rsaquo;</button>
+                <button id="page-last" onclick="goToPage(totalPages)">&raquo;</button>
+            </div>
+        </section>
+
+        <!-- System Info -->
+        <section class="section">
+            <h2>System Info</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">CeloGdAntSeedVault (Celo)</div>
+                    <div class="info-value"><a href="https://celoscan.io/address/0x4Dd0136b9aabD5823cf0F65d89e8fB882C660885" target="_blank" rel="noopener">0x4Dd0136b9aabD5823cf0F65d89e8fB882C660885</a></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">AntseedBuyerOperator (Base)</div>
+                    <div class="info-value"><a href="https://basescan.org/address/0x192288D921045aa96903e5286E116960e5fb4607" target="_blank" rel="noopener">0x192288D921045aa96903e5286E116960e5fb4607</a></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Data Source</div>
+                    <div class="info-value">Metrics aggregated every 6 hours from on-chain events by the GoodDollar Antseed Worker</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Integration Repo</div>
+                    <div class="info-value"><a href="https://github.com/GoodDollar/antseed-integration" target="_blank" rel="noopener">GoodDollar/antseed-integration</a></div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Error state (hidden by default, shown when endpoint unreachable) -->
+    <div class="container" id="error-content" style="display:none;">
+        <div class="error-state">
+            <div class="emoji">&#128679;</div>
+            <h2>Worker Endpoint Not Yet Deployed</h2>
+            <p>The Antseed analytics Worker is not yet live. It will become available once <a href="https://github.com/GoodDollar/antseed-integration/pull/19" target="_blank" rel="noopener">PR #19</a> is merged.</p>
+            <p style="margin-top: 16px; font-size: 0.85rem;">This dashboard will auto-retry every 5 minutes. Once the endpoint is reachable, data will load automatically.</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
