@@ -26,7 +26,7 @@ import { CONFIG, selectedNetworks } from "./config.js";
 import { log } from "./log.js";
 import { fetchRange, readerFor } from "./reader.js";
 import { probeLogsPresent } from "./rpc.js";
-import { targetsFor } from "./registry.js";
+import { targetsFor, releaseScopedNetworks } from "./registry.js";
 import type { PipelineOpts, NetworkConfig } from "./types.js";
 
 export interface Calibration {
@@ -154,7 +154,7 @@ export async function runCalibrate(opts: PipelineOpts): Promise<boolean> {
   const repeats = CONFIG.CALIBRATION_REPEATS;
   const results: Calibration[] = [];
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     const targets = targetsFor(network, { addresses: opts.addresses });
     if (targets.length === 0) continue;
     // One contract per chain unless the caller names addresses. Calibration measures the SOURCE,
@@ -192,3 +192,12 @@ export async function runCalibrate(opts: PipelineOpts): Promise<boolean> {
 
   return results.every((r) => r.answers.length > 0);
 }
+
+/**
+ * Exposed for the test harness only.
+ *
+ * `summarise` is the one pure function in this module: it turns a set of pass results into a
+ * measured miss rate and the pass count that rate would need. Everything else here reaches a
+ * chain. Exporting it is construction, not behaviour -- nothing in `src/` reads this.
+ */
+export const __testing = { summarise };

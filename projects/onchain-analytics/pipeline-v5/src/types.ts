@@ -7,6 +7,8 @@
  * range of which contract, how far the result can be trusted, and what it failed on.
  */
 
+import type { RunSummary } from "./outcome.js";
+
 // ---------------------------------------------------------------------------------------------
 // Chains and readers
 // ---------------------------------------------------------------------------------------------
@@ -38,7 +40,24 @@ export interface ReaderCapability {
   hypersyncUrl: string | null;
   /** JSON-RPC endpoints, for confirming negatives, reading state, and enumerating logs where HyperSync cannot. */
   rpcUrls: string[];
-  /** Endpoints able to serve historical state. Empty means historical state is unreadable here. */
+  /**
+   * Endpoints able to serve state at a RECENT pinned block, which is what every state read this
+   * pipeline currently performs actually needs.
+   *
+   * Separate from `archiveRpcUrls` because the two answer different questions and an endpoint
+   * that fails one can pass the other. Treating them as one list scored Celo at a single
+   * qualified endpoint and produced a spend request; measured against the question actually
+   * being asked, four free endpoints qualify.
+   */
+  stateRpcUrls: string[];
+  /**
+   * Endpoints able to serve DEEP historical state -- state old enough that a pruned node has
+   * discarded it. Empty means deep historical state is unreadable here.
+   *
+   * A pruned node answers a historical call with LATEST state, silently and with no error, so
+   * this list is qualified by a tripwire that reads a value which MUST have changed, never by a
+   * liveness probe.
+   */
   archiveRpcUrls: string[];
   /** Largest block span this chain's RPC endpoints accept for eth_getLogs. */
   rpcLogRange: number;
@@ -199,7 +218,7 @@ export interface MergeWindow {
 }
 
 export interface PipelineOpts {
-  mode: "daily" | "backfill" | "verify" | "dedup" | "repair" | "calibrate" | "coverage";
+  mode: "daily" | "backfill" | "plan" | "verify" | "dedup" | "repair" | "calibrate" | "coverage";
   /** Limit to these chain names, for example CELO,XDC. */
   chains?: string[];
   /** Limit to these contract addresses. */
@@ -220,6 +239,15 @@ export interface PipelineResult {
   succeeded: number;
   failed: number;
   totalRows: number;
+  /**
+   * The typed outcome of every unit this run produced. C2's fix.
+   *
+   * `succeeded` and `failed` are kept as the flattened projection of it, because they are what
+   * the two `PipelineRuns` count columns have always held and renaming a column is a warehouse
+   * change rather than a control-flow one. They are DERIVED from the summary now, never
+   * incremented independently, so the two can no longer disagree.
+   */
+  summary: RunSummary;
 }
 
 /**
@@ -246,7 +274,14 @@ export interface CoverageRecord {
   tableId: string;
   fromBlock: number;
   toBlock: number;
-  /** complete, incomplete, unconfirmed_empty, nothing_to_fetch, or capability_gap. Never "success". */
+  /**
+   * complete, incomplete, unconfirmed_empty, rollback_eligible, nothing_to_fetch, refused_budget
+   * or capability_gap. Never "success".
+   *
+   * `rollback_eligible` means the reader reported it still holds blocks at or below this
+   * capture's start, so the source itself says the range can still be reorganised. Only
+   * `complete` is clean, so anything else holds the resume frontier at or below the range.
+   */
   status: string;
   chunksPlanned: number;
   chunksOk: number;
@@ -287,4 +322,25 @@ export interface PipelineRunRecord {
   capturesOk: number;
   capturesFailed: number;
   pipelineVersion: string;
+
+  // -- Plan Phase 3 task 11. Additive outcome columns. --
+  //
+  // The migration that adds them to an existing table is one statement in one file at
+  // `warehouse/L1/08_PipelineRunsOutcome_v1.sql`. Phase 8 rehearses and applies it; nothing here
+  // applies anything. `host` and `pipeline_version` are REUSED for runner identity and release
+  // version rather than aliased, which plan task 11 names explicitly.
+
+  /** `completed`, `partial`, `refused`, `unsupported`, `empty` or `failed`. Never plain success. */
+  executionStatus: string;
+  unitsPlanned: number;
+  unitsAttempted: number;
+  unitsCompleted: number;
+  unitsNoop: number;
+  unitsRefused: number;
+  unitsUnsupported: number;
+  unitsFailed: number;
+  /** `OutcomeCounters` per target grain, as JSON. Reconciles exactly to the unit counts. */
+  outcomeCountsByGrain: string;
+  releaseSha: string | null;
+  planHash: string | null;
 }

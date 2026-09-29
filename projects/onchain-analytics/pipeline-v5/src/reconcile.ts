@@ -22,6 +22,8 @@
 
 import { oraclesFor, selectedNetworks, RAW_LOGS_TABLE } from "./config.js";
 import type { OracleConfig } from "./config.js";
+import { releaseScopedNetworks } from "./registry.js";
+import type { ReadOnlyOutcome } from "./outcome.js";
 import { log, RUN_ID } from "./log.js";
 import {
   pinBlock, readDays, readPeriodStart, readCurrentDay, readInviteStats, dayOf,
@@ -65,6 +67,7 @@ export interface ReconcileResult {
   interiorDays: number;
   exactDays: number;
   days: DayVerdict[];
+  /** The warehouse's own first and last covered day, or empty when the caller named the days. */
   edgeDays: number[];
   oracleErrors: string[];
   clean: boolean;
@@ -129,18 +132,26 @@ export async function reconcileDaily(
   const cd = await readCurrentDay(network, oracle.address, block);
   const currentDay = cd.ok && cd.value !== null ? cd.value : null;
 
-  const span = await warehouseDaySpan(oracle.network.chainId, oracle.address, topic0, periodStart);
-  if (!span) {
-    log.warn(`${RAW_LOGS_TABLE} holds no ${oracle.eventSignature} rows for ${oracle.address}; nothing to reconcile`);
-    return null;
-  }
-
   // Interior days only, unless the caller named days explicitly. The first and last day the
   // warehouse covers are partial by construction and would show a false gap.
+  //
+  // A NAMED DAY RANGE DOES NOT NEED A WAREHOUSE SPAN, and requiring one was C4's shape at this
+  // level. The span exists to derive a window from stored rows; when the caller supplies the
+  // window, asking the warehouse to justify it means a contract the warehouse holds nothing for
+  // can never be checked -- which is precisely the case where the answer matters most, and is
+  // the live state of Celo in this warehouse today. An empty warehouse is a legitimate side of a
+  // comparison: the contract says N, we hold 0, and that is a result.
   let wantedDays: number[];
+  let span: { first: number; last: number } | null = null;
+
   if (days && days.length > 0) {
     wantedDays = [...new Set(days)].sort((a, b) => a - b);
   } else {
+    span = await warehouseDaySpan(oracle.network.chainId, oracle.address, topic0, periodStart);
+    if (!span) {
+      log.warn(`${RAW_LOGS_TABLE} holds no ${oracle.eventSignature} rows for ${oracle.address} and no days were named, so there is no window to reconcile over`);
+      return null;
+    }
     wantedDays = [];
     for (let d = span.first + 1; d <= span.last - 1; d++) wantedDays.push(d);
   }
@@ -215,7 +226,7 @@ export async function reconcileDaily(
     chainId: network.chainId, network: network.name, contractAddress: oracle.address,
     pinnedBlock: block,
     firstDay, lastDay, interiorDays: verdicts.length, exactDays: exact,
-    days: verdicts, edgeDays: [span.first, span.last],
+    days: verdicts, edgeDays: span ? [span.first, span.last] : [],
     oracleErrors,
     clean: verdicts.length > 0 && exact === verdicts.length && oracleErrors.length === 0,
   };
@@ -328,64 +339,276 @@ export async function reconcileInviteStats(oracle: OracleConfig): Promise<StatsV
 }
 
 /**
- * The verify mode. Returns true when everything reconciles.
+ * What one oracle contributed to a verification.
+ *
+ * `comparedUnits` is the load-bearing field: it is the count of things that were actually put
+ * side by side with the chain. A protocol day for a daily ledger, a block window for a lifetime
+ * counter. Zero means no evidence was produced, whatever else the row says.
+ */
+export interface OracleCheck {
+  chainId: number;
+  network: string;
+  contractAddress: string;
+  kind: OracleConfig["kind"];
+  comparedUnits: number;
+  matchedUnits: number;
+  discrepantUnits: number;
+  /** Units the oracle itself could not be read for. Not a pass and not a discrepancy. */
+  unreadableUnits: number;
+  outcome: "exact" | "discrepant" | "nothing_to_compare" | "unreadable";
+  detail: string;
+}
+
+/**
+ * The result of a verification run, which is a measurement and not a verdict.
+ *
+ * A boolean could not distinguish "compared 254 protocol days, all matched" from "compared
+ * nothing", and those need opposite responses. So the report carries the counts, and `outcome`
+ * is DERIVED from them by one rule stated in `finish()` rather than accumulated by a flag that
+ * any branch can forget to clear.
+ */
+export interface VerificationReport {
+  outcome: ReadOnlyOutcome;
+  chainsSelected: string[];
+  chainsWithNoOracle: string[];
+  oraclesSelected: number;
+  checks: OracleCheck[];
+  comparedUnits: number;
+  matchedUnits: number;
+  discrepantUnits: number;
+  unreadableUnits: number;
+  /** Oracles that produced no comparison at all. */
+  oraclesWithNothingToCompare: number;
+  summary: string;
+}
+
+const emptyReport = (): VerificationReport => ({
+  outcome: "nothing_to_check",
+  chainsSelected: [],
+  chainsWithNoOracle: [],
+  oraclesSelected: 0,
+  checks: [],
+  comparedUnits: 0,
+  matchedUnits: 0,
+  discrepantUnits: 0,
+  unreadableUnits: 0,
+  oraclesWithNothingToCompare: 0,
+  summary: "",
+});
+
+const nothingCompared = (oracle: OracleConfig, detail: string): OracleCheck => ({
+  chainId: oracle.network.chainId,
+  network: oracle.network.name,
+  contractAddress: oracle.address,
+  kind: oracle.kind,
+  comparedUnits: 0,
+  matchedUnits: 0,
+  discrepantUnits: 0,
+  unreadableUnits: 0,
+  outcome: "nothing_to_compare",
+  detail,
+});
+
+function dailyCheck(oracle: OracleConfig, r: ReconcileResult): OracleCheck {
+  const unreadable = r.days.filter((d) => d.verdict === "oracle_unreadable").length;
+  const discrepant = r.days.filter((d) => d.verdict !== "exact" && d.verdict !== "oracle_unreadable").length;
+  return {
+    chainId: r.chainId,
+    network: r.network,
+    contractAddress: r.contractAddress,
+    kind: oracle.kind,
+    comparedUnits: r.interiorDays,
+    matchedUnits: r.exactDays,
+    discrepantUnits: discrepant,
+    unreadableUnits: unreadable,
+    outcome: r.interiorDays === 0 ? "nothing_to_compare"
+      : unreadable > 0 ? "unreadable"
+      : discrepant > 0 ? "discrepant"
+      : "exact",
+    detail:
+      `${r.exactDays}/${r.interiorDays} protocol days exact in ${r.firstDay}..${r.lastDay} ` +
+      `at block ${r.pinnedBlock}` +
+      (discrepant > 0 ? `, ${discrepant} discrepant` : "") +
+      (unreadable > 0 ? `, ${unreadable} the oracle could not be read for` : ""),
+  };
+}
+
+function statsCheck(oracle: OracleConfig, r: StatsVerdict): OracleCheck {
+  // A lifetime counter compared over one block window is ONE comparison, not one per bounty.
+  // Counting it as `gap` units would let a large gap look like a large amount of evidence.
+  const unreadable = r.errors.length > 0 ? 1 : 0;
+  return {
+    chainId: r.chainId,
+    network: r.network,
+    contractAddress: r.contractAddress,
+    kind: oracle.kind,
+    comparedUnits: unreadable ? 0 : 1,
+    matchedUnits: !unreadable && r.clean ? 1 : 0,
+    discrepantUnits: !unreadable && !r.clean ? 1 : 0,
+    unreadableUnits: unreadable,
+    outcome: unreadable ? "unreadable" : r.clean ? "exact" : "discrepant",
+    detail:
+      `contract counted ${r.bountyDelta} bounties over blocks ${r.windowStartBlock}..${r.windowEndBlock}, ` +
+      `warehouse holds ${r.warehouseDistinctBounties} distinct (${r.warehouseBountyRows} stored), gap ${r.gap}`,
+  };
+}
+
+/**
+ * The one place the outcome is decided, from the counts rather than from a flag.
+ *
+ * `clean` REQUIRES `comparedUnits > 0`. That single conjunct is finding C4: without it, every
+ * path that compares nothing falls through to success, and there are three such paths.
+ */
+function finish(report: VerificationReport): VerificationReport {
+  for (const c of report.checks) {
+    report.comparedUnits += c.comparedUnits;
+    report.matchedUnits += c.matchedUnits;
+    report.discrepantUnits += c.discrepantUnits;
+    report.unreadableUnits += c.unreadableUnits;
+    if (c.outcome === "nothing_to_compare") report.oraclesWithNothingToCompare++;
+  }
+
+  if (report.comparedUnits === 0) {
+    report.outcome = "nothing_to_check";
+    report.summary =
+      report.oraclesSelected === 0
+        ? `no oracle exists on [${report.chainsSelected.join(", ") || "no chain"}], so nothing was compared`
+        : `${report.oraclesSelected} oracle(s) selected but nothing was compared`;
+  } else if (report.unreadableUnits > 0 || report.oraclesWithNothingToCompare > 0) {
+    // Partial evidence is a finding, never a pass. A day the contract could not be read for is
+    // an unanswered question, and an oracle that compared nothing is a silent half of the scope.
+    report.outcome = "finding";
+    report.summary =
+      `${report.matchedUnits}/${report.comparedUnits} compared units matched, ` +
+      `${report.discrepantUnits} disagreed, ${report.unreadableUnits} could not be read, ` +
+      `${report.oraclesWithNothingToCompare} oracle(s) compared nothing`;
+  } else if (report.discrepantUnits > 0) {
+    report.outcome = "finding";
+    report.summary = `${report.matchedUnits}/${report.comparedUnits} compared units matched, ${report.discrepantUnits} disagreed`;
+  } else {
+    report.outcome = "clean";
+    report.summary = `${report.matchedUnits}/${report.comparedUnits} compared units matched against the contract`;
+  }
+
+  log.info(`verify: ${report.outcome} -- ${report.summary}`);
+  return report;
+}
+
+/**
+ * The verify mode. Returns WHAT WAS COMPARED, not whether it went well.
  *
  * TWO CONTRACTS OUT OF 146 PUBLISH A USABLE LEDGER, and that is stated here rather than implied
  * by silence. This is the only EXTERNAL evidence this warehouse has, and it covers about 1.4
  * percent of its surface. Coverage, which covers all of it, is a different question and is
  * answered by the coverage mode.
+ *
+ * C4 WAS THE RETURN TYPE, not a missing check. This function used to return `boolean`, so
+ * "compared 254 protocol days and every one matched" and "compared nothing at all" arrived at
+ * the caller as the same value `true`, and the CLI mapped both to exit 0. Three paths reached
+ * that `true` without comparing anything: a chain with no oracle, a contract the warehouse holds
+ * no rows for, and a window with no frozen day in it. An `if` on any one of them leaves the other
+ * two, which is why the fix is the type. Same shape as C2 one layer up.
+ *
+ * The rule the type enforces, in one sentence: **a run is clean only when it compared something.**
  */
-export async function runVerify(opts: PipelineOpts): Promise<boolean> {
-  let clean = true;
-  const oracles = oraclesFor(selectedNetworks(opts.chains));
+export async function runVerify(opts: PipelineOpts): Promise<VerificationReport> {
+  const report = emptyReport();
+  const selected = releaseScopedNetworks(selectedNetworks(opts.chains));
+  report.chainsSelected = selected.map((n) => n.name);
+
+  // DECIDED-4, the scope leak Unit 1 named: this used to read `oraclesFor(selectedNetworks(...))`
+  // with no release-scope filter. It was inert only while ORACLES held XDC entries alone, and
+  // this unit adds Celo, which is exactly the change that would have made it bite.
+  const oracles = oraclesFor(selected);
+  report.oraclesSelected = oracles.length;
+  report.chainsWithNoOracle = selected
+    .filter((n) => !oracles.some((o) => o.network.chainId === n.chainId))
+    .map((n) => n.name);
 
   if (oracles.length === 0) {
-    log.warn(`No contract oracle exists on the selected chain(s), so nothing can be checked against the chain here`);
-    return true;
+    const named = report.chainsSelected.join(", ") || "none";
+    log.warn(
+      `No contract oracle exists on the selected chain(s) [${named}], so NOTHING was compared ` +
+      `against the chain. That is not a clean result; it is the absence of a result.`
+    );
+    return finish(report);
   }
 
   for (const oracle of oracles) {
     const label = `${oracle.address} on ${oracle.network.name}`;
 
-    if (oracle.kind === "ubi_daily") {
-      const r = await reconcileDaily(oracle, opts.days);
-      if (!r) continue;
-      const bad = r.days.filter((d) => d.verdict !== "exact");
-      log.info(
-        `${label}: ${r.exactDays}/${r.interiorDays} protocol days reconcile exactly at block ${r.pinnedBlock}`
-      );
-      for (const d of bad.slice(0, 50)) {
-        log.error(
-          `  day ${d.day} ${d.verdict}: contract ${d.oracleCount}, warehouse ${d.distinctRows} distinct ` +
-          `(${d.storedRows} stored), count gap ${d.countGap}, amount gap ${d.amountGapRaw} raw units` +
-          (d.unreadableRows > 0 ? `, ${d.unreadableRows} row(s) whose amount could not be decoded` : "")
-        );
-      }
-      if (r.oracleErrors.length > 0) {
-        log.error(`  ${r.oracleErrors.length} day(s) the oracle could not be read, which is not a pass`);
-      }
-      log.info(`  edge days ${r.edgeDays.join(" and ")} are partial by construction and excluded`);
-      if (!r.clean) clean = false;
+    // One chain's endpoints having a bad minute must not erase another chain's result. A throw
+    // here used to abort the whole command, so a Celo quorum failure would have destroyed a
+    // completed XDC comparison on the way out. An oracle that could not be read is recorded as
+    // unreadable, which is a finding rather than a pass, and the loop continues.
+    try {
+      await checkOracle(oracle, opts, report);
+    } catch (e: any) {
+      log.error(`${label}: could not be read: ${e.message}`);
+      report.checks.push({
+        ...nothingCompared(oracle, `could not be read: ${e.message}`),
+        unreadableUnits: 1,
+        outcome: "unreadable",
+      });
     }
-
-    if (oracle.kind === "invites_stats") {
-      const r = await reconcileInviteStats(oracle);
-      if (!r) continue;
-      log.info(
-        `${label}: contract counted ${r.bountyDelta} bounties over blocks ` +
-        `${r.windowStartBlock}..${r.windowEndBlock}, warehouse holds ${r.warehouseDistinctBounties} distinct ` +
-        `(${r.warehouseBountyRows} stored)`
-      );
-      if (!r.clean) {
-        log.error(`  gap ${r.gap}, phantom rows ${r.warehouseBountyRows - r.warehouseDistinctBounties}`);
-        for (const e of r.errors) log.error(`  ${e}`);
-        clean = false;
-      }
-    }
-
-    const maxTs = await getMaxBlockTimestamp(RAW_LOGS_TABLE, oracle.network.chainId);
-    if (maxTs) log.info(`  newest block_timestamp on chain ${oracle.network.chainId}: ${maxTs.toISOString()}`);
   }
 
-  return clean;
+  return finish(report);
+}
+
+/** One oracle's contribution, appended to the report. Throws only on an unreadable chain. */
+async function checkOracle(oracle: OracleConfig, opts: PipelineOpts, report: VerificationReport): Promise<void> {
+  const label = `${oracle.address} on ${oracle.network.name}`;
+
+  if (oracle.kind === "ubi_daily") {
+    const r = await reconcileDaily(oracle, opts.days);
+    if (!r) {
+      // The warehouse holds no rows for this contract, or the window contains no frozen day.
+      // Before the type existed this was a `continue` and the run still ended clean, which is
+      // C4 one layer down and is the live state of Celo in this warehouse today.
+      report.checks.push(nothingCompared(oracle, "the warehouse holds no rows for this contract, or the window contains no frozen protocol day"));
+      log.warn(`${label}: nothing could be compared, so this chain contributes no evidence either way`);
+      return;
+    }
+    const bad = r.days.filter((d) => d.verdict !== "exact");
+    log.info(
+      `${label}: ${r.exactDays}/${r.interiorDays} protocol days reconcile exactly at block ${r.pinnedBlock}`
+    );
+    for (const d of bad.slice(0, 50)) {
+      log.error(
+        `  day ${d.day} ${d.verdict}: contract ${d.oracleCount}, warehouse ${d.distinctRows} distinct ` +
+        `(${d.storedRows} stored), count gap ${d.countGap}, amount gap ${d.amountGapRaw} raw units` +
+        (d.unreadableRows > 0 ? `, ${d.unreadableRows} row(s) whose amount could not be decoded` : "")
+      );
+    }
+    if (r.oracleErrors.length > 0) {
+      log.error(`  ${r.oracleErrors.length} day(s) the oracle could not be read, which is not a pass`);
+    }
+    if (r.edgeDays.length === 2) {
+      log.info(`  edge days ${r.edgeDays.join(" and ")} are partial by construction and excluded`);
+    }
+    report.checks.push(dailyCheck(oracle, r));
+  }
+
+  if (oracle.kind === "invites_stats") {
+    const r = await reconcileInviteStats(oracle);
+    if (!r) {
+      report.checks.push(nothingCompared(oracle, "the warehouse holds no bounty rows for this contract"));
+      log.warn(`${label}: nothing could be compared, so this chain contributes no evidence either way`);
+      return;
+    }
+    log.info(
+      `${label}: contract counted ${r.bountyDelta} bounties over blocks ` +
+      `${r.windowStartBlock}..${r.windowEndBlock}, warehouse holds ${r.warehouseDistinctBounties} distinct ` +
+      `(${r.warehouseBountyRows} stored)`
+    );
+    if (!r.clean) {
+      log.error(`  gap ${r.gap}, phantom rows ${r.warehouseBountyRows - r.warehouseDistinctBounties}`);
+      for (const e of r.errors) log.error(`  ${e}`);
+    }
+    report.checks.push(statsCheck(oracle, r));
+  }
+
+  const maxTs = await getMaxBlockTimestamp(RAW_LOGS_TABLE, oracle.network.chainId);
+  if (maxTs) log.info(`  newest block_timestamp on chain ${oracle.network.chainId}: ${maxTs.toISOString()}`);
 }

@@ -74,8 +74,23 @@ function decWords(hex: string): bigint[] {
   return out;
 }
 
-/** The chain head every listed endpoint can already serve, minus a margin. */
-export async function pinBlock(network: NetworkConfig, behind = 5): Promise<Reading<number>> {
+/**
+ * The chain head every listed endpoint can already serve, minus the chain's own finality margin.
+ *
+ * THE MARGIN IS PER CHAIN AND IS MEASURED. It used to default to 5 blocks for every chain, which
+ * on Celo pins about 1,925 blocks inside the reorganisation window: A2 sampled the finalized tag
+ * there 33 times and found it 1,187 to 1,930 blocks behind head. A pin inside that window is not
+ * reproducible, and that is the whole job of a pin -- the block it names can be replaced, and
+ * every reading taken at it silently changes meaning while still answering.
+ *
+ * `config.ts` already carries the measurement per chain, with its source written beside it, so
+ * this reads that rather than introducing a second constant that would need its own evidence.
+ * A caller may still pass a wider margin; a narrower one is refused rather than honoured,
+ * because pinning nearer the head than the chain's own measurement is the defect itself.
+ */
+export async function pinBlock(network: NetworkConfig, behind?: number): Promise<Reading<number>> {
+  const measured = network.finality.blocks;
+  const margin = behind === undefined ? measured : Math.max(behind, measured);
   const r = await consensusRead(network, "eth_blockNumber", [], 1);
   const heads: number[] = [];
   const errors = [...r.errors];
@@ -85,8 +100,18 @@ export async function pinBlock(network: NetworkConfig, behind = 5): Promise<Read
   if (heads.length < 2) {
     return { ok: false, value: null, block: 0, agreeing: [], errors: [...errors, `only ${heads.length} endpoint(s) returned a head, need 2`] };
   }
-  const pin = Math.min(...heads) - behind;
-  log.info(`Pinned ${network.name} block ${pin}`, { heads, endpoints: r.answers.map((a) => a.url) });
+  if (behind !== undefined && behind < measured) {
+    errors.push(
+      `requested pin margin ${behind} is inside ${network.name}'s measured finality of ${measured} ` +
+      `block(s), so ${measured} was used instead: ${network.finality.source}`
+    );
+  }
+  const pin = Math.min(...heads) - margin;
+  log.info(`Pinned ${network.name} block ${pin}`, {
+    heads, margin, measuredFinality: measured,
+    publishesFinalizedTag: network.finality.publishesFinalizedTag,
+    endpoints: r.answers.map((a) => a.url),
+  });
   return { ok: true, value: pin, block: pin, agreeing: r.answers.map((a) => a.url), errors };
 }
 

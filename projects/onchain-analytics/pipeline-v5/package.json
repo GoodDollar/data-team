@@ -6,16 +6,31 @@
   "scripts": {
     "daily": "tsx src/index.ts daily",
     "backfill": "tsx src/index.ts backfill",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "build:check": "tsx src/control-plane/build-check.ts",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "test:coverage": "vitest run --coverage",
+    "test:known-failures": "vitest run --config vitest.known-failures.config.ts",
+    "gate:write-safety": "tsx test/integration/two-process-merge.gate.ts",
+    "verify:local": "npm run lint && npm run typecheck && npm run build:check && npm run test:coverage && npm run test:known-failures"
   },
   "dependencies": {
     "@envio-dev/hypersync-client": "^0.6.3",
     "@google-cloud/bigquery": "^7.9.1",
+    "csv-parse": "7.0.3",
     "dotenv": "^16.4.7",
     "viem": "^2.21.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@vitest/coverage-v8": "^3.2.7",
+    "eslint": "^9.39.5",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^3.2.7"
   }
 }

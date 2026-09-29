@@ -4,8 +4,15 @@
 
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
+import { getNotifier } from "./adapters.js";
 
 async function postToSlack(payload: Record<string, any>): Promise<void> {
+  // A replaced notifier takes precedence, so a test observes the alert instead of the network.
+  const replacement = getNotifier();
+  if (replacement) {
+    await replacement.post(payload);
+    return;
+  }
   if (!CONFIG.SLACK_WEBHOOK_URL) return;
 
   try {

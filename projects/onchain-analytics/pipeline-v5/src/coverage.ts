@@ -26,9 +26,10 @@
  * checked by running it against a warehouse.
  */
 
-import { bqQuery } from "./bq.js";
-import { fullTableName } from "./config.js";
+import { bqQuery, allHistory } from "./bq.js";
+import { fullTableName, RAW_LOGS_TABLE } from "./config.js";
 import { log } from "./log.js";
+import { countUndecodableLogs, type DecodeCandidateLog, type ParsedEventSurface } from "./control-plane/index.js";
 
 export interface CaptureInterval {
   fromBlock: number;
@@ -130,11 +131,18 @@ function subtract(iv: [number, number][], holes: [number, number][]): [number, n
 
 export interface ResumePoint {
   resumeAt: number;
-  /** The last block this contract's coverage actually vouches for, or null when none does. */
+  /**
+   * The last block coverage vouches for CONTIGUOUSLY from the contract's creation block, or null
+   * when nothing does. Deliberately not "the highest block held": a clean capture above a hole
+   * vouches for its own range and for nothing between, and reading this field as a frontier is
+   * what let an internal hole pass for covered ground.
+   */
   coveredUpTo: number | null;
   reason: string;
   capturesConsidered: number;
   capturesClean: number;
+  /** Every range inside the ledger's own envelope that no clean capture covers. */
+  openGaps: [number, number][];
 }
 
 /**
@@ -155,17 +163,24 @@ export interface ResumePoint {
  * answer beats a cheap one that cannot represent a hole.
  */
 export function computeResumePoint(captures: CaptureInterval[], firstBlock: number): ResumePoint {
+  const gaps = openGaps(captures);
+  const gapNote = gaps.length === 0
+    ? ""
+    : `. ${gaps.length} open gap(s) below the newest recorded block: ` +
+      gaps.map(([a, b]) => `${a}..${b}`).join(", ");
+
   const clean = captures.filter(isClean);
   if (clean.length === 0) {
     return {
       resumeAt: firstBlock,
       coveredUpTo: null,
       reason:
-        captures.length === 0
+        (captures.length === 0
           ? "no coverage row exists for this contract, so no range has been read into this target"
-          : `all ${captures.length} coverage row(s) are incomplete, skipped or a capability gap`,
+          : `all ${captures.length} coverage row(s) are incomplete, skipped or a capability gap`) + gapNote,
       capturesConsidered: captures.length,
       capturesClean: 0,
+      openGaps: gaps,
     };
   }
 
@@ -175,31 +190,56 @@ export function computeResumePoint(captures: CaptureInterval[], firstBlock: numb
     return {
       resumeAt: firstBlock,
       coveredUpTo: null,
-      reason: `no clean capture covers the contract's creation block ${firstBlock}`,
+      reason: `no clean capture covers the contract's creation block ${firstBlock}` + gapNote,
       capturesConsidered: captures.length,
       capturesClean: clean.length,
+      openGaps: gaps,
     };
   }
 
   return {
     resumeAt: covering[1],
     coveredUpTo: covering[1],
-    reason: `coverage is contiguous and clean from ${firstBlock} to ${covering[1]}`,
+    reason: `coverage is contiguous and clean from ${firstBlock} to ${covering[1]}` + gapNote,
     capturesConsidered: captures.length,
     capturesClean: clean.length,
+    openGaps: gaps,
   };
 }
 
+/** A row describes a real range only when its end is at or above its start. */
+function describesARange(c: CaptureInterval): boolean {
+  return c.toBlock >= c.fromBlock;
+}
+
 /**
- * Every range that was attempted and is not now covered by a clean capture.
+ * Every range inside the ledger's own envelope that is not covered by a clean capture.
  *
  * This is what repair works from, and it is the thing that made the field worth writing. Before
  * this, `skipped_ranges` was written in three places and read in none, which means the pipeline
  * recorded its own holes and then had no way to act on them.
  *
- * A range appears here when a capture skipped it, or when a capture's status is anything other
- * than complete. It disappears when a LATER clean capture covers it, so a gap that has already
- * been repaired is not repaired again.
+ * THREE REASONS A RANGE APPEARS HERE, AND THE THIRD IS FINDING H3. The first two were here
+ * already: a capture SKIPPED the range, or a capture's status is anything other than complete.
+ * Both are holes somebody recorded. The third is the hole nobody recorded -- a range inside the
+ * span this ledger describes that NO capture row mentions at all.
+ *
+ * H3 is exactly that case and it was invisible: clean captures of 100..199 and 300..399 leave
+ * 200..299 read by nobody, and because no failed capture ever described it, it could not enter a
+ * candidate list built only from recorded failures. `coverage` printed clean and `repair` had
+ * nothing to act on. The module's own rule decides it -- L0-8 says a block range with no coverage
+ * row WAS NEVER SCANNED, so an unmentioned interior range is unknown, and unknown resolves
+ * downwards.
+ *
+ * THE ENVELOPE IS THE BOUND, and it is what keeps this from reporting the whole chain. Blocks
+ * above the newest recorded block are not a gap: nobody has claimed to read them and the resume
+ * point is the thing that says where to start. Only the INTERIOR of what the ledger describes is
+ * ground it has implicitly claimed by stepping over. Rows that describe no range at all -- a
+ * `nothing_to_fetch` row records `toBlock` below `fromBlock` -- are excluded from the envelope
+ * entirely, because letting one widen it would manufacture an enormous gap out of an empty read.
+ *
+ * A range disappears from this list when a LATER clean capture covers it, so a gap that has
+ * already been repaired is not repaired again.
  */
 export function openGaps(captures: CaptureInterval[]): [number, number][] {
   const suspect: [number, number][] = [];
@@ -211,8 +251,182 @@ export function openGaps(captures: CaptureInterval[]): [number, number][] {
     }
     if (c.status !== "complete") suspect.push([c.fromBlock, c.toBlock]);
   }
+
+  // H3: the interior of the envelope that no coverage row describes.
+  const described = captures.filter(describesARange);
+  if (described.length > 0) {
+    const envelope: [number, number] = [
+      Math.min(...described.map((c) => c.fromBlock)),
+      Math.max(...described.map((c) => c.toBlock)),
+    ];
+    const covered = mergeIntervals(described.map((c) => [c.fromBlock, c.toBlock] as [number, number]));
+    suspect.push(...subtract([envelope], covered));
+  }
+
   if (suspect.length === 0) return [];
 
   const cleanCover = mergeIntervals(captures.filter(isClean).map((c) => [c.fromBlock, c.toBlock] as [number, number]));
   return subtract(mergeIntervals(suspect), cleanCover);
+}
+
+// --------------------------------------------------------------------------- decode coverage
+
+/**
+ * DECODE COVERAGE, WHICH IS A DIFFERENT QUESTION FROM BLOCK COVERAGE (plan 5.2.1).
+ *
+ * Everything above answers "what did we read". None of it answers "what could we decode". Those
+ * come apart whenever a log's `topic0` matches no entry in its address's event surface: the row is
+ * present, correct and raw, and every downstream model that selects on an event name skips it. An
+ * undecodable log and an absent one are indistinguishable once the query has run, and the
+ * magnitude tripwire does not help -- it catches a wrong value, not a missing row.
+ *
+ * So the count is REPORTED beside block coverage rather than inferred from it. The classifier is
+ * `countUndecodableLogs` in `control-plane/decodeSurface.ts`; this is the reporting half.
+ */
+
+/** One `(chain, address, topic0)` group and how many rows carry it. */
+export interface DecodeLogGroup {
+  chainId: number;
+  address: string;
+  topic0: string | null;
+  rows: number;
+}
+
+export interface DecodeCoverageRow {
+  chainId: number;
+  address: string;
+  /** Rows whose topic0 could be compared against the surface at all. */
+  rowsConsidered: number;
+  rowsUndecodable: number;
+  unmatchedTopic0s: readonly string[];
+  addressHasNoSurface: boolean;
+}
+
+export interface DecodeCoverage {
+  byContract: DecodeCoverageRow[];
+  rowsConsidered: number;
+  rowsUndecodable: number;
+  /**
+   * ROWS this report could not classify, counted separately from the result and never folded into
+   * `rowsUndecodable`. A null `topic0` on a non-anonymous log means the row is unreadable, not
+   * that its event is unknown. An undecodable count of zero is a measurement only when this is
+   * zero too.
+   */
+  errors: number;
+  errorDetail: string[];
+}
+
+/**
+ * Turn grouped rows into a decode-coverage report.
+ *
+ * WHY THE GROUPS ARE WEIGHTED HERE RATHER THAN EXPANDED. `countUndecodableLogs` takes one entry
+ * per log, and the warehouse holds hundreds of millions of them against at most a few hundred
+ * distinct `(chain, address, topic0)` keys. Expanding a GROUP BY back into rows to feed a counter
+ * that would immediately re-aggregate them is arithmetic for its own sake. So the classifier is
+ * asked the question it is the authority on -- WHICH topic0 values match no surface entry -- and
+ * the row weights are applied here, where they came from. The classification is not re-derived.
+ */
+export function weightDecodeCoverage(
+  groups: readonly DecodeLogGroup[],
+  surface: ParsedEventSurface,
+): DecodeCoverage {
+  const candidates: DecodeCandidateLog[] = groups.map((g) => ({
+    chainId: g.chainId, address: g.address, topic0: g.topic0,
+  }));
+  const classified = countUndecodableLogs(candidates, surface);
+
+  const key = (chainId: number, address: string) => `${chainId}:${address.toLowerCase()}`;
+  const unmatchedByContract = new Map<string, Set<string>>();
+  for (const c of classified.byContract) {
+    unmatchedByContract.set(key(c.chainId, c.address), new Set(c.unmatchedTopic0s.map((t) => t.toLowerCase())));
+  }
+
+  const byContract: DecodeCoverageRow[] = [];
+  let rowsConsidered = 0;
+  let rowsUndecodable = 0;
+  let errors = 0;
+  const errorDetail: string[] = [];
+
+  for (const c of classified.byContract) {
+    const k = key(c.chainId, c.address);
+    const unmatched = unmatchedByContract.get(k) ?? new Set<string>();
+    const mine = groups.filter((g) => key(g.chainId, g.address) === k);
+
+    const considered = mine.filter((g) => g.topic0 !== null).reduce((n, g) => n + g.rows, 0);
+    const undecodable = mine
+      .filter((g) => g.topic0 !== null && unmatched.has(g.topic0.toLowerCase()))
+      .reduce((n, g) => n + g.rows, 0);
+    const unreadable = mine.filter((g) => g.topic0 === null).reduce((n, g) => n + g.rows, 0);
+
+    rowsConsidered += considered;
+    rowsUndecodable += undecodable;
+    errors += unreadable;
+    if (unreadable > 0) {
+      errorDetail.push(
+        `${k}: ${unreadable} row(s) carry no topic0, so they can be neither matched nor ruled out`
+      );
+    }
+
+    byContract.push({
+      chainId: c.chainId,
+      address: c.address,
+      rowsConsidered: considered,
+      rowsUndecodable: undecodable,
+      unmatchedTopic0s: c.unmatchedTopic0s,
+      addressHasNoSurface: c.addressHasNoSurface,
+    });
+  }
+
+  return { byContract, rowsConsidered, rowsUndecodable, errors, errorDetail };
+}
+
+/**
+ * Read the `(chain, address, topic0)` groups one contract's captured logs fall into.
+ *
+ * Through the all-history view, because this question has no natural block window and a bare
+ * GROUP BY straight at a `require_partition_filter` table is refused outright.
+ */
+export async function loadDecodeLogGroups(
+  chainId: number,
+  contractAddress: string,
+): Promise<DecodeLogGroup[]> {
+  const rows = await bqQuery(
+    `SELECT chain_id, contract_address, topic0, COUNT(*) AS rows_held
+     FROM ${allHistory(RAW_LOGS_TABLE)}
+     WHERE chain_id = @chainId AND contract_address = @address
+     GROUP BY chain_id, contract_address, topic0`,
+    { chainId, address: contractAddress.toLowerCase() }
+  );
+
+  return rows.map((r: any) => ({
+    chainId: Number(r.chain_id),
+    address: String(r.contract_address ?? "").toLowerCase(),
+    topic0: r.topic0 === null || r.topic0 === undefined ? null : String(r.topic0).toLowerCase(),
+    rows: Number(r.rows_held),
+  }));
+}
+
+/**
+ * Decode coverage for one contract, or a stated reason it could not be measured.
+ *
+ * A query failure returns an error count rather than an empty report. The distinction is the
+ * whole point of this module: "zero undecodable rows" and "the question could not be asked" must
+ * never be the same answer.
+ */
+export async function loadDecodeCoverage(
+  chainId: number,
+  contractAddress: string,
+  surface: ParsedEventSurface,
+): Promise<DecodeCoverage> {
+  try {
+    return weightDecodeCoverage(await loadDecodeLogGroups(chainId, contractAddress), surface);
+  } catch (e: any) {
+    log.error(
+      `Decode coverage for ${contractAddress} on chain ${chainId} could not be measured: ${e.message}`
+    );
+    return {
+      byContract: [], rowsConsidered: 0, rowsUndecodable: 0, errors: 1,
+      errorDetail: [`${chainId}:${contractAddress.toLowerCase()}: query failed: ${e.message}`],
+    };
+  }
 }

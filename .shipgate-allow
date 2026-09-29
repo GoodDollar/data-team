@@ -21,6 +21,28 @@ queries/dune/reserve-analysis/lp-v3-positions.sql :: content:address-list :: Uni
 # --- dbt seeds: address + number pairs, but the number is not a balance -------
 projects/onchain-analytics/gd_dbt/seeds/contract_deployments.csv :: content:holder-table :: contract address paired with its deployment BLOCK, not a holder balance
 projects/onchain-analytics/gd_dbt/seeds/tokens.csv :: content:holder-table :: token contract address paired with its DECIMALS, not a holder balance
+# event_surface.csv is the event ABI catalogue: one row per (contract, era, event).
+# Checked 2026-09-28 before waiving, not assumed. All 347 distinct addresses in the
+# file are contract addresses already present in contract_deployments.csv above,
+# including the 11 that appear outside the two address columns (all in abi_source,
+# all of the form bytecode_equality_with_celo_0x..., naming a registry contract).
+# Its only numeric columns are chain_id, era_index, indexed_positions and the two
+# era block bounds. No balance column and no wallet address exists in it.
+# Receipt: specs/_scratch/coord-unit-01/out/01-event-surface-address-provenance.json
+projects/onchain-analytics/gd_dbt/seeds/event_surface.csv :: content:holder-table :: contract address paired with its era BLOCK BOUNDS, not a holder balance
+# era_intervals.csv and era_boundary_evidence.csv are the era validity-interval table
+# and the evidence behind it: which implementation was live between which blocks, and
+# how that was established. Checked 2026-09-28 before waiving, not assumed.
+#   era_intervals.csv        262 rows, 278 distinct addresses, ALL already present in
+#                            contract_deployments.csv above. Numeric columns are chain_id,
+#                            valid_from_block, valid_to_block, era_index.
+#   era_boundary_evidence.csv 41 rows, 44 distinct addresses, ALL already present above.
+#                            Numeric columns are block numbers plus COUNTS of verification
+#                            checkpoints, events and chunks.
+# Neither file has an amount column, a balance, or a wallet address.
+# Receipt: specs/_scratch/coord-unit-02-gate/verify-new-seeds.mjs
+projects/onchain-analytics/gd_dbt/seeds/era_intervals.csv :: content:holder-table :: contract address paired with its era BLOCK BOUNDS, not a holder balance
+projects/onchain-analytics/gd_dbt/seeds/era_boundary_evidence.csv :: content:holder-table :: contract address paired with block numbers and verification COUNTS, not a holder balance
 
 # --- reader-facing docs that trip a filename or attribution rule -------------
 projects/goodwidget-components/spec.md :: name:spec.md :: real component specification, reader-facing product doc, not a pipeline artifact

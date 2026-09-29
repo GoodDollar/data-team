@@ -39,6 +39,17 @@ seeds:
         valid_to_block: INT64
         creation_block: INT64
         is_live: BOOLEAN
+    event_surface:
+      +column_types:
+        chain_id: INT64
+        era_index: INT64
+        era_bound_from_block: INT64
+        era_bound_to_block: INT64
+        anonymous: BOOLEAN
+        era_bound: BOOLEAN
+        indexed_positions: STRING
+        param_types: STRING
+        param_names: STRING
 
 # Default materialization per layer.
 # "view" = BigQuery view (no data stored, always fresh)

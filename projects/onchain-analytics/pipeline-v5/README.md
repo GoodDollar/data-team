@@ -91,6 +91,48 @@ The BigQuery tables are created by the DDL in `../warehouse/L1/`, not by the pip
 live table does not have, and checks at startup that the bookkeeping tables carry the columns it
 is about to write, rather than failing part way into a backfill.
 
+### Two datasets, and why staging is not one of them
+
+The pipeline needs **two** BigQuery datasets and will refuse to compose a staging table name if
+they are configured to the same value.
+
+| Variable | Default | Holds |
+| - | - | - |
+| `DATASET_ID` | `BlockchainEvents` | The production tables. Written by MERGE, never dropped |
+| `STAGING_DATASET_ID` | `BlockchainEvents_Staging` | One short-lived table per run, created and dropped |
+
+**This is a permission boundary, not a naming preference.** Every write stages its rows into a
+temporary table and merges from it, then drops it. Wherever that table lives, the writer identity
+needs permission to DELETE tables -- and while staging lived inside the production dataset, that
+meant holding delete permission on the raw layer this warehouse is built on.
+
+The ordering makes it worse than a standing grant. Staging cleanup happens AFTER the MERGE, so a
+run without that permission fails having already written production rows, and the quickest way out
+in that moment is to grant delete on production. Separating the datasets moves the destructive
+permission onto a dataset that holds nothing anyone would miss.
+
+Grant the writer, on `STAGING_DATASET_ID`: create, delete, `getData` and `updateData`. On
+`DATASET_ID`: `tables.create`, `tables.get`, `tables.getData` and `tables.updateData`, and **no**
+`tables.delete` and **no** `datasets.delete`.
+
+### Cost ceiling
+
+Every query and DML statement the pipeline submits carries `maximumBytesBilled`, set by
+`MAX_BYTES_BILLED_PER_JOB` and defaulting to 10 GiB. BigQuery refuses a job whose estimate exceeds
+it before running it, so an over-ceiling statement costs nothing rather than raising an alarm
+after the money is spent. Load jobs are outside it -- they bill storage, and the API rejects the
+setting on a load configuration -- as are queries a dashboard submits on its own behalf, which
+never pass through this process and are bounded instead by the size of the tables exposed to them.
+
+### One writer at a time
+
+A cross-process lease excludes a second writer on the same host from merging into the same table.
+Two concurrent captures of one range previously produced two rows per key while both processes
+exited zero and both recorded the range as completely captured. A writer that cannot take the
+lease within `WRITE_LOCK_WAIT_MS` is refused, exits nonzero, and records the range as incomplete
+so the next run reads it again. A lease whose holder is no longer running is reclaimed at once;
+one from another host expires after `WRITE_LOCK_STALE_MS`.
+
 ---
 
 ## The seven modes

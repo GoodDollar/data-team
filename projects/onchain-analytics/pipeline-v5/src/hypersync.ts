@@ -25,6 +25,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
+import { getWorkerRunner } from "./adapters.js";
 import { normaliseChunk } from "./normalise.js";
 import type { NetworkConfig, ChunkResult, FetchResult, RollbackGuard } from "./types.js";
 
@@ -80,6 +81,13 @@ interface WorkerResult {
 
 /** Run one worker request under a hard wall-clock deadline. Never throws. */
 function runWorker(request: Record<string, unknown>, timeoutMs: number): Promise<WorkerResult> {
+  // A replaced runner takes precedence. Everything this module does ABOVE the worker call --
+  // chunk planning, bounded retries, the short-collection refusal, empty-chunk tracking and
+  // rollback-guard forwarding -- is unreachable through `setReaderOverride`, which replaces the
+  // whole reader. This is the only seam below it.
+  const replacement = getWorkerRunner();
+  if (replacement) return replacement(request, timeoutMs) as Promise<WorkerResult>;
+
   return new Promise((resolve) => {
     const t0 = Date.now();
     const child = spawn(process.execPath, [WORKER, JSON.stringify(request)], {

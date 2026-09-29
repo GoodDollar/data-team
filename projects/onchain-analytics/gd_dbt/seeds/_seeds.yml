@@ -161,12 +161,342 @@ seeds:
         description: "How this row was established, as a single provenance string for the whole generation."
       - name: notes
         description: "Free text. Anything a reader would otherwise get wrong."
+      - name: boundary_completeness
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['complete', 'plain_contract', 'raw_only_unproven']
+        description: >
+          How well the era's own boundaries are evidenced. **Reads `raw_only_unproven` on every
+          row, and that is a measurement rather than a backlog.** Reaching `complete` required
+          every slot-writing path to obligatorily emit its upgrade event, and EIP-1967 says
+          upgrade events SHOULD be emitted, not MUST -- OpenZeppelin's own reference
+          implementation writes the slot before emitting on the rollback branch. Zero of the 41
+          assessed eras could reach it, and the remaining eras were never assessed.
+
+
+          **This column does not gate anything.** It used to forbid every decoder and every
+          user-facing model over every era, which was all of them. A bar that cannot tell a
+          well-understood contract from an unknown one moves no decision, so the refusal was
+          removed and the discrimination moved to `era_intervals.confidence_grade`, which
+          propagates instead.
+      - name: boundary_evidence_manifest_hash
+        description: >
+          SHA256 of the boundary-evidence manifest backing this era, `0x`-prefixed. Set on the 41
+          eras a manifest covers and empty elsewhere -- an era with no manifest declares nothing
+          rather than declaring an absence as though it had been measured. The manifest content
+          itself ships in `era_boundary_evidence`.
+      - name: boundary_checked_through_block
+        description: "Highest block the boundary scan actually read. Empty where no manifest exists."
+      - name: frozen_safe_head
+        description: >
+          The head the boundary scan was frozen against, so a later reader can tell what "through
+          head" meant at the time rather than assuming it meant now.
+      - name: release_scope
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['in_release', 'out_of_release', 'scope_pending']
+        description: >
+          Whether this row is inside the frozen release. **Every row states one**, which is the
+          point: `scope_pending` exists so an undecided contract is RECORDED as undecided rather
+          than resolved by whichever way the seed happens to fall, and a column that is simply
+          absent lets "nobody has decided yet" read as "everything is in". The 96 Fuse rows read
+          `out_of_release`: they are retained as a record of what was measured, and a retained row
+          is not a re-admission. See `docs/release-scope.md`.
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - chain
             - proxy_address
             - valid_from_block
+
+  - name: era_intervals
+    description: >
+      **What this is:** Each contract era as a validity interval, with the confidence grade and the
+      receipt behind it. 262 rows, one per deployed era on a release chain -- 206 on Celo and XDC,
+      56 on Ethereum, which is declared in the release and deliberately not ingested yet.
+
+
+      **Why it exists separately from `contract_deployments`:** "Which ABI was in force at block N"
+      is an as-of temporal join, which is a solved modelling problem. Shaping an era as what it is
+      -- a Type-2 validity interval -- puts the rigour where it belongs and makes the question
+      answerable by a join rather than by a convention everyone has to remember.
+
+
+      **Intervals are HALF-OPEN, `[valid_from_block, valid_to_block)`.** A live era carries the
+      INT64 sentinel 9223372036854775807 as its upper bound. Reading them as closed makes every
+      contiguous pair look like an overlap and returns two rows at every boundary.
+
+
+      **`confidence_grade` answers "how wrong could this be", never "may I proceed".** It
+      propagates to whatever reads the era and gates nothing. A low grade on deep history is not a
+      data defect: about 95 percent of questions asked of this system concern the last twelve
+      months, the raw logs are permanently re-readable, and deep history may sit at `inferred`
+      indefinitely by design. See the Business Glossary in `models/overview.md` for what each grade
+      means and which evidence produces it.
+
+
+      **Three tests hold the shape:** no overlapping intervals per contract, no gaps from
+      deployment to head, and exactly one row covering any queried block. They detect overlaps,
+      gaps and multi-coverage. **They do not detect weak evidence** -- that is what the grade is
+      for, and saying so is the difference between a test suite and a reassurance.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CELO', 'XDC', 'ETHEREUM']
+        description: "Uppercase chain name. Release chains only; Fuse is out of the release."
+      - name: chain_id
+        tests: [not_null]
+        description: "EVM chain id."
+      - name: proxy_address
+        tests: [not_null]
+        description: "The stable address a reader queries. Lowercase, 20 bytes."
+      - name: valid_from_block
+        tests: [not_null]
+        description: "First block of the interval, inclusive."
+      - name: valid_to_block
+        tests: [not_null]
+        description: "Upper bound, EXCLUSIVE. 9223372036854775807 means open ended."
+      - name: implementation
+        tests: [not_null]
+        description: "Implementation address behind the proxy for this interval."
+      - name: abi_id
+        tests: [not_null]
+        description: >
+          Identifies the ABI in force. The implementation's `runtime_code_hash` where it is held,
+          otherwise `impl:<address>`. Two eras sharing an `abi_id` are decodable by the same ABI.
+      - name: confidence_grade
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['corroborated', 'slot_bisected', 'announced', 'inferred']
+        description: >
+          How much independent agreement stands behind this interval. `corroborated` two
+          independent voices agree; `slot_bisected` the contract's own state binds it, from one
+          voice; `announced` an on-chain record bounds it and no state read binds it; `inferred` a
+          single unchallenged source with no independent check available. Assigned by a published
+          rule, never by hand.
+      - name: evidence_receipt_uri
+        tests: [not_null]
+        description: >
+          Where to open the evidence behind the grade, as a repository path with a row key. Points
+          at `era_boundary_evidence` for the 15 manifest-backed eras and at `contract_deployments`
+          otherwise. **It resolves inside this repository on purpose:** a receipt nobody else can
+          open is not a receipt, it is an assertion.
+      - name: contract_name
+        tests: [not_null]
+        description: "Logical contract name, for readability. A label, never evidence."
+      - name: era_index
+        tests: [not_null]
+        description: "1-based era number within the contract."
+      - name: is_live
+        tests: [not_null]
+        description: "Whether this is the era currently behind the proxy."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain_id
+            - proxy_address
+            - era_index
+
+  - name: era_boundary_evidence
+    description: >
+      **What this is:** The boundary-evidence measurement behind every graded era, flattened to one
+      row per era. 41 rows over 6 contracts -- 15 on release chains, 26 on Fuse, retained as a
+      record of what was measured.
+
+
+      **Why it exists:** `era_intervals.evidence_receipt_uri` has to point somewhere an outside
+      reader can actually open. This is that somewhere. Every field the grading rule reads is here,
+      so any grade in `era_intervals` can be re-derived from first principles by someone holding
+      only this repository.
+
+
+      **Read `obligatorily_emits` first.** It is `false` on every row, and it is the reason no era
+      can be `complete`: every proxy here reaches `_setImplementation` through a path that writes
+      the implementation slot without emitting an upgrade event. It is carried precisely because it
+      does NOT discriminate between eras -- hiding it would make the grades look arbitrary.
+
+
+      **One caveat that must not be lost.** The upstream scan's own "two or more sources agreed"
+      label is misleading on Celo and XDC: its two sources were two query shapes against ONE index
+      URL, not two hosts. Log-source count is therefore never treated as corroboration. The
+      genuinely independent second voices are the EIP-1967 slot read and the transaction-receipt
+      replay, and only those are used.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests: [not_null]
+        description: "Uppercase chain name. Includes FUSE, which is out of the release but measured."
+      - name: chain_id
+        tests: [not_null]
+      - name: proxy_address
+        tests: [not_null]
+      - name: era_index
+        tests: [not_null]
+      - name: implementation_address
+        description: "Implementation this era binds to."
+      - name: opening_both_measured
+        description: >
+          Whether the EIP-1967 slot was read on BOTH sides of this era's opening block. `true` is
+          what a bisection means; empty means no transition was recorded for the block at all.
+      - name: opening_address_agrees
+        description: "Whether the slot reading agrees with the announcing event's implementation."
+      - name: slot_agreeing
+        description: >
+          How many independent readers agreed on the head slot value. A reading is admissible at
+          two or more; one reader is one voice and cannot corroborate itself.
+      - name: slot_error_count
+        description: >
+          Errors encountered while reading the slot, counted SEPARATELY from the result. An absence
+          is a measurement only when this is zero. A non-zero count beside a positive answer that
+          two readers agree on does not void the answer, and is carried so a reader can weigh it.
+      - name: cross_check_blocked
+        description: >
+          `true` where no historical state read is obtainable at any level of patience -- Fuse has
+          at most one archive-capable endpoint. This is what separates `announced` from `inferred`.
+      - name: claimed_events
+        description: "Upgrade events the scan found for this contract."
+      - name: independently_confirmed_events
+        description: >
+          How many of those a second independent reader re-read. Used ALL-OR-NOTHING: a count is a
+          contract-level number and cannot be attributed to one era, so a partial count buys
+          nothing rather than being rounded up.
+      - name: obligatorily_emits
+        description: "See the note above. False everywhere; carried for the reader, never used to grade."
+      - name: source_manifest
+        tests: [not_null]
+        description: "The manifest file this row was flattened from."
+      - name: manifest_sha256
+        tests: [not_null]
+        description: "SHA256 of that manifest, so the promotion is verifiable rather than trusted."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain_id
+            - proxy_address
+            - era_index
+
+  - name: event_surface
+    description: >
+      **What this is:** Every event every contract era can emit, keyed by the selector the chain
+      actually puts in `topic0`. 2,824 rows, 301 distinct selectors, one row per event per era.
+
+
+      **Why it exists:** Ingestion binds on `topic0` and never on an event name, and decoding needs
+      the parameter types and the indexed positions for the exact era the log was emitted in. This
+      seed is that mapping. Without it a decoder has to carry hardcoded selectors, which is how the
+      two defects below reached production.
+
+
+      **The two traps this shape exists to prevent, both of which already happened here.** A type
+      change alters the selector: A decoder written for `ReserveRatioUpdated(bytes32,uint256)`
+      against a deployed `(bytes32,uint32)` finds zero events forever and raises nothing. Indexed
+      flags do NOT alter the selector: A wrong-but-plausible interface returns exactly the expected
+      row count while writing business fields into the wrong columns. So `param_types` and
+      `indexed_positions` are recorded per parameter, from the same verified source the selector
+      was computed from.
+
+
+      **Every selector here was computed, not recalled.** Each was produced by hashing a signature
+      rebuilt from the verified interface's own parameter types, tuples included, and then checked
+      a second time by an independent reader: 2,823 of 2,823 selectors recomputed identically, with
+      zero mismatches, and 301 signatures map to 301 selectors as a bijection must.
+
+
+      **This is the callable surface, not a record of what fired.** An event listed here may never
+      have been emitted. One case is already known: A transfer fee event exists on the token and
+      has been measured as never charged.
+
+
+      **One row carries no selector and that is correct.** It is an anonymous event, which by
+      definition puts no signature hash in `topic0`. It cannot be matched by selector and is
+      recorded rather than filled in.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CELO', 'XDC', 'FUSE', 'ETHEREUM']
+      - name: chain_id
+        tests: [not_null]
+      - name: contract_name
+        tests: [not_null]
+        description: "Logical contract name. A label, never a binding key."
+      - name: proxy_address
+        tests: [not_null]
+        description: >
+          The address the log is emitted from. Lowercase. Joins to
+          `contract_deployments.proxy_address`, but NOT on its own: the binding key is the triple
+          (chain, proxy_address, era_index) and it is enforced by the singular test
+          `assert_event_surface_binds_to_a_real_era`. A `relationships` test on this column alone
+          used to stand here; it was removed because it constrains nothing about the era. Measured
+          on this seed: an era_index corrupted to one past that contract's real maximum passes it
+          on 2,824 of 2,824 rows.
+      - name: era_index
+        tests: [not_null]
+        description: >
+          Which era of that contract this row describes. Joins to
+          `contract_deployments.era_index` as part of the composite key above. Era resolution is
+          mandatory rather than cosmetic: two (chain, address, topic0) keys in this seed change
+          their indexed layout across their own eras, so the same selector decodes differently
+          depending on the era, and a lookup that cannot fail returns a confident wrong answer.
+      - name: implementation_address
+        description: "The implementation whose verified interface this row was read from."
+      - name: event_name
+        tests: [not_null]
+        description: >
+          The name in the interface. Informational only. The token declares two different events
+          both named `Transfer`, a 3-argument and a 4-argument form, with different selectors.
+          Binding on this column would fuse them.
+      - name: event_signature
+        tests: [not_null]
+        description: "Canonical signature, the exact string that was hashed to produce `topic0`."
+      - name: topic0
+        description: "Keccak hash of `event_signature`, lowercase. NULL only for the single anonymous event. **This is the only sound binding key.**"
+      - name: anonymous
+        description: "True for an anonymous event, which emits no selector at all."
+      - name: indexed_positions
+        description: >
+          Space-separated 0-based parameter positions that are indexed, and therefore arrive in
+          `topic1` through `topic3` rather than in the data blob. Empty means every parameter is in
+          the data section. Getting this wrong does not change the row count, only which column the
+          value lands in.
+      - name: param_types
+        description: "Space-separated ABI types in declaration order."
+      - name: param_names
+        description: "Space-separated parameter names in declaration order."
+      - name: era_bound
+        description: >
+          True when this event is NOT present in every era of its contract, so a decoder must check
+          the era before expecting it. 59 combinations are removed from one era and restored in a
+          later one; a first-and-last era comparison renders those as continuously present.
+      - name: era_bound_from_block
+        description: "First block this event can be emitted at, for era-bound rows."
+      - name: era_bound_to_block
+        description: "Exclusive upper bound for era-bound rows."
+      - name: abi_source
+        description: "Where the verified interface came from."
+      - name: source
+        tests: [not_null]
+        description: "How this row was established."
+      - name: notes
+        description: "Free text."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain
+            - proxy_address
+            - era_index
+            - event_signature
 
   - name: chains
     description: >

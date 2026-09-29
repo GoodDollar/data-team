@@ -39,12 +39,45 @@ function envInt(key: string, fallback: number): number {
 export const CONFIG = {
   GCP_PROJECT_ID: env("GCP_PROJECT_ID", "gooddollar"),
   DATASET_ID: env("DATASET_ID", "BlockchainEvents"),
+
+  /**
+   * Where per-run staging tables are created and dropped. SEPARATE FROM THE PRODUCTION DATASET,
+   * and that separation is a safety control rather than tidiness.
+   *
+   * The write path creates one staging table per run and drops it afterwards, so a writer
+   * identity needs `tables.delete` wherever staging lives. While staging lived inside
+   * `DATASET_ID` that meant granting `tables.delete` on the production raw layer -- one of the
+   * five permissions whose ABSENCE is the whole point of the current lockdown. And the failure
+   * ordering made it worse than a stale grant: an ingestion run reaches its staging cleanup only
+   * AFTER the MERGE has already written production rows, so the run fails having already
+   * mutated production, and the cheapest-looking remedy in that moment is to grant the very
+   * permission the lockdown removed.
+   *
+   * Splitting the datasets moves the destructive permission onto a dataset that holds nothing
+   * durable. `assertStagingIsSeparate` below refuses to compose a staging name at all if the two
+   * ids are ever configured to the same value, so this cannot be undone by an environment
+   * variable.
+   */
+  STAGING_DATASET_ID: env("STAGING_DATASET_ID", "BlockchainEvents_Staging"),
+
   ENVIO_API_TOKEN: requireEnv("ENVIO_API_TOKEN"),
   SLACK_WEBHOOK_URL: env("SLACK_WEBHOOK_URL", ""),
   LOG_FILE: env("LOG_FILE", "pipeline.log"),
 
   /** Written onto every PipelineRuns row, so a defect is attributable to the code that wrote it. */
   PIPELINE_VERSION: env("PIPELINE_VERSION", "6.0.0-l0v4"),
+
+  /**
+   * The release this binary was built from, and the remediation plan it is bound to.
+   *
+   * Plan section 1.1: every executable writer is bound to an immutable plan hash. Both are NULL
+   * until a release process sets them, and NULL is the honest value: a hash invented by the
+   * program it is supposed to bind would bind nothing. Phase 13 sets `RELEASE_SHA` at publish and
+   * `PLAN_HASH` is the 64-character lowercase hex SHA-256 of the plan file, which is
+   * 9dcde225459127c4da2beadf9094fd894fe193010f39cb70c0753dd874853e26 today.
+   */
+  RELEASE_SHA: env("RELEASE_SHA", "") || null,
+  PLAN_HASH: env("PLAN_HASH", "") || null,
 
   /** Rows buffered before a write. Writes are always flushed on a BLOCK boundary regardless. */
   CHUNK_SIZE_TARGET: envInt("CHUNK_SIZE_TARGET", 50_000),
@@ -60,6 +93,34 @@ export const CONFIG = {
    * read; lowering it to zero reintroduces the duplicate.
    */
   MERGE_PADDING_MONTHS: envInt("MERGE_PADDING_MONTHS", 1),
+
+  /**
+   * The hard ceiling on bytes a single BigQuery job may bill, in bytes. 10 GiB.
+   *
+   * WHY A CEILING AND NOT A BUDGET ALARM. BigQuery refuses a job whose estimate exceeds
+   * `maximumBytesBilled` BEFORE running it, and a refused job bills nothing. An alarm fires
+   * after the money is spent. Every statement this pipeline submits goes through `bqQuery`, so
+   * the ceiling is attached at that one chokepoint and no call site can forget it.
+   *
+   * WHAT IT DOES NOT COVER, named rather than left to be discovered. Load jobs bill storage
+   * rather than query bytes and the jobs API rejects this setting on a load configuration, so
+   * the two `table.load` calls in `bq.ts` are outside it by construction. Queries that Looker
+   * Studio submits on its own behalf never pass through this process at all and are bounded
+   * instead by the size of the tables exposed to it.
+   */
+  MAX_BYTES_BILLED_PER_JOB: envInt("MAX_BYTES_BILLED_PER_JOB", 10 * 1024 * 1024 * 1024),
+
+  /**
+   * The cross-process write lease. See `writelock.ts` for why a file and not a table.
+   *
+   * WAIT_MS is how long a second writer blocks before it is refused rather than queued for ever;
+   * STALE_MS is how old a lease has to be before it is treated as abandoned by a killed process.
+   * STALE_MS is deliberately far longer than any single MERGE: reclaiming a lease that is merely
+   * slow would reintroduce the concurrent write it exists to prevent.
+   */
+  WRITE_LOCK_DIR: env("WRITE_LOCK_DIR", ""),
+  WRITE_LOCK_WAIT_MS: envInt("WRITE_LOCK_WAIT_MS", 15 * 60_000),
+  WRITE_LOCK_STALE_MS: envInt("WRITE_LOCK_STALE_MS", 60 * 60_000),
 
   BQ_RETRIES: envInt("BQ_RETRIES", 5),
   HYPERSYNC_RETRIES: envInt("HYPERSYNC_RETRIES", 5),
@@ -129,6 +190,7 @@ export const NETWORKS: Record<string, NetworkConfig> = {
       // agreed on every one of roughly 1,500 calls. rpc.xdcrpc.com serves head and accepts wider
       // eth_getLogs ranges than the other two.
       rpcUrls: ["https://rpc.ankr.com/xdc", "https://xdc.public-rpc.com", "https://rpc.xdcrpc.com"],
+      stateRpcUrls: ["https://rpc.ankr.com/xdc", "https://xdc.public-rpc.com"],
       archiveRpcUrls: ["https://rpc.ankr.com/xdc", "https://xdc.public-rpc.com"],
       rpcLogRange: envInt("XDC_RPC_LOG_RANGE", 1_000),
       rpcLogResultCap: null,
@@ -163,7 +225,21 @@ export const NETWORKS: Record<string, NetworkConfig> = {
       // range age, with no error on any occasion. It is listed because it answers; it is never
       // trusted alone, and R7 forbids reading any absence from a log scan regardless.
       rpcUrls: ["https://forno.celo.org", "https://celo.drpc.org", "https://celo.blockscout.com/api/eth-rpc"],
-      archiveRpcUrls: ["https://forno.celo.org", "https://celo.drpc.org", "https://celo.blockscout.com/api/eth-rpc"],
+      // Recent-pin state. MEASURED 2026-09-29 across two separate OS processes: these four all
+      // serve `eth_call` at a recent pinned block, and all four are free. `celo.drpc.org` is
+      // absent deliberately -- it served `eth_call` 0 of 6 and `eth_blockNumber` 2 of 6, so it
+      // contributes errors rather than answers and would only make agreement harder to reach.
+      stateRpcUrls: [
+        "https://forno.celo.org",
+        "https://celo.blockscout.com/api/eth-rpc",
+        "https://rpc.ankr.com/celo",
+        "https://1rpc.io/celo",
+      ],
+      // DEEP archive, below the L1-to-L2 migration at block 31,056,500. Genuinely one endpoint,
+      // and that limitation is left recorded rather than papered over: `rpc.ankr.com/celo` holds
+      // no state below the migration block, so it qualifies for the recent-pin list above and
+      // not for this one. Nothing shipped reads below that block today.
+      archiveRpcUrls: ["https://forno.celo.org"],
       rpcLogRange: envInt("CELO_RPC_LOG_RANGE", 5_000),
       rpcLogResultCap: null,
       hasIndependentConfirmingReader: true,
@@ -171,7 +247,22 @@ export const NETWORKS: Record<string, NetworkConfig> = {
         "HyperSync answers. forno's false-zero rate is a function of RANGE AGE, not width and not " +
         "answer size, and was measured at 30 percent one day and 70 percent the next on the " +
         "identical query. rpc.ankr.com/celo holds no state before block 31,056,500, the L1 to L2 " +
-        "migration block.",
+        "migration block. " +
+        "ARCHIVE QUORUM, MEASURED 2026-09-29, five attempts per question per endpoint: only ONE " +
+        "of the three previously listed endpoints qualifies for DEEP archive. forno passed " +
+        "everything, including an eth_getCode tripwire across the UBIScheme's own creation block " +
+        "(1,446 bytes after, 0 before), which is what proves genuine archive state rather than " +
+        "latest state answering a historical call. celo.drpc.org answered eth_chainId 5 of 5 and " +
+        "rejected eth_getBlockByNumber, eth_getCode AND eth_call with -32601 'method does not " +
+        "exist', so it is not intermittent, it is RESTRICTED, and a liveness probe would score " +
+        "it 5 of 5 and put it in the quorum. celo.blockscout.com rate-limits with HTTP 429. " +
+        "THAT MEASUREMENT WAS THEN ASKED THE WRONG QUESTION, and re-measuring the right one " +
+        "removed a spend request. Nothing shipped reads state below the migration block; every " +
+        "state read this pipeline performs is an eth_call at a RECENT pin. Re-measured across " +
+        "two separate OS processes on 2026-09-29, four free endpoints serve that: forno, " +
+        "blockscout, ankr and 1rpc. So the two needs are now two lists. The deep-archive list is " +
+        "genuinely one endpoint and that limitation stands -- it is simply not on any path in " +
+        "use, and it is recorded here rather than resolved by spending.",
     },
   },
 
@@ -202,6 +293,7 @@ export const NETWORKS: Record<string, NetworkConfig> = {
       // The ONLY archive-capable Fuse endpoint in existence that this project has found. It
       // publishes its own quota in headers at 10 reads per 11.08 minutes, which is about 54
       // archive reads an hour, so it is listed for STATE reads and is not used for enumeration.
+      stateRpcUrls: ["https://explorer.fuse.io/api/eth-rpc"],
       archiveRpcUrls: ["https://explorer.fuse.io/api/eth-rpc"],
       rpcLogRange: envInt("FUSE_RPC_LOG_RANGE", 50_000),
       // MEASURED: both enumerating readers cap at 20,000 logs per RESPONSE and refuse a
@@ -238,6 +330,7 @@ export const NETWORKS: Record<string, NetworkConfig> = {
       // MEASURED: both serve the full range in one request and agreed exactly. drpc, blastapi and
       // pokt all cap between 10 and 10,000 blocks on their free tiers.
       rpcUrls: ["https://eth.blockscout.com/api/eth-rpc", "https://gateway.tenderly.co/public/mainnet"],
+      stateRpcUrls: ["https://eth.blockscout.com/api/eth-rpc", "https://gateway.tenderly.co/public/mainnet"],
       archiveRpcUrls: ["https://eth.blockscout.com/api/eth-rpc", "https://gateway.tenderly.co/public/mainnet"],
       rpcLogRange: envInt("ETH_RPC_LOG_RANGE", 50_000),
       rpcLogResultCap: null,
@@ -394,8 +487,23 @@ export interface OracleConfig {
 
 export const ORACLES: OracleConfig[] = [
   {
+    network: NETWORKS.CELO,
+    address: "0x43d72ff17701b2da814620735c39c620ce0ea4a1",
+    // MEASURED from the contract at a pinned block, three endpoints agreeing, zero errors:
+    // periodStart() = 1677672000 = 2023-03-01T12:00:00Z. Exactly noon UTC, so a comparison keyed
+    // on the calendar date of a log's timestamp disagrees with the contract on every claim made
+    // before noon, and does so quietly.
+    periodStart: 1_677_672_000,
+    kind: "ubi_daily",
+    // Same event as XDC, and the layout is taken from the event surface seed rather than recalled:
+    // claimer is the only indexed parameter, so amount is word 0 of log_data.
+    eventSignature: "UBIClaimed(address,uint256)",
+    amountWordIndex: 0,
+  },
+  {
     network: NETWORKS.XDC,
     address: "0x22867567e2d80f2049200e25c6f31cb6ec2f0faf",
+    // MEASURED the same way: periodStart() = 1761393600 = 2025-10-25T12:00:00Z, also noon UTC.
     periodStart: 1_761_393_600,
     kind: "ubi_daily",
     // UBIClaimed(address indexed claimer, uint256 amount): claimer is indexed so it occupies
@@ -421,7 +529,14 @@ export function oracleFor(chainId: number, address: string): OracleConfig | unde
   return ORACLES.find((o) => o.network.chainId === chainId && o.address === a);
 }
 
-/** Every oracle whose chain is in this run's selection. */
+/**
+ * Every oracle whose chain is in this run's selection.
+ *
+ * Pass networks that have ALREADY been filtered by release scope, through
+ * `releaseScopedNetworks()`. This function cannot do it itself: the scope module lives in
+ * `registry.ts`, which imports this file, so calling it from here would be a cycle. The
+ * obligation is therefore on the caller, and both callers now honour it.
+ */
 export function oraclesFor(networks: NetworkConfig[]): OracleConfig[] {
   const ids = new Set(networks.map((n) => n.chainId));
   return ORACLES.filter((o) => ids.has(o.network.chainId));
@@ -435,4 +550,29 @@ export function fullTableName(tableId: string): string {
 
 export function stagingTableId(tableId: string, runId: string): string {
   return `_staging_${tableId}_${runId.replace(/-/g, "")}`;
+}
+
+/**
+ * Refuse to treat the production dataset as a staging dataset.
+ *
+ * The staging dataset is the one place this pipeline needs `tables.delete`. Pointing it back at
+ * production would silently re-create the requirement to hold that permission on the raw layer,
+ * which is the exact thing the split exists to remove -- and it would do so through an
+ * environment variable, leaving the code looking correct. So the refusal lives on the path that
+ * composes every staging name, where nothing can route around it.
+ */
+export function assertStagingIsSeparate(): void {
+  if (CONFIG.STAGING_DATASET_ID.trim().toLowerCase() === CONFIG.DATASET_ID.trim().toLowerCase()) {
+    throw new Error(
+      `STAGING_NOT_SEPARATE: STAGING_DATASET_ID and DATASET_ID are both "${CONFIG.DATASET_ID}". ` +
+      `Staging tables are created and dropped, so this would require tables.delete on the ` +
+      `production dataset. Point STAGING_DATASET_ID at its own dataset.`
+    );
+  }
+}
+
+/** A staging table's fully qualified name, composed from the STAGING dataset, never production. */
+export function stagingTableName(stagingTableId: string): string {
+  assertStagingIsSeparate();
+  return `\`${CONFIG.GCP_PROJECT_ID}.${CONFIG.STAGING_DATASET_ID}.${stagingTableId}\``;
 }

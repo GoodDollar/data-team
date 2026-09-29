@@ -27,6 +27,7 @@
 
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
+import { getReaderOverride } from "./adapters.js";
 import { rpcCall } from "./rpc.js";
 import { normaliseChunk } from "./normalise.js";
 import { fetchRange as hsFetchRange, getChainTip as hsChainTip, hasHypersync } from "./hypersync.js";
@@ -358,6 +359,10 @@ export function fetchRange(
   toBlock: number,
   onChunk: (chunk: ChunkResult) => Promise<void>
 ): Promise<FetchResult> {
+  // A replaced reader takes precedence. The index path runs in a child process and the RPC path
+  // needs a live endpoint rotation, so neither can be exercised in a test any other way.
+  const replacement = getReaderOverride();
+  if (replacement) return replacement(network, addresses, fromBlock, toBlock, onChunk) as Promise<FetchResult>;
   if (hasHypersync(network)) return hsFetchRange(network, addresses, fromBlock, toBlock, onChunk);
   if (network.readers.rpcUrls.length > 0) return rpcFetchRange(network, addresses, fromBlock, toBlock, onChunk);
   throw new Error(`NO_READER: ${network.name} has neither a HyperSync index nor a JSON-RPC endpoint configured`);
@@ -396,7 +401,14 @@ export function gradeCapture(
   confirmationResult: string
 ): Assurance {
   if (!fetch.complete) return "C";
-  if (confirmationResult === "refuted_emptiness" || confirmationResult === "disagreed") return "C";
+  if (
+    confirmationResult === "refuted_emptiness" ||
+    confirmationResult === "disagreed" ||
+    // An empty range only one endpoint could vouch for. It is the ordinary outcome on a chain
+    // whose second endpoint is intermittent, and it must not reach A on the strength of the
+    // chunk enumeration alone: the thing left uncorroborated is precisely an absence.
+    confirmationResult === "uncorroborated"
+  ) return "C";
   if (!network.readers.hasIndependentConfirmingReader) return "C";
   // A: two independent sources enumerated this range and returned identical results.
   if (fetch.enumeratingSources >= 2) return "A";
@@ -405,3 +417,4 @@ export function gradeCapture(
   if (confirmationResult === "identical") return "B";
   return "C";
 }
+

@@ -1,181 +1,231 @@
 /**
- * registry.ts -- the contract universe, read from the reference seed rather than hard coded.
+ * registry.ts -- the pipeline's view of the contract universe and the era map.
  *
- * WHY A SEED AND NOT A LIST IN THIS FILE. The L0 v4 contract states the property this buys, in as
- * many words: adding the 147th contract requires no schema change, it requires a row in the
- * contract_deployments seed. A list of addresses in the pipeline would make that false, because
- * ingestion would then need a code change per contract, and the one thing this warehouse cannot
- * afford is a log going uncaptured because nobody had added a line for it yet. The previous
- * configuration hard coded two addresses and, as a direct consequence, had Celo commented out for
- * months without anything noticing.
+ * WHAT CHANGED AND WHY. This module used to own a hand-rolled CSV scanner. That scanner ended
+ * with `.filter(r => r.length === header.length)`, so a row with one stray comma VANISHED: no
+ * error, a smaller contract universe, and an ingestion run that silently covered less than it
+ * claimed. It also read every numeric field through `Number()`, where `Number("")` is 0 rather
+ * than NaN, so a blank `era_index` became era 0 -- and `era_index` is what decides which ABI
+ * decodes a log. Both failures were silent, and silence is the expensive part: `lookupEra` cannot
+ * fail, so a missing era yields a confident wrong decode rather than an error.
  *
- * WHAT THE SEED SUPPLIES THAT NOTHING ELSE CAN. Two things, and the second is the one that is
- * easy to miss:
+ * Parsing, schema and cross-row validation now live in `./control-plane/`, which rejects the whole
+ * seed on the first malformed physical row. This file keeps only what the PIPELINE needs from a
+ * registry it has already been told is sound: capture targets and era lookup.
  *
- *   1. WHICH CONTRACTS EXIST, per chain, with each one's own creation block. R8: an absence claim
- *      states the range it covers and its lower bound is contract creation unless there is a
- *      stated reason otherwise. Taking a start block from anywhere else has already cost this
- *      project real data: a scan from a subgraph's declared start rather than the contract's
- *      creation missed 570 swaps.
- *
- *   2. THE ERA MAP. L0-4 requires every row to self-identify its era, because an identical getter
- *      or an identical event signature can mean different things across an upgrade. 179 eras
- *      announce with Upgraded(address), 66 with CodeUpdated(bytes32,address), and 115 announce
- *      NOTHING AT ALL, so a resolver that follows announcements cannot reach a third of them. The
- *      seed carries valid_from_block and valid_to_block per era, which is a block-range lookup and
- *      needs no chain read.
+ * WHY A SEED AND NOT A LIST IN THIS FILE. Adding the 147th contract must require a row in
+ * `contract_deployments`, not a code change, because the one thing this warehouse cannot afford is
+ * a log going uncaptured because nobody had added a line for it yet. The previous configuration
+ * hard coded two addresses and, as a direct consequence, had Celo commented out for months.
  *
  * THE FAILURE MODE OF AN ERA MAP, WRITTEN DOWN HERE BECAUSE IT IS THE DANGEROUS ONE. A lookup
- * that always returns something cannot fail, so a wrong or missing era yields a CONFIDENT WRONG
- * ANSWER rather than an error. `lookupEra` therefore returns null where no era covers the block,
- * and the caller writes era_resolution 'unresolved' with a NULL era_index, which is what the L0
- * contract asks for: a row that does not know its era says so, and 'unresolved' is not era 1.
+ * that always returns something cannot fail. `lookupEra` therefore returns null where no era
+ * covers the block, and the caller writes era_resolution 'unresolved' with a NULL era_index, which
+ * is what the L0 contract asks for: a row that does not know its era says so, and 'unresolved' is
+ * not era 1.
  */
 
-import { readFileSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join, resolve } from "path";
 import { log } from "./log.js";
 import type { CaptureTarget, EraMapEntry, NetworkConfig } from "./types.js";
+import { loadChains } from "./control-plane/chains.js";
+import { parseRegistry, validateRegistry, REGISTRY_PATH } from "./control-plane/contractRegistry.js";
+import { ControlPlaneInvalidError } from "./control-plane/index.js";
+import { boundToNullableNumber } from "./control-plane/int64.js";
+import { chainStanding, RELEASE_SCOPE_FREEZE, type ReleaseScopeFreeze } from "./control-plane/releaseScope.js";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/**
- * The seed lives in the dbt project, which is the versioned home of every reference table in this
- * warehouse. Resolved relative to this file so it works from source and from a build, and checked
- * for existence so a moved seed fails loudly at startup rather than as an empty contract list.
- */
-export const REGISTRY_PATH = resolve(join(HERE, "..", "..", "gd_dbt", "seeds", "contract_deployments.csv"));
-
-/** Minimal RFC 4180 reader. Handles quoted fields and embedded commas, which the seed contains. */
-function parseCsv(text: string): Record<string, string>[] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
-      } else field += c;
-      continue;
-    }
-    if (c === '"') { inQuotes = true; continue; }
-    if (c === ",") { row.push(field); field = ""; continue; }
-    if (c === "\r") continue;
-    if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; continue; }
-    field += c;
-  }
-  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
-
-  if (rows.length === 0) return [];
-  const header = rows[0];
-  return rows.slice(1)
-    .filter((r) => r.length === header.length)
-    .map((r) => Object.fromEntries(header.map((h, i) => [h, r[i]])));
-}
+export { REGISTRY_PATH };
 
 export interface Registry {
   /** One entry per contract era, in block order per contract. */
   eras: EraMapEntry[];
-  /** One entry per distinct (chain_id, proxy_address). */
-  contracts: { chainId: number; address: string; contractName: string; firstBlock: number; isLive: boolean }[];
+  /**
+   * One entry per distinct (chain_id, proxy_address). `firstBlock` is null where the seed declares
+   * no deployed code at that address, which is a real answer and not a block number.
+   */
+  contracts: { chainId: number; address: string; contractName: string; firstBlock: number | null; isLive: boolean }[];
   path: string;
   rowsRead: number;
 }
 
 let cached: Registry | null = null;
 
+/**
+ * Load and validate the registry, or throw.
+ *
+ * There is no partial result and no warning path. The condition this serves is that one malformed
+ * byte in a control seed prevents the pipeline from starting, so every failure mode -- a missing
+ * file, a malformed row, a bad integer lexeme, an overlapping era, a chain id that disagrees with
+ * its chain name -- raises here rather than quietly producing a smaller universe.
+ */
 export function loadRegistry(path = REGISTRY_PATH): Registry {
   if (cached && cached.path === path) return cached;
 
-  if (!existsSync(path)) {
-    throw new Error(
-      `REGISTRY_MISSING: ${path} does not exist. The contract universe is defined by that seed, ` +
-      `so an ingestion run with no registry would silently cover nothing.`
-    );
-  }
+  const chains = loadChains();
+  const parsed = parseRegistry(path);
+  const violations = validateRegistry(parsed, chains);
+  if (violations.length > 0) throw new ControlPlaneInvalidError(violations);
 
-  const rows = parseCsv(readFileSync(path, "utf8"));
   const eras: EraMapEntry[] = [];
-  const byContract = new Map<string, { chainId: number; address: string; contractName: string; firstBlock: number; isLive: boolean }>();
+  const byContract = new Map<string, Registry["contracts"][number]>();
 
-  for (const r of rows) {
-    const chainId = Number(r.chain_id);
-    const address = String(r.proxy_address ?? "").toLowerCase();
-    if (!Number.isFinite(chainId) || !address.startsWith("0x")) continue;
+  for (const r of parsed.rows) {
+    if (!r.noCodeDeployed) {
+      eras.push({
+        chainId: r.chainId,
+        proxyAddress: r.proxyAddress,
+        eraIndex: r.eraIndex,
+        implementationAddress: r.implementationAddress,
+        validFromBlock: boundToNullableNumber(r.validFrom!)!,
+        // Open ended becomes null, never a large number: null propagates as "still in force",
+        // while a number propagates as a block that exists and can be compared against.
+        validToBlock: boundToNullableNumber(r.validTo!),
+      });
+    }
 
-    const validFrom = Number(r.valid_from_block);
-    const validTo = r.valid_to_block === "" || r.valid_to_block === undefined ? null : Number(r.valid_to_block);
-    eras.push({
-      chainId,
-      proxyAddress: address,
-      eraIndex: Number(r.era_index),
-      implementationAddress: r.implementation_address ? String(r.implementation_address).toLowerCase() : null,
-      validFromBlock: Number.isFinite(validFrom) ? validFrom : 0,
-      validToBlock: validTo !== null && Number.isFinite(validTo) ? validTo : null,
-    });
-
-    const key = `${chainId}|${address}`;
-    const creation = Number(r.creation_block);
+    const key = `${r.chainId}|${r.proxyAddress}`;
     const existing = byContract.get(key);
-    // The contract's own creation block, taken as the minimum across its eras so that a seed row
-    // with a missing creation_block cannot raise the floor above a real one.
-    const first = Number.isFinite(creation) ? creation : (Number.isFinite(validFrom) ? validFrom : 0);
     if (!existing) {
       byContract.set(key, {
-        chainId, address, contractName: String(r.contract_name ?? "unknown"),
-        firstBlock: first, isLive: String(r.is_live).toLowerCase() === "true",
+        chainId: r.chainId, address: r.proxyAddress, contractName: r.contractName,
+        firstBlock: r.creationBlock, isLive: r.isLive,
       });
     } else {
-      if (first > 0 && (existing.firstBlock === 0 || first < existing.firstBlock)) existing.firstBlock = first;
-      if (String(r.is_live).toLowerCase() === "true") existing.isLive = true;
+      if (r.creationBlock !== null && (existing.firstBlock === null || r.creationBlock < existing.firstBlock)) {
+        existing.firstBlock = r.creationBlock;
+      }
+      if (r.isLive) existing.isLive = true;
     }
   }
 
   eras.sort((a, b) =>
     a.chainId - b.chainId || a.proxyAddress.localeCompare(b.proxyAddress) || a.validFromBlock - b.validFromBlock);
 
-  cached = { eras, contracts: [...byContract.values()], path, rowsRead: rows.length };
+  cached = { eras, contracts: [...byContract.values()], path, rowsRead: parsed.rows.length };
   log.info(
-    `Registry loaded: ${cached.contracts.length} contracts, ${cached.eras.length} eras, from ${rows.length} seed rows`,
-    { path }
+    `Registry loaded: ${cached.contracts.length} contracts, ${cached.eras.length} eras, from ${parsed.rows.length} seed rows`,
+    { path, recordDelimiter: parsed.csv.recordDelimiter, boundaryColumns: parsed.hasBoundaryColumns }
   );
   return cached;
+}
+
+/** Test seam. The cache is keyed on path, so a fixture cannot silently reuse a real load. */
+export function clearRegistryCache(): void {
+  cached = null;
+}
+
+export class ChainOutOfReleaseScopeError extends Error {
+  constructor(readonly chain: string, message: string) {
+    super(message);
+    this.name = "ChainOutOfReleaseScopeError";
+  }
+}
+
+/** Why one chain may not be acted on, in the words a command can print or persist. */
+export interface RefusedChain {
+  readonly network: NetworkConfig;
+  readonly detail: string;
+}
+
+function outOfScopeDetail(network: NetworkConfig, freeze: ReleaseScopeFreeze): string {
+  const drop = freeze.chainsDropped.find((c) => c.chain === network.name);
+  const why = drop
+    ? `was dropped from the release on ${drop.droppedOn}`
+    : `is NOT in the release scope frozen on ${freeze.decidedOn} and is not recorded as dropped either, so nobody has decided about it`;
+  return (
+    `${network.name} is configured but ${why}; release scope is ` +
+    `${freeze.releaseChains.join(", ")}; see ${freeze.decisionRecord}`
+  );
+}
+
+/**
+ * Split selected networks into the ones the release covers and the ones it refuses.
+ *
+ * Every command that acts per chain runs its network list through here first, so a dropped chain
+ * is skipped with a stated reason instead of either being captured or aborting the whole run.
+ * `targetsFor` refuses the same chain unconditionally, which is the backstop: this function makes
+ * the refusal reportable, it does not make it optional.
+ */
+export function partitionByReleaseScope(
+  networks: readonly NetworkConfig[],
+  freeze: ReleaseScopeFreeze = RELEASE_SCOPE_FREEZE,
+): { usable: NetworkConfig[]; refused: RefusedChain[] } {
+  if (!freeze.frozen) return { usable: [...networks], refused: [] };
+  const usable: NetworkConfig[] = [];
+  const refused: RefusedChain[] = [];
+  for (const network of networks) {
+    if (chainStanding(network.name, freeze) === "in_release") usable.push(network);
+    else refused.push({ network, detail: outOfScopeDetail(network, freeze) });
+  }
+  return { usable, refused };
+}
+
+/**
+ * The networks a per-chain command may act on, with each refusal logged exactly once.
+ *
+ * For commands that report through the log rather than through a run summary. `runPipeline` uses
+ * `partitionByReleaseScope` directly because its refusals have to become typed outcomes.
+ */
+export function releaseScopedNetworks(
+  networks: readonly NetworkConfig[],
+  freeze: ReleaseScopeFreeze = RELEASE_SCOPE_FREEZE,
+): NetworkConfig[] {
+  const { usable, refused } = partitionByReleaseScope(networks, freeze);
+  for (const r of refused) log.warn(`Skipping ${r.network.name}: ${r.detail}`, { chainId: r.network.chainId });
+  return usable;
 }
 
 /**
  * Capture targets for one chain, in address order.
  *
- * EXCLUDES a contract whose creation block could not be resolved from the seed, which this
- * registry represents as firstBlock 0. Six seed rows carry an empty `creation_block`, all of them
- * addresses A1 established have no code on that chain, and `Number("")` is 0 rather than NaN, so
- * the fallback to `valid_from_block` never fires for them and 0 survives. Handing those to the
- * pipeline asks it to scan from genesis to head for an address that has never held code, on four
- * chains. Resuming from block 0 is not a conservative default here, it is a guess wearing one.
+ * REFUSES a chain outside the frozen release scope, and this is the enforcement point for it on
+ * the path that writes. Before this check the scope decision bound `plan` mode and the tests and
+ * bound nothing on capture: `loadControlPlane`, which is what calls `assertReleaseScopeFrozen`,
+ * has no caller in this package, and `loadRegistry` deliberately does not perform the
+ * frozen-scope checks. Every command that captures, repairs or calibrates reaches a chain's
+ * contracts through here, so one refusal covers all of them.
  *
- * Note the sentinel is only safe because no contract in this registry is genesis allocated. If one
- * ever is, firstBlock has to become nullable rather than overloading 0, and this comment is the
- * warning that the change is not local.
+ * Thrown rather than returned empty. An empty target list is indistinguishable from "this chain
+ * has no contracts yet", and a run that silently covers nothing while exiting 0 is the exact
+ * failure this pipeline has already paid for once. Callers that need to carry on with the chains
+ * they CAN do filter first, through `partitionByReleaseScope`.
+ *
+ * `freeze` is a parameter with the frozen module as its default, matching `buildPlan` and
+ * `assertReleaseScopeFrozen`, so a test can narrow the scope and watch the refusal instead of
+ * asserting against whatever the scope happens to say today.
+ *
+ * EXCLUDES a contract the seed declares has no deployed code. Those rows carry an empty
+ * `creation_block`, which this module now represents as null rather than 0. The distinction is the
+ * whole point: handing a 0 to the pipeline asks it to scan genesis to head for an address that has
+ * never held code, and "resume from block 0" is a guess wearing the costume of a conservative
+ * default.
  *
  * It does NOT filter on isLive. A contract that was live and has since been retired still has
  * history worth ingesting, and dropping it would lose exactly the data L0 exists to hold.
  */
-export function targetsFor(network: NetworkConfig, opts: { addresses?: string[] } = {}): CaptureTarget[] {
+export function targetsFor(
+  network: NetworkConfig,
+  opts: { addresses?: string[] } = {},
+  freeze: ReleaseScopeFreeze = RELEASE_SCOPE_FREEZE,
+): CaptureTarget[] {
+  if (freeze.frozen && chainStanding(network.name, freeze) !== "in_release") {
+    throw new ChainOutOfReleaseScopeError(
+      network.name,
+      `${network.name} cannot be captured: ${outOfScopeDetail(network, freeze)}`,
+    );
+  }
+
   const reg = loadRegistry();
   const wanted = opts.addresses ? new Set(opts.addresses.map((a) => a.toLowerCase())) : null;
   const onChain = reg.contracts.filter((c) => c.chainId === network.chainId);
-  const unresolved = onChain.filter((c) => c.firstBlock === 0);
+  const unresolved = onChain.filter((c) => c.firstBlock === null);
   if (unresolved.length > 0) {
     log.warn(
-      `${network.name}: ${unresolved.length} contract(s) excluded, no creation block in the seed`,
+      `${network.name}: ${unresolved.length} contract(s) excluded, the seed declares no deployed code there`,
       { contracts: unresolved.map((c) => `${c.contractName} ${c.address}`).join(", ") }
     );
   }
   return onChain
-    .filter((c) => c.firstBlock > 0)
+    .filter((c): c is typeof c & { firstBlock: number } => c.firstBlock !== null)
     .filter((c) => (wanted ? wanted.has(c.address) : true))
     .sort((a, b) => a.address.localeCompare(b.address))
     .map((c) => ({

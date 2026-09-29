@@ -29,14 +29,72 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import {
-  CONFIG, fullTableName, stagingTableId, MERGE_KEYS, ALL_HISTORY_VIEWS, RAW_LOGS_TABLE,
+  CONFIG, fullTableName, stagingTableId, stagingTableName, MERGE_KEYS, ALL_HISTORY_VIEWS,
+  RAW_LOGS_TABLE,
 } from "./config.js";
 import { log } from "./log.js";
 import { windowPredicate, windowForSpan, partitionsSpanned } from "./window.js";
+import {
+  getBigQueryClient, setBigQueryFactory, getWriteLock, setWriteLockFactory,
+  type BigQueryClientLike,
+} from "./adapters.js";
+import { fileWriteLock } from "./writelock.js";
+import { setDatasetAdminFactory, type DatasetAdmin } from "./sandbox.js";
 import type { SchemaField, PipelineRunRecord, CoverageRecord, MergeWindow } from "./types.js";
 
-export const bigquery = new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID });
-const dataset = bigquery.dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
+// The real client is registered as a FACTORY rather than constructed here. Constructing it at
+// import time resolved credentials as a side effect of importing this module, so any test that
+// reached bq.ts transitively needed a credential to run at all.
+setBigQueryFactory(() => new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID }) as unknown as BigQueryClientLike);
+
+// The sandbox guard's administrative client, registered the same way and for the same reason.
+// Dataset create, list, get and delete are metadata operations: they submit no query job and bill
+// no bytes. The guard's own refusals live in sandbox.ts and this client cannot bypass them,
+// because nothing here is reachable except through the exported functions there.
+setDatasetAdminFactory((): DatasetAdmin => {
+  const client = new BigQuery({ projectId: CONFIG.GCP_PROJECT_ID });
+  return {
+    async listDatasets() {
+      const [datasets] = await client.getDatasets({ all: true });
+      return datasets.map((d) => d.id!).filter((id): id is string => typeof id === "string");
+    },
+    async createDataset(datasetId, options) {
+      await client.createDataset(datasetId, {
+        location: options.location,
+        labels: options.labels,
+        description: options.description,
+        defaultTableExpirationMs: String(options.defaultTableExpirationMs),
+      });
+    },
+    async labelsOf(datasetId) {
+      try {
+        const [metadata] = await client.dataset(datasetId).getMetadata();
+        return (metadata.labels ?? {}) as Record<string, string>;
+      } catch (e: any) {
+        if (e?.code === 404) return null;
+        throw e;
+      }
+    },
+    async deleteDataset(datasetId, options) {
+      await client.dataset(datasetId).delete({ force: options.deleteContents });
+    },
+  };
+});
+
+const datasetHandle = () =>
+  getBigQueryClient().dataset(CONFIG.DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
+
+// Staging tables are created and dropped, so they live in their own dataset and the handle that
+// reaches them is a different one. See `config.ts` on STAGING_DATASET_ID: while the two shared an
+// id, a writer identity needed `tables.delete` on the production raw layer, and an ingestion run
+// that failed at staging cleanup had already written production rows by the time it failed.
+const stagingDatasetHandle = () =>
+  getBigQueryClient().dataset(CONFIG.STAGING_DATASET_ID, { projectId: CONFIG.GCP_PROJECT_ID });
+
+// The cross-process write lease, registered as a factory for the same reason the client above is:
+// building one at import time would make every test that transitively imports this file touch the
+// filesystem. C1's fix; see writelock.ts.
+setWriteLockFactory(() => fileWriteLock());
 
 // -- Retry helpers --
 
@@ -64,6 +122,24 @@ function sleep(ms: number): Promise<void> {
 /**
  * Run a query with retries.
  *
+ * EVERY STATEMENT THIS PIPELINE SUBMITS GOES THROUGH HERE, and that is what makes the cost
+ * ceiling below a control rather than a convention. `maximumBytesBilled` is attached at this one
+ * chokepoint instead of at each call site, so a statement added later carries it without anyone
+ * remembering to. BigQuery evaluates the ceiling against the job's estimate BEFORE running it and
+ * refuses the job outright if it is exceeded, which means an over-ceiling query bills nothing --
+ * the refusal is the control, not an alarm raised after the money is gone.
+ *
+ * A refusal is deliberately NOT retried. It is not a transient fault; the same statement will be
+ * refused identically every time, and retrying it five times only delays the error. `isRetriable`
+ * matches on transport failures and does not match this, so the refusal surfaces on the first
+ * attempt with BigQuery's own message naming the byte counts.
+ *
+ * Two job classes cannot carry it, both named rather than left to be discovered. Load jobs bill
+ * storage rather than query bytes and the jobs API rejects the setting on a load configuration,
+ * so the two `table.load` calls in this file are outside it by construction. Queries Looker
+ * Studio submits on its own behalf never reach this process and are bounded instead by the size
+ * of the tables exposed to them.
+ *
  * `types` is not optional decoration. The client infers a parameter's BigQuery type from its
  * JavaScript value, and a null has no type to infer, so a statement carrying even one nullable
  * parameter is rejected outright with "Parameter types must be provided for null values". Every
@@ -77,8 +153,11 @@ export async function bqQuery(
   let lastErr: any;
   for (let attempt = 1; attempt <= CONFIG.BQ_RETRIES; attempt++) {
     try {
-      const [rows] = await bigquery.query({
+      const [rows] = await getBigQueryClient().query({
         query: sql, params, types, projectId: CONFIG.GCP_PROJECT_ID,
+        // A string, not a number. The REST field is an int64 and the client forwards it verbatim;
+        // a JavaScript number arrives as a float for large values and the API rejects it.
+        maximumBytesBilled: String(CONFIG.MAX_BYTES_BILLED_PER_JOB),
       });
       return rows;
     } catch (e: any) {
@@ -161,7 +240,7 @@ export async function countRowsInRange(
  * path survive the table gaining columns, which it already has once.
  */
 export async function liveColumns(tableId: string): Promise<Set<string>> {
-  const [metadata] = await dataset.table(tableId).getMetadata();
+  const [metadata] = await datasetHandle().table(tableId).getMetadata();
   return new Set<string>((metadata.schema?.fields ?? []).map((f: any) => f.name));
 }
 
@@ -197,7 +276,33 @@ export async function ensureInfraTables(): Promise<void> {
       captures_planned INT64,
       captures_ok INT64,
       captures_failed INT64,
-      pipeline_version STRING
+      pipeline_version STRING,
+      execution_status STRING,
+      units_planned INT64,
+      units_attempted INT64,
+      units_completed INT64,
+      units_noop INT64,
+      units_refused INT64,
+      units_unsupported INT64,
+      units_failed INT64,
+      outcome_counts_by_grain JSON,
+      release_sha STRING,
+      plan_hash STRING,
+      parent_run_id STRING,
+      child_plan_stage STRING,
+      child_plan_root_hash STRING,
+      child_plan_hash STRING,
+      child_ordinal INT64,
+      stage_child_ordinal INT64,
+      stage_child_count INT64,
+      bigquery_job_ledger JSON,
+      job_ledger_hash STRING,
+      work_jobs_terminal BOOL,
+      terminalizer_job_id STRING,
+      closure_status STRING,
+      terminalized_at TIMESTAMP,
+      terminalized_row_hash STRING,
+      closure_receipt_uri STRING
     )
     PARTITION BY DATE(started_at)
   `);
@@ -213,7 +318,7 @@ export async function ensureInfraTables(): Promise<void> {
       table_id STRING,
       from_block INT64,
       to_block INT64,
-      status STRING OPTIONS(description="complete, incomplete, unconfirmed_empty, nothing_to_fetch, refused_budget or capability_gap. Never plain success."),
+      status STRING OPTIONS(description="complete, incomplete, unconfirmed_empty, rollback_eligible, nothing_to_fetch, refused_budget or capability_gap. Never plain success."),
       chunks_planned INT64,
       chunks_ok INT64,
       skipped_ranges STRING,
@@ -274,6 +379,32 @@ export async function ensureInfraTables(): Promise<void> {
   ]);
   await assertColumns("PipelineRuns", [
     "chains_processed", "captures_planned", "captures_ok", "captures_failed", "pipeline_version",
+    // Plan Phase 3 task 11. A dataset that predates the outcome migration fails HERE, at startup,
+    // naming the file to run, rather than at the INSERT after a whole run has already happened.
+    "execution_status", "units_planned", "units_attempted", "units_completed", "units_noop",
+    "units_refused", "units_unsupported", "units_failed", "outcome_counts_by_grain",
+    "release_sha", "plan_hash",
+    // The job-ledger and closure columns. This pipeline writes none of them; the mutation broker
+    // and the terminalizer do, in Phases 5 and 14. They are asserted here anyway, because a
+    // half-applied migration is the state that produces a run which believes it can close itself
+    // and then cannot.
+    "parent_run_id", "child_plan_stage", "child_plan_root_hash", "child_plan_hash",
+    "child_ordinal", "stage_child_ordinal", "stage_child_count",
+    "bigquery_job_ledger", "job_ledger_hash", "work_jobs_terminal",
+    "terminalizer_job_id", "closure_status", "terminalized_at",
+    "terminalized_row_hash", "closure_receipt_uri",
+  ]);
+
+  // MEASURED: the production copy of this table predates the chain dimension. It carries 14
+  // columns with `table_id` where this file declares `chain_id` and `contract_address`, so the
+  // rows `recordReconciliation` builds would be rejected by it -- and the create-if-absent above
+  // can never correct that. Without this assertion the run fails at the load step, after a
+  // reconciliation has already read a year of contract state, and the message names a column
+  // rather than the migration.
+  await assertColumns("OracleReconciliation", [
+    "run_id", "chain_id", "network", "contract_address", "protocol_day", "oracle_block",
+    "oracle_count", "oracle_amount_raw", "warehouse_stored", "warehouse_distinct",
+    "warehouse_amount_raw", "count_gap", "amount_gap_raw", "verdict", "checked_at",
   ]);
 }
 
@@ -304,10 +435,14 @@ export async function recordPipelineRun(record: PipelineRunRecord): Promise<void
     `INSERT INTO ${fullTableName("PipelineRuns")}
      (run_id, mode, started_at, completed_at, exit_code, total_rows_merged, contracts_processed,
       contracts_failed, host, error_message, chains_processed, captures_planned, captures_ok,
-      captures_failed, pipeline_version)
+      captures_failed, pipeline_version, execution_status, units_planned, units_attempted,
+      units_completed, units_noop, units_refused, units_unsupported, units_failed,
+      outcome_counts_by_grain, release_sha, plan_hash)
      VALUES (@runId, @mode, TIMESTAMP(@startedAt), TIMESTAMP(@completedAt), @exitCode, @totalRowsMerged,
       @contractsProcessed, @contractsFailed, @host, @errorMessage, @chainsProcessed, @capturesPlanned,
-      @capturesOk, @capturesFailed, @pipelineVersion)`,
+      @capturesOk, @capturesFailed, @pipelineVersion, @executionStatus, @unitsPlanned, @unitsAttempted,
+      @unitsCompleted, @unitsNoop, @unitsRefused, @unitsUnsupported, @unitsFailed,
+      PARSE_JSON(@outcomeCountsByGrain), @releaseSha, @planHash)`,
     {
       runId: record.runId,
       mode: record.mode,
@@ -324,6 +459,17 @@ export async function recordPipelineRun(record: PipelineRunRecord): Promise<void
       capturesOk: record.capturesOk,
       capturesFailed: record.capturesFailed,
       pipelineVersion: record.pipelineVersion,
+      executionStatus: record.executionStatus,
+      unitsPlanned: record.unitsPlanned,
+      unitsAttempted: record.unitsAttempted,
+      unitsCompleted: record.unitsCompleted,
+      unitsNoop: record.unitsNoop,
+      unitsRefused: record.unitsRefused,
+      unitsUnsupported: record.unitsUnsupported,
+      unitsFailed: record.unitsFailed,
+      outcomeCountsByGrain: record.outcomeCountsByGrain,
+      releaseSha: record.releaseSha,
+      planHash: record.planHash,
     },
     {
       runId: "STRING", mode: "STRING", startedAt: "STRING", completedAt: "STRING",
@@ -331,6 +477,14 @@ export async function recordPipelineRun(record: PipelineRunRecord): Promise<void
       contractsFailed: "INT64", host: "STRING", errorMessage: "STRING",
       chainsProcessed: "STRING", capturesPlanned: "INT64", capturesOk: "INT64",
       capturesFailed: "INT64", pipelineVersion: "STRING",
+      // Every one of these is typed even though none is nullable today, because two of them ARE
+      // legitimately null before a release sets them and the client cannot infer a type from a
+      // JS null: it rejects the whole statement with "Parameter types must be provided for null
+      // values". A live run of this pipeline lost a coverage row to exactly that.
+      executionStatus: "STRING", unitsPlanned: "INT64", unitsAttempted: "INT64",
+      unitsCompleted: "INT64", unitsNoop: "INT64", unitsRefused: "INT64",
+      unitsUnsupported: "INT64", unitsFailed: "INT64", outcomeCountsByGrain: "STRING",
+      releaseSha: "STRING", planHash: "STRING",
     }
   );
 }
@@ -463,8 +617,33 @@ export async function stageAndMerge(
     );
   }
 
+  // R-XPART, AND THE BOUND OF THE FIX, STATED WHERE THE STATEMENT IS BUILT.
+  //
+  // The window below is a literal on the target, derived by `windowForRows` from the INCOMING
+  // rows: their min and max block_timestamp, truncated to whole months and padded one month each
+  // side. A target row OUTSIDE that window is not a match candidate, so WHEN NOT MATCHED inserts
+  // a second row under a key that already exists. That is ordinary MERGE semantics, it reproduced
+  // on an unguarded table of the same shape, and it is invisible to any comparison of values.
+  //
+  // THE PADDING IS WHAT BOUNDS IT, AND THE BOUND IS FINITE: one month of padding covers a
+  // displacement back to the start of the month BEFORE the source's own month, which is 31 to 62
+  // days depending where in its month the source sits. A row displaced 95 days WAS MEASURED TO
+  // DUPLICATE. So this is a fix within a bound, NOT a general solution -- the general solution is
+  // a key directory that records where each key already lives, and it is deliberately deferred
+  // because nothing here writes outside a recent window today.
+  //
+  // What closes the gap between the bound and the general case is not a wider window, it is that
+  // an out-of-bound duplicate is DETECTED rather than silent: see `verifyMergeKeyUniqueness`.
+  // A re-read that moves a row's timestamp by more than the bound is a correction rather than a
+  // reorganisation, and a correction states its own window through `windowForSpan`.
+
   const staging = stagingTableId(tableId, runId);
-  const stagingRef = fullTableName(staging);
+  // The staging table lives in the STAGING dataset and the target lives in production. They are
+  // composed by different helpers because they must resolve to different datasets: staging is
+  // created and dropped on every run, and a dataset that is written and then deleted from is the
+  // one place `tables.delete` is needed. `stagingTableName` refuses outright if the two dataset
+  // ids are ever configured the same, so the split cannot be undone by an environment variable.
+  const stagingRef = stagingTableName(staging);
   const productionRef = fullTableName(tableId);
 
   // Only write columns the live table actually has, so a schema that has moved ahead of this
@@ -492,12 +671,29 @@ export async function stageAndMerge(
         WHERE ${keyJoin}
       )`;
 
+  // C1's control. Two concurrent captures of one range each measured the target before their own
+  // MERGE, each matched against a snapshot taken before the other inserted, and both inserted:
+  // 149 stored rows over 102 distinct keys, both processes exiting 0. The lease excludes the
+  // second writer on this host. A refusal is returned rather than thrown so the failure is
+  // explicit here, where the message can say what was held and by whom.
+  //
+  // THE FAILURE DIRECTION MATTERS AS MUCH AS THE EXCLUSION. A refused writer throws, its capture
+  // is recorded `incomplete`, and its process exits nonzero. That is the half of C1 the row count
+  // never showed: the original incident was invisible precisely because both processes exited 0
+  // and both wrote a coverage row saying complete.
+  const lockHandle = await getWriteLock().acquire(tableId, window);
+  if (lockHandle === null) {
+    throw new Error(
+      `WRITE_LOCK_REFUSED: another writer holds ${tableId} over ${window.fromTs}..${window.toTs}`
+    );
+  }
+
   try {
     const ndjson = deduped.map((r) => JSON.stringify(r)).join("\n");
     const tmpFile = join(tmpdir(), `bq_staging_${runId}_${randomUUID().slice(0, 8)}.ndjson`);
     writeFileSync(tmpFile, ndjson);
 
-    const tbl = dataset.table(staging);
+    const tbl = stagingDatasetHandle().table(staging);
     const metadata = {
       sourceFormat: "NEWLINE_DELIMITED_JSON" as const,
       writeDisposition: "WRITE_TRUNCATE" as const,
@@ -580,6 +776,7 @@ export async function stageAndMerge(
     } catch (e: any) {
       log.warn(`Failed to drop staging table ${staging}`, { error: e.message });
     }
+    await lockHandle.release();
   }
 }
 
@@ -680,6 +877,45 @@ export async function duplicateReport(tableId: string, chainId: number): Promise
     minTs: ts(r.min_dup_ts),
     maxTs: ts(r.max_dup_ts),
   };
+}
+
+/**
+ * Assert that a table holds exactly one row per merge key, and say so loudly when it does not.
+ *
+ * THIS IS THE OTHER HALF OF R-XPART, AND THE HALF THAT IS NOT BOUNDED. The padded MERGE window
+ * prevents a duplicate for a displacement of up to 31 to 62 days; a row displaced 95 days was
+ * measured to duplicate anyway. That residue is accepted deliberately -- the general fix is a key
+ * directory, which is deferred because nothing writes outside a recent window today -- but
+ * accepting a residue is only defensible if the residue is VISIBLE. Silence is what made every
+ * duplicate incident in this project expensive: the rows were wrong and every count, grain and
+ * referential test passed.
+ *
+ * So this is a post-condition on the key, not a repair. It reports; `dedupTable` repairs. Run it
+ * after a capture, or against any table anyone is about to trust.
+ *
+ * It reads through the all-history view because that is the only route the guard permits for this
+ * shape: a GROUP BY over the whole table looking for a repeated key has no window by definition.
+ * A duplicate created by a non-covering window is, by construction, in a partition the incoming
+ * window excluded, so a windowed check is the one check guaranteed not to find it.
+ */
+export async function verifyMergeKeyUniqueness(
+  tableId: string,
+  chainId: number
+): Promise<{ ok: boolean; report: DuplicateReport }> {
+  const report = await duplicateReport(tableId, chainId);
+  if (report.phantomRows > 0) {
+    log.error(
+      `MERGE_KEY_NOT_UNIQUE: ${tableId}/chain ${chainId} holds ${report.storedRows} rows over ` +
+      `${report.distinctKeys} distinct merge keys, so ${report.phantomRows} are phantoms. The ` +
+      `duplicated keys sit between blocks ${report.minBlock} and ${report.maxBlock} ` +
+      `(${report.minTs} to ${report.maxTs}). A MERGE whose target window did not cover an ` +
+      `already-present row inserts a second row under its key; one month of padding bounds that ` +
+      `to a displacement of 31 to 62 days and a larger one is not covered. Repair with ` +
+      `dedupTable, which deletes the surplus copies in place.`,
+      { tableId, chainId, phantomRows: report.phantomRows }
+    );
+  }
+  return { ok: report.phantomRows === 0, report };
 }
 
 /**
@@ -882,7 +1118,7 @@ export async function warehouseDailyTotals(
 
 export async function recordReconciliation(rows: Record<string, any>[]): Promise<void> {
   if (rows.length === 0) return;
-  const tbl = dataset.table("OracleReconciliation");
+  const tbl = datasetHandle().table("OracleReconciliation");
   const tmpFile = join(tmpdir(), `bq_recon_${randomUUID().slice(0, 8)}.ndjson`);
   writeFileSync(tmpFile, rows.map((r) => JSON.stringify(r)).join("\n"));
   try {

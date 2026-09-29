@@ -35,8 +35,9 @@
 import { selectedNetworks, RAW_LOGS_TABLE, TRANSACTIONS_TABLE, oraclesFor, networkByChainId } from "./config.js";
 import { log } from "./log.js";
 import { dedupTable } from "./bq.js";
-import { targetsFor } from "./registry.js";
-import { loadCoverage, openGaps } from "./coverage.js";
+import { targetsFor, releaseScopedNetworks } from "./registry.js";
+import { loadCoverage, openGaps, loadDecodeCoverage } from "./coverage.js";
+import { loadControlPlane } from "./control-plane/index.js";
 import { processTarget } from "./pipeline.js";
 import { reconcileDaily } from "./reconcile.js";
 import type { PipelineOpts } from "./types.js";
@@ -45,7 +46,7 @@ import type { PipelineOpts } from "./types.js";
 export async function runDedup(opts: PipelineOpts): Promise<boolean> {
   let clean = true;
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const tableId of [RAW_LOGS_TABLE, TRANSACTIONS_TABLE]) {
       const r = await dedupTable(tableId, network.chainId, !!opts.dryRun);
       if (opts.dryRun) {
@@ -73,11 +74,19 @@ export async function runDedup(opts: PipelineOpts): Promise<boolean> {
  * Worth having as its own mode because the question "what does this warehouse not cover" was
  * previously unanswerable: the data could not be asked, since an empty result has two causes, and
  * the ledger was write only.
+ *
+ * TWO QUESTIONS, REPORTED SIDE BY SIDE (plan 5.2.1). Block coverage says what was read. Decode
+ * coverage says what could be decoded once read, per `(chain, address)`. A range can be covered
+ * by a clean capture and still contribute nothing to any model, because every log in it carries a
+ * `topic0` the event surface does not know. Reporting only the first question is how that stays
+ * invisible, so the second is printed beside it and its errors are counted separately: a count of
+ * zero undecodable rows means nothing unless the error count beside it is also zero.
  */
 export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
   let clean = true;
+  const surface = loadControlPlane().eventSurface;
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const target of targetsFor(network, { addresses: opts.addresses })) {
       const captures = await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address);
       const gaps = openGaps(captures);
@@ -90,14 +99,39 @@ export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
         clean = false;
         continue;
       }
+
+      const decode = await loadDecodeCoverage(target.chainId, target.address, surface);
+      const decodeNote =
+        `decode: ${decode.rowsUndecodable} of ${decode.rowsConsidered} captured row(s) match no ` +
+        `surface entry, ${decode.errors} row(s) unclassifiable` +
+        (decode.byContract.some((c) => c.unmatchedTopic0s.length > 0)
+          ? `, unmatched topic0 ${decode.byContract.flatMap((c) => c.unmatchedTopic0s).join(", ")}`
+          : "");
+
+      // An unclassifiable row is a finding in its own right. It is not folded into the
+      // undecodable count and it does not pass silently either.
+      if (decode.errors > 0) {
+        clean = false;
+        log.error(
+          `${network.name} ${target.contractName} ${target.address}: ${decode.errors} row(s) could ` +
+          `not be classified, so the undecodable count beside them is not a measurement: ` +
+          decode.errorDetail.join("; ")
+        );
+      } else if (decode.rowsUndecodable > 0) {
+        clean = false;
+        log.error(`${network.name} ${target.contractName} ${target.address}: ${decodeNote}`);
+      }
+
       if (gaps.length === 0) {
-        log.info(`${network.name} ${target.contractName}: ${captures.length} capture(s), no open gap`);
+        log.info(
+          `${network.name} ${target.contractName}: ${captures.length} capture(s), no open gap, ${decodeNote}`
+        );
         continue;
       }
       clean = false;
       log.error(
         `${network.name} ${target.contractName} ${target.address}: ${gaps.length} open gap(s): ` +
-        gaps.map(([a, b]) => `${a}..${b}`).join(", ")
+        gaps.map(([a, b]) => `${a}..${b}`).join(", ") + `; ${decodeNote}`
       );
     }
   }
@@ -114,7 +148,7 @@ export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
 export async function runRepair(opts: PipelineOpts): Promise<boolean> {
   let allClean = true;
 
-  for (const network of selectedNetworks(opts.chains)) {
+  for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const target of targetsFor(network, { addresses: opts.addresses })) {
       const captures = await loadCoverage(target.chainId, RAW_LOGS_TABLE, target.address);
       const gaps = openGaps(captures);
@@ -133,7 +167,15 @@ export async function runRepair(opts: PipelineOpts): Promise<boolean> {
         try {
           // The same code path an ordinary ingestion uses, over a named range. Re-reading is free
           // of duplicates under MERGE, so over-covering a gap costs time and nothing else.
-          await processTarget(target, { mode: "backfill", fromBlock: from, toBlock: to });
+          const outcomes = await processTarget(target, { mode: "backfill", fromBlock: from, toBlock: to });
+          // A repair that was REFUSED is not a repair. Before the outcome type existed this
+          // returned 0 and read here as a clean re-read, so a refused gap was reported healed.
+          // EVERY grain has to complete: a re-read that recovers the logs and still misses a
+          // transaction has not repaired the range, and one outcome per capture used to hide that.
+          for (const outcome of outcomes.filter((o) => o.kind !== "completed")) {
+            log.error(`  repair of ${from}..${to} did not complete for ${outcome.grain} (${outcome.kind}): ${outcome.detail}`);
+            allClean = false;
+          }
         } catch (e: any) {
           log.error(`  repair of ${from}..${to} did not complete: ${e.message}`);
           allClean = false;
@@ -153,7 +195,10 @@ export async function runRepair(opts: PipelineOpts): Promise<boolean> {
   // The external check, where one exists. Two contracts out of 146 publish a usable ledger, so
   // this cannot be the only route to a re-read, but it is the only evidence in this system that
   // does not come from the system itself.
-  for (const oracle of oraclesFor(selectedNetworks(opts.chains))) {
+  //
+  // Release-scoped like every other loop in this file. It was not, and that was inert only while
+  // ORACLES held entries for one chain; it stops being inert the moment a second chain is added.
+  for (const oracle of oraclesFor(releaseScopedNetworks(selectedNetworks(opts.chains)))) {
     if (oracle.kind !== "ubi_daily") continue;
     const network = networkByChainId(oracle.network.chainId);
     if (!network) continue;
