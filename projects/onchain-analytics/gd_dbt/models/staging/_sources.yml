@@ -43,6 +43,47 @@ sources:
             description: "Raw uint256 amount as STRING, 18 decimals on both Celo and XDC. Resolve the divisor from the tokens seed, never hardcode it, and never divide by POW() which returns FLOAT64."
           - name: ingested_at
             description: "Pipeline ingestion timestamp. Used for freshness checks."
+
+      # The two L0 v4 tables. Declared here so the merge key uniqueness tests resolve at parse
+      # time. NEITHER IS POPULATED YET and RawLogs does not exist in the dataset at all, so both
+      # tests are gated behind the l0_v4_tables_exist var and are skipped by a normal build.
+      # Turn them on with the tables: dbt build --vars '{l0_v4_tables_exist: true}'
+      - name: RawLogs
+        description: >
+          L0 universal raw log store, one row per log entry, undecoded, every chain and every
+          contract. Merge key (chain_id, tx_hash, log_index). Defined in
+          warehouse/L1/06_L0Contract_v4.sql. Carries require_partition_filter = TRUE, so EVERY
+          query against it, including a bare count, needs a filter on block_timestamp. A read that
+          genuinely wants all of history uses the RawLogsAllHistory view instead, which carries
+          the wide filter in its own definition.
+        columns:
+          - name: chain_id
+            description: "EVM chain id. Part of the merge key."
+          - name: tx_hash
+            description: "Lowercase hex. Part of the merge key, so two spellings of one hash are two different keys and would store the same log twice."
+          - name: log_index
+            description: "Position of the log in its BLOCK, as the chain reports it. Part of the merge key."
+          - name: block_timestamp
+            description: "Monthly partition key. Required in every filter."
+          - name: topic0
+            description: "The log's first topic, verbatim and positional. The selector for every named event; the first indexed VALUE for the one anonymous event in the system. Read it with topic_count."
+          - name: topic_count
+            description: "How many topics the log actually carried, 0 to 4. A capture fact. It is what lets a decoder tell an anonymous event from a named one without guessing."
+      - name: Transactions
+        description: >
+          L0 transaction store, one row per transaction that produced at least one captured log.
+          Merge key (chain_id, tx_hash). Same partition filter requirement as RawLogs, and the
+          TransactionsAllHistory view is the all history route. Reverted transactions emit no logs
+          and are absent by construction, so absence here means "produced no captured log", never
+          "did not happen".
+        columns:
+          - name: chain_id
+            description: "EVM chain id. Part of the merge key."
+          - name: tx_hash
+            description: "Lowercase hex. Part of the merge key."
+          - name: block_timestamp
+            description: "Monthly partition key. Required in every filter."
+
       - name: InviteContractEvents
         description: >
           Raw decoded invite contract events (InviteeJoined + InviterBounty) from all networks.
@@ -111,6 +152,18 @@ sources:
             description: "uint256 or int256 as STRING, sign preserved. realtimeBalanceOf returns int256 and the negative IS the finding."
           - name: denominator
             description: "The literal denominator, e.g. 100000000 for MAX_WEIGHT. Publishing a raw ratio as a percentage is the 1e16 defect in a new costume."
+          - name: function_selector
+            description: "The four byte selector actually sent, computed from the signature rather than recalled. reading_key is a label for humans; this is the fact."
+          - name: call_data
+            description: "The complete calldata sent, verbatim hex. Small and bounded for a getter, which is why it is stored here and not on Transactions."
+          - name: return_data
+            description: >
+              The raw return bytes, verbatim hex, before any decoding. **This is the analogue of
+              `RawLogs.log_data` and it exists for the same reason.** Without it a wrong word
+              offset, a wrong tuple member or a wrong sign is not a view change, it is a fresh read
+              from the chain, which on Fuse costs about 55 days at the free quota. That defect class
+              has already happened here: a documented verification instruction read the wrong member
+              of a getter's return, so anyone following it would have confirmed a wrong number.
 
       - name: IdentityContractEvents
         description: >

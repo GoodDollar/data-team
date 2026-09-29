@@ -18,6 +18,10 @@ clean-targets:
 
 # Reference data loaded from CSV. Lives in Semantic so it sits alongside the models
 # that join it rather than in a fourth dataset nobody thinks to look in.
+#
+# Column types are declared rather than inferred wherever an inferred type would be wrong or
+# fragile. Block numbers use the int64 maximum as the "still current" sentinel, which a type
+# inferrer can render as a float and silently round; era indexes are counts, not measures.
 seeds:
   gd_dbt:
     +schema: Semantic
@@ -26,6 +30,15 @@ seeds:
       +column_types:
         decimals: INT64
         is_gd: BOOLEAN
+    contract_deployments:
+      +column_types:
+        chain_id: INT64
+        era_index: INT64
+        era_count: INT64
+        valid_from_block: INT64
+        valid_to_block: INT64
+        creation_block: INT64
+        is_live: BOOLEAN
 
 # Default materialization per layer.
 # "view" = BigQuery view (no data stored, always fresh)
