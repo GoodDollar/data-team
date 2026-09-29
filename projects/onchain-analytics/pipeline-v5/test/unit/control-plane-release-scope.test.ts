@@ -21,8 +21,11 @@ import {
   releaseScopeState,
   eraConsumableBySemanticModel,
   assertSemanticErasConsumable,
+  ERA_CONSUMABILITY_BRANCHES,
   type ReleaseScopeFreeze,
 } from "../../src/control-plane/releaseScope.js";
+import { parseEraBoundaryEvidence, eraEvidenceKey } from "../../src/control-plane/eraConfidence.js";
+import { runBuildCheck } from "../../src/control-plane/build-check.js";
 import { NETWORKS } from "../../src/config.js";
 import { buildPlan } from "../../src/plan.js";
 import { targetsFor, partitionByReleaseScope, ChainOutOfReleaseScopeError } from "../../src/registry.js";
@@ -340,10 +343,33 @@ describe("a semantic model may not consume an unreviewed era", () => {
     expect(eraConsumableBySemanticModel(parseOne({ ...proven, boundary_completeness: "plain_contract" })).consumable).toBe(true);
   });
 
-  it("refuses a raw_only_unproven era and says why", () => {
-    const verdict = eraConsumableBySemanticModel(parseOne({ boundary_completeness: "raw_only_unproven" }));
-    expect(verdict.consumable).toBe(false);
-    expect(verdict.reason).toMatch(/raw_only_unproven/);
+  // RENAMED 2026-09-28 by the decode unit.
+  //   was: "refuses a raw_only_unproven era and says why"
+  // This is the test plan 5.5 obligation 4 names. It asserted the one branch the reversal
+  // REMOVES, so leaving it would have pinned the rule the change exists to retire. Rewritten to
+  // assert the reversal itself, in both directions on one fixture.
+  it("no longer refuses on raw_only_unproven alone, and still refuses with no evidence", () => {
+    // Same completeness verdict, full boundary evidence: consumable, and it carries a grade.
+    // The fixture's era_evidence is `contract_creation` on a two-voice creation method, so the
+    // published rule puts it at `announced` by clause B3.
+    const withEvidence = eraConsumableBySemanticModel(parseOne({ ...proven, boundary_completeness: "raw_only_unproven" }));
+    expect(withEvidence.consumable).toBe(true);
+    expect(withEvidence.branch).toBe("consumable");
+    expect(withEvidence.confidenceGrade).toBe("announced");
+
+    // The grade VARIES with the evidence rather than being a constant dressed as one: the same
+    // row with a bisected era reads a tier higher, and it is still consumable either way. That
+    // is the whole reversal -- the grade describes, it does not decide.
+    const bisected = eraConsumableBySemanticModel(parseOne({ ...proven, era_evidence: "slot_bisection_and_announcement_log" }));
+    expect(bisected.consumable).toBe(true);
+    expect(bisected.confidenceGrade).toBe("slot_bisected");
+
+    // Same completeness verdict, no evidence: still refused, by the RETAINED branch, and the
+    // reason no longer mentions raw_only_unproven because that is no longer why.
+    const without = eraConsumableBySemanticModel(parseOne({ boundary_completeness: "raw_only_unproven" }));
+    expect(without.consumable).toBe(false);
+    expect(without.branch).toBe("boundary_evidence_incomplete");
+    expect(without.reason).not.toMatch(/raw_only_unproven/);
   });
 
   it("refuses a complete era that is still scope_pending", () => {
@@ -362,6 +388,141 @@ describe("a semantic model may not consume an unreviewed era", () => {
     expect(v).toHaveLength(2);
     expect(v.map((x) => x.check)).toEqual(["semantic_era_reviewed", "semantic_era_reviewed"]);
     expect(v[0].subject).toMatch(/^Semantic\.claim_events -> /);
+  });
+});
+
+/*
+ * THE BRANCH TABLE, asserted branch by branch.
+ *
+ * The reversal narrows this control in one place and widens it in three. A test that only asserted
+ * "consumable" would pass equally well on an implementation that deleted the release-scope refusal
+ * and made every dropped-chain row consumable -- which is the exact hazard the plan names. So each
+ * branch gets its own case, and the removed one gets a case proving it is GONE.
+ */
+describe("the 5.5 branch table, branch by branch", () => {
+  const row = (o: Parameters<typeof registryRowWithBoundary>[0]) =>
+    parseRegistry(writeRegistryWithBoundary([
+      registryRowWithBoundary({ era_count: "1", valid_to_block: INT64_MAX, is_live: "true", ...o }),
+    ])).rows[0];
+
+  const evidenced = {
+    boundary_completeness: "raw_only_unproven",
+    boundary_evidence_manifest_hash: "0x" + "cd".repeat(32),
+    boundary_checked_through_block: "107000000",
+    frozen_safe_head: "107000100",
+  };
+
+  it("RETAINED 1 of 5: no code deployed", () => {
+    const v = eraConsumableBySemanticModel(row({
+      era_method: "no_code_deployed", era_index: "1", era_count: "0", valid_from_block: "",
+      valid_to_block: "", creation_block: "", is_live: "false", implementation_address: "",
+    }));
+    expect(v.consumable).toBe(false);
+    expect(v.branch).toBe("no_code_deployed");
+  });
+
+  it("RETAINED 2 of 5: the row is not in the release -- the branch that keeps dropped chains out", () => {
+    const v = eraConsumableBySemanticModel(row({ ...evidenced, release_scope: "out_of_release" }));
+    expect(v.consumable).toBe(false);
+    expect(v.branch).toBe("release_scope_not_in_release");
+  });
+
+  it("REMOVED 3 of 5: raw_only_unproven no longer refuses, and its name is gone from the branch list", () => {
+    const v = eraConsumableBySemanticModel(row(evidenced));
+    expect(v.consumable).toBe(true);
+    expect(v.branch).toBe("consumable");
+    // The removed branch cannot be named, which is what stops it being reintroduced quietly.
+    expect(ERA_CONSUMABILITY_BRANCHES).not.toContain("boundary_completeness_raw_only_unproven");
+    expect([...ERA_CONSUMABILITY_BRANCHES].filter((b) => b.includes("raw_only_unproven"))).toEqual([]);
+  });
+
+  it("RETAINED 4 of 5: boundary evidence incomplete, stated as its refusal condition", () => {
+    for (const missing of ["boundary_evidence_manifest_hash", "boundary_checked_through_block", "frozen_safe_head"]) {
+      const v = eraConsumableBySemanticModel(row({ ...evidenced, [missing]: "" }));
+      expect(v.consumable).toBe(false);
+      expect(v.branch).toBe("boundary_evidence_incomplete");
+    }
+  });
+
+  it("RETAINED 5 of 5: otherwise consumable, and it carries its grade", () => {
+    const v = eraConsumableBySemanticModel(row(evidenced));
+    expect(v.consumable).toBe(true);
+    expect(v.confidenceGrade).toBe("announced");
+    expect(v.reason).toContain("confidence 'announced'");
+  });
+
+  it("ADDED 1 of 3: an interval whose ABI is unknown", () => {
+    const v = eraConsumableBySemanticModel(row({ ...evidenced, abi_source: "none" }));
+    expect(v.consumable).toBe(false);
+    expect(v.branch).toBe("abi_unknown");
+    expect(v.reason).toMatch(/captured raw and decode is refused/);
+  });
+
+  it("ADDED 2 of 3: an unbound decode ambiguity", () => {
+    const r = row(evidenced);
+    const v = eraConsumableBySemanticModel(r, RELEASE_SCOPE_FREEZE, {
+      unboundAmbiguousContracts: new Set([`${r.chainId}|${r.proxyAddress}`]),
+    });
+    expect(v.consumable).toBe(false);
+    expect(v.branch).toBe("decode_ambiguity_unbound");
+  });
+
+  it("ADDED 3 of 3: a row failing its magnitude tripwire", () => {
+    const r = row(evidenced);
+    const v = eraConsumableBySemanticModel(r, RELEASE_SCOPE_FREEZE, {
+      magnitudeFailures: new Set([`${r.chainId}|${r.proxyAddress}|${r.eraIndex}`]),
+    });
+    expect(v.consumable).toBe(false);
+    expect(v.branch).toBe("magnitude_tripwire_failed");
+  });
+
+  it("an ABSENT decode context refuses nothing, so a missing input never reads as a finding", () => {
+    // A control that fires when its input is missing cannot be told apart from one that fires
+    // because its input said so, and only the second kind is worth having.
+    expect(eraConsumableBySemanticModel(row(evidenced), RELEASE_SCOPE_FREEZE, {}).consumable).toBe(true);
+  });
+
+  it("the grade propagates on a REFUSAL too, because those are different questions", () => {
+    const v = eraConsumableBySemanticModel(row({ ...evidenced, release_scope: "out_of_release" }));
+    expect(v.consumable).toBe(false);
+    expect(v.confidenceGrade).toBe("announced");
+    expect(v.gradeClause).toBe("B3");
+  });
+});
+
+/*
+ * The enforcement point. Unit 1's precedent: a policy living in a function nothing calls enforces
+ * nothing, and this policy had exactly that shape -- its only callers were inside its own module.
+ */
+describe("the semantic-era policy is reached from the build path", () => {
+  it("runs over the consumed eras and passes on the shipped seeds", () => {
+    const result = runBuildCheck();
+    expect(result.evidencedErasChecked).toBe(15);
+    expect(result.evidencedErasRefused).toBe(0);
+    expect(result.ok).toBe(true);
+    expect(result.lines.some((l) => l.startsWith("semantic era policy:"))).toBe(true);
+  });
+
+  it("the 15 consumed eras are exactly the in-release eras carrying promoted evidence", () => {
+    const evidence = parseEraBoundaryEvidence();
+    const rows = inspectControlPlane().plane!.registry.rows.filter(
+      (r) => RELEASE_SCOPE_FREEZE.releaseChains.includes(r.chain) && !r.noCodeDeployed
+        && evidence.has(eraEvidenceKey(r.chainId, r.proxyAddress, r.eraIndex)),
+    );
+    expect(rows).toHaveLength(15);
+    for (const r of rows) expect(eraConsumableBySemanticModel(r, RELEASE_SCOPE_FREEZE, { boundaryEvidence: evidence }).consumable).toBe(true);
+  });
+
+  it("goes RED when a consumed era loses its ABI, so the refusal is load-bearing", () => {
+    const evidence = parseEraBoundaryEvidence();
+    const rows = inspectControlPlane().plane!.registry.rows.filter(
+      (r) => evidence.has(eraEvidenceKey(r.chainId, r.proxyAddress, r.eraIndex)) && r.chain === "XDC",
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    const stripped = rows.map((r) => ({ ...r, abiSource: "none" }));
+    const refusals = assertSemanticErasConsumable(stripped, "consumed semantic eras", RELEASE_SCOPE_FREEZE, { boundaryEvidence: evidence });
+    expect(refusals).toHaveLength(rows.length);
+    expect(refusals[0].detail).toMatch(/^abi_source is 'none'/);
   });
 });
 
@@ -399,10 +560,18 @@ describe("the loader refuses to start the pipeline on a frozen-scope violation",
     ]);
   });
 
-  it("still starts on the shipped pre-freeze seed, which carries no scope column at all", () => {
+  // RENAMED 2026-09-28 by the decode unit, together with the seed it describes.
+  //   was: "still starts on the shipped pre-freeze seed, which carries no scope column at all"
+  // The shipped seed now carries the declared boundary and scope block, so `pre_freeze_seed` is
+  // no longer the state it is in. The property worth keeping is the same one: the shipped seed
+  // starts the pipeline cleanly, and it now does so having STATED every row's scope rather than
+  // by being silent about it -- which is the stronger of the two, since `scope_pending` exists
+  // precisely to stop an undecided row passing as decided.
+  it("starts on the shipped seed, which now declares every row's scope explicitly", () => {
     const inspection = inspectControlPlane();
-    expect(inspection.releaseScopeState).toBe("pre_freeze_seed");
+    expect(inspection.releaseScopeState).toBe("frozen_and_declared");
     expect(inspection.releaseScopeViolations).toEqual([]);
+    expect(inspection.decodeViolations).toEqual([]);
     expect(inspection.ok).toBe(true);
   });
 });
@@ -464,9 +633,15 @@ describe("a dropped chain is refused on every path that could act on it", () => 
         // An earlier branch, and it fires first. Counted separately rather than folded in, so a
         // claim about the release-scope branch is a claim about the rows it actually decides.
         expect(verdict.reason).toMatch(/^no_code_deployed:/);
+        expect(verdict.branch).toBe("no_code_deployed");
         byNoCode++;
       } else {
-        expect(verdict.reason).toBe("release_scope is 'undeclared', not 'in_release'");
+        // CHANGED 2026-09-28 by the decode unit, with the seed. The literal was
+        // "release_scope is 'undeclared', not 'in_release'" while the seed carried no scope
+        // column at all. It now carries one, and every Fuse row states its own exclusion rather
+        // than being excluded by an absence. Same branch, stronger artifact.
+        expect(verdict.reason).toBe("release_scope is 'out_of_release', not 'in_release'");
+        expect(verdict.branch).toBe("release_scope_not_in_release");
         byReleaseScope++;
       }
     }

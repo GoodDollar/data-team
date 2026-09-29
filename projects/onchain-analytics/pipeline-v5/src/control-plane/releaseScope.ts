@@ -51,6 +51,7 @@ import {
   type ParsedRegistry,
   type RegistryRow,
 } from "./contractRegistry.js";
+import { gradeForEra, type ConfidenceGrade, type EraBoundaryEvidence } from "./eraConfidence.js";
 import { violation, type Violation } from "./fields.js";
 
 export interface ExcludedContract {
@@ -141,10 +142,15 @@ export const RELEASE_SCOPE_FREEZE: ReleaseScopeFreeze = {
     { chainId: 1, chain: "ETHEREUM", contractName: "AaveStakingFactory", address: "0xa99ba154223052b8c5fd92b3f5df9eb08b72d5fc" },
     { chainId: 1, chain: "ETHEREUM", contractName: "DonationsStaking", address: "0x06eafc6749723583672fc8f4451c8ec0e59f5798" },
   ],
+  // PROMOTED 2026-09-28. These three entries used to name files under `specs/_scratch/`, which is
+  // gitignored and local to one machine -- so a receipt pointing there could not be opened by
+  // anyone holding only this repository, which makes it an assertion rather than a receipt. The
+  // decision-relevant substance now ships in the repository at the paths below. The raw probe
+  // output that produced it stays local by design; it is working material, not a reader-facing
+  // artifact, and the claim it supports is reproducible from what ships.
   evidence: [
-    "specs/_scratch/phase-02-registry/out/24-release-scope-freeze.json",
-    "specs/_scratch/phase-02-registry/out/12-a1r-evidence.md",
-    "specs/_scratch/phase-02-registry/out/11-a1r-production-privileges.json",
+    "docs/release-scope.md",
+    "gd_dbt/seeds/contract_deployments.csv",
   ],
 } as const;
 
@@ -281,38 +287,132 @@ export function assertReleaseScopeFrozen(
   return v;
 }
 
+/**
+ * Which branch decided. Named so the branch table can be asserted by name rather than by counting
+ * refusals, and so a future edit that deletes a branch fails a test instead of going quiet.
+ *
+ * `boundary_completeness_raw_only_unproven` is ABSENT ON PURPOSE. It was a shipped branch and it
+ * was removed; leaving the name behind would let a reader believe the rule still exists somewhere.
+ */
+export const ERA_CONSUMABILITY_BRANCHES = [
+  "no_code_deployed",
+  "release_scope_not_in_release",
+  "boundary_evidence_incomplete",
+  "abi_unknown",
+  "decode_ambiguity_unbound",
+  "magnitude_tripwire_failed",
+  "consumable",
+] as const;
+export type EraConsumabilityBranch = (typeof ERA_CONSUMABILITY_BRANCHES)[number];
+
 export interface EraConsumability {
   readonly consumable: boolean;
   readonly reason: string;
+  /** The branch that decided, always set, including on the pass. */
+  readonly branch: EraConsumabilityBranch;
+  /**
+   * The confidence grade, which PROPAGATES rather than gates. Present on a refusal too: "how
+   * wrong could this be" and "may I proceed" are different questions and this answers the first
+   * one either way.
+   */
+  readonly confidenceGrade: ConfidenceGrade;
+  readonly gradeClause: string;
+}
+
+/**
+ * The facts a decode refusal needs that a registry row does not carry.
+ *
+ * All three are optional and an absent one refuses nothing. That is deliberate: a control that
+ * fires when its input is missing is indistinguishable from a control that fires when its input
+ * says so, and the second one is the only useful kind.
+ */
+export interface EraDecodeContext {
+  /**
+   * `chainId|address` for contracts carrying a decode ambiguity with no era-scoped binding.
+   * Computed offline from the event surface; see `decodeSurface.computeAmbiguousKeys`.
+   */
+  readonly unboundAmbiguousContracts?: ReadonlySet<string>;
+  /** `chainId|address|eraIndex` for rows whose decoded values failed a magnitude tripwire. */
+  readonly magnitudeFailures?: ReadonlySet<string>;
+  /** Promoted boundary evidence, keyed by `eraEvidenceKey`, for the propagating grade. */
+  readonly boundaryEvidence?: ReadonlyMap<string, EraBoundaryEvidence>;
 }
 
 /**
  * May a semantic model decode this era?
  *
- * Plan Decision 9: raw capture may include every selector, but a semantic model cannot decode an
- * era whose meaning has not been reviewed. `raw_only_unproven` and `scope_pending` each block a
- * released semantic surface, so both are refusals here, and each refusal names itself.
+ * THE REVERSAL, 2026-09-28, and what it is not. This function used to refuse every
+ * `raw_only_unproven` interval, which is every interval in the release. That rule was written when
+ * `complete` was believed reachable. It is not: reaching it required every slot-writing path to
+ * obligatorily emit an upgrade event, and EIP-1967 says SHOULD, not MUST -- OpenZeppelin's own
+ * reference implementation writes the slot before emitting on the rollback branch. Applying the
+ * bar honestly produced 0 provable eras out of 41, and a bar that cannot tell a well-understood
+ * contract from an unknown one is uninformative rather than conservative.
+ *
+ * So `raw_only_unproven` stops being a refusal and becomes a propagating grade. The control is
+ * narrowed in exactly one place and widened in three, each of the three on a condition that is
+ * actually actionable:
+ *
+ *   RETAINED  no code deployed
+ *   RETAINED  the row is not in the release        <- this is what keeps dropped chains out
+ *   REMOVED   boundary_completeness is raw_only_unproven
+ *   RETAINED  boundary evidence incomplete          <- stated as its refusal condition
+ *   ADDED     the interval's ABI is unknown         <- no ABI, no decode
+ *   ADDED     an unbound decode ambiguity           <- two layouts, one topic0, no binding
+ *   ADDED     a failed magnitude tripwire           <- the value is not a possible quantity
+ *
+ * The two retained refusals are the reason removing the third is safe: an out-of-release row and
+ * an unevidenced row are both still refused, so nothing is admitted that nobody decided about.
  */
 export function eraConsumableBySemanticModel(
   row: RegistryRow,
   freeze: ReleaseScopeFreeze = RELEASE_SCOPE_FREEZE,
+  context: EraDecodeContext = {},
 ): EraConsumability {
+  const evidence = context.boundaryEvidence ?? new Map<string, EraBoundaryEvidence>();
+  const g = gradeForEra(row, evidence);
+  const grade = { confidenceGrade: g.grade, gradeClause: g.clause };
+
   if (row.noCodeDeployed) {
-    return { consumable: false, reason: "no_code_deployed: the contract has no code and declares no era interval" };
+    return { consumable: false, branch: "no_code_deployed", ...grade, reason: "no_code_deployed: the contract has no code and declares no era interval" };
   }
   if (freeze.frozen && row.releaseScope !== "in_release") {
-    return { consumable: false, reason: `release_scope is '${row.releaseScope}', not 'in_release'` };
-  }
-  if (row.boundaryCompleteness === "raw_only_unproven") {
-    return {
-      consumable: false,
-      reason: "boundary_completeness is 'raw_only_unproven': raw capture is retained but no decoder, state interpretation or user-facing model may read this interval",
-    };
+    return { consumable: false, branch: "release_scope_not_in_release", ...grade, reason: `release_scope is '${row.releaseScope}', not 'in_release'` };
   }
   if (row.boundaryEvidenceManifestHash === null || row.boundaryCheckedThroughBlock === null || row.frozenSafeHead === null) {
-    return { consumable: false, reason: "boundary evidence is incomplete: manifest hash, checked-through block and frozen safe head must all be present" };
+    return { consumable: false, branch: "boundary_evidence_incomplete", ...grade, reason: "boundary evidence is incomplete: manifest hash, checked-through block and frozen safe head must all be present" };
   }
-  return { consumable: true, reason: `boundary_completeness='${row.boundaryCompleteness}' through frozen safe head ${row.frozenSafeHead}` };
+  if (row.abiSource === "none" || row.abiSource === "") {
+    return {
+      consumable: false,
+      branch: "abi_unknown",
+      ...grade,
+      reason: "abi_source is 'none': no ABI is held for this implementation, so its logs are captured raw and decode is refused for the interval",
+    };
+  }
+  const contract = `${row.chainId}|${row.proxyAddress}`;
+  if (context.unboundAmbiguousContracts?.has(contract)) {
+    return {
+      consumable: false,
+      branch: "decode_ambiguity_unbound",
+      ...grade,
+      reason: `${contract} carries a topic0 with more than one physical layout and no era-scoped binding, so a decoder would pick one of them without raising`,
+    };
+  }
+  if (context.magnitudeFailures?.has(`${contract}|${row.eraIndex}`)) {
+    return {
+      consumable: false,
+      branch: "magnitude_tripwire_failed",
+      ...grade,
+      reason: "a consumed numeric field on this interval failed its magnitude tripwire, which is what a wrong-layout or wrong-scale decode looks like",
+    };
+  }
+  return {
+    consumable: true,
+    branch: "consumable",
+    ...grade,
+    reason: `boundary_completeness='${row.boundaryCompleteness}' through frozen safe head ${row.frozenSafeHead}, confidence '${g.grade}' by rule ${g.clause}`,
+  };
 }
 
 /** The policy check a semantic model's era selection must pass. One violation per refused era. */
@@ -320,10 +420,11 @@ export function assertSemanticErasConsumable(
   rows: readonly RegistryRow[],
   modelName: string,
   freeze: ReleaseScopeFreeze = RELEASE_SCOPE_FREEZE,
+  context: EraDecodeContext = {},
 ): Violation[] {
   const v: Violation[] = [];
   for (const row of rows) {
-    const verdict = eraConsumableBySemanticModel(row, freeze);
+    const verdict = eraConsumableBySemanticModel(row, freeze, context);
     if (!verdict.consumable) {
       v.push(violation(
         "semantic_era_reviewed",

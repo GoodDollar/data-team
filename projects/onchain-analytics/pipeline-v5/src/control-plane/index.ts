@@ -15,7 +15,8 @@ import { loadChains, CHAINS_PATH, type ChainAuthority } from "./chains.js";
 import { parseRegistry, validateRegistry, REGISTRY_PATH, type ParsedRegistry } from "./contractRegistry.js";
 import { assertReleaseScopeFrozen, releaseScopeState, RELEASE_SCOPE_FREEZE, type ReleaseScopeFreeze, type ReleaseScopeState } from "./releaseScope.js";
 import { parseEventSurface, validateEventSurface, EVENT_SURFACE_PATH, type ParsedEventSurface, type SurfaceCheckCounts } from "./eventSurface.js";
-import type { Violation } from "./fields.js";
+import { computeAmbiguousKeys, KNOWN_DECODE_AMBIGUITIES, type AmbiguousKey } from "./decodeSurface.js";
+import { violation, type Violation } from "./fields.js";
 
 export * from "./int64.js";
 export * from "./csv.js";
@@ -24,6 +25,10 @@ export * from "./chains.js";
 export * from "./contractRegistry.js";
 export * from "./releaseScope.js";
 export * from "./eventSurface.js";
+export * from "./decodeSurface.js";
+export * from "./eraConfidence.js";
+export * from "./eraIntervals.js";
+export * from "./magnitude.js";
 
 export interface ControlPlanePaths {
   readonly chains?: string;
@@ -49,6 +54,14 @@ export interface ControlPlaneInspection {
   readonly surfaceViolations: readonly Violation[];
   /** Violations of the frozen release scope: a pending row, an excluded contract, a new chain. */
   readonly releaseScopeViolations: readonly Violation[];
+  /**
+   * An undeclared decode ambiguity: one `topic0` carrying two physical layouts on one address,
+   * with nothing recording that anybody has looked at it. Blocking, because the alternative is a
+   * decoder silently picking one of the two layouts.
+   */
+  readonly decodeViolations: readonly Violation[];
+  /** Every ambiguous key found, declared or not. Reported so the count is never inferred. */
+  readonly decodeAmbiguities: readonly AmbiguousKey[];
   readonly releaseScopeState: ReleaseScopeState | null;
   /** True statements about the capture grain. Reported, never blocking. */
   readonly advisories: readonly Violation[];
@@ -84,6 +97,7 @@ export function inspectControlPlane(paths: ControlPlanePaths = {}): ControlPlane
         ok: false,
         parseError: { path: e.path, line: e.line, message: e.message },
         registryViolations: [], surfaceViolations: [], releaseScopeViolations: [],
+        decodeViolations: [], decodeAmbiguities: [],
         releaseScopeState: null, advisories: [], plane: null,
       };
     }
@@ -94,18 +108,43 @@ export function inspectControlPlane(paths: ControlPlanePaths = {}): ControlPlane
   const registryViolations = validateRegistry(registry, chains);
   const releaseScopeViolations = assertReleaseScopeFrozen(registry, chains, freeze);
   const { violations: surfaceViolations, advisories, counts } = validateEventSurface(eventSurface, registry, chains);
+  const decodeAmbiguities = computeAmbiguousKeys(eventSurface);
+  const decodeViolations = undeclaredAmbiguityViolations(decodeAmbiguities);
   const state = releaseScopeState(registry);
 
   return {
-    ok: registryViolations.length === 0 && surfaceViolations.length === 0 && releaseScopeViolations.length === 0,
+    ok: registryViolations.length === 0 && surfaceViolations.length === 0
+      && releaseScopeViolations.length === 0 && decodeViolations.length === 0,
     parseError: null,
     registryViolations,
     surfaceViolations,
     releaseScopeViolations,
+    decodeViolations,
+    decodeAmbiguities,
     releaseScopeState: state,
     advisories,
     plane: { chains, registry, eventSurface, counts, releaseScopeState: state },
   };
+}
+
+/**
+ * An ambiguous key nobody has declared is a blocking violation; a declared one is not.
+ *
+ * The distinction is the whole control. Two implementations of one event that differ only in an
+ * `indexed` flag share a `topic0`, so a topic0-keyed decoder has two candidates and picks the
+ * first. Declaring the key records that somebody looked and said what happens; leaving it
+ * undeclared means nobody has, and that is the case worth failing on.
+ */
+function undeclaredAmbiguityViolations(found: readonly AmbiguousKey[]): Violation[] {
+  const declared = new Set(KNOWN_DECODE_AMBIGUITIES.map((k) => `${k.chainId}|${k.address.toLowerCase()}|${k.signature}`));
+  return found
+    .filter((k) => !declared.has(`${k.chainId}|${k.address.toLowerCase()}|${k.signature}`))
+    .map((k) => violation(
+      "decode_ambiguity_declared",
+      k.layouts[0]?.lines[0] ?? null,
+      `${k.chain} ${k.address} ${k.signature}`,
+      `topic0 ${k.topic0} carries ${k.layouts.length} physical layouts (${k.layouts.map((l) => `indexed[${l.indexedPositions}] in era(s) ${l.eras.join(",")}`).join(" vs ")}) and is not declared in KNOWN_DECODE_AMBIGUITIES; a topic0-keyed decoder would pick one of them without raising`,
+    ));
 }
 
 export function loadControlPlane(paths: ControlPlanePaths = {}): ControlPlane {
@@ -117,7 +156,8 @@ export function loadControlPlane(paths: ControlPlanePaths = {}): ControlPlane {
   const registryViolations = validateRegistry(registry, chains);
   const releaseScopeViolations = assertReleaseScopeFrozen(registry, chains, freeze);
   const { violations: surfaceViolations, counts } = validateEventSurface(eventSurface, registry, chains);
-  const all = [...registryViolations, ...surfaceViolations, ...releaseScopeViolations];
+  const decodeViolations = undeclaredAmbiguityViolations(computeAmbiguousKeys(eventSurface));
+  const all = [...registryViolations, ...surfaceViolations, ...releaseScopeViolations, ...decodeViolations];
   if (all.length > 0) throw new ControlPlaneInvalidError(all);
 
   return { chains, registry, eventSurface, counts, releaseScopeState: releaseScopeState(registry) };

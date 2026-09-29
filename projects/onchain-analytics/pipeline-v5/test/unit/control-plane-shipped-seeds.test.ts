@@ -91,10 +91,21 @@ describe("measured shape of the shipped seeds", () => {
       .toEqual(["AdminsAdded(address[])", "AdminsRemoved(address[])"]);
   });
 
-  it("carries no boundary-evidence column, so every era is raw_only_unproven", () => {
-    // Not a defect: it is the state plan task 15 must resolve before any semantic model may
-    // consume an era. Asserted so it cannot quietly become an assumption that eras are reviewed.
-    expect(plane.registry.hasBoundaryColumns).toBe(false);
+  // RENAMED 2026-09-28 by the decode unit, together with the seed it describes.
+  //   was: "carries no boundary-evidence column, so every era is raw_only_unproven"
+  // The registry seed now carries the declared five-column boundary block, so the old name states
+  // the opposite of the artifact. What did NOT change is the verdict every era carries: Phase 2B
+  // reached `complete` on 0 of 41 assessed eras and the rest were never assessed, so nothing may
+  // claim anything stronger than raw_only_unproven.
+  it("carries the boundary-evidence block, and every era still reads raw_only_unproven", () => {
+    expect(plane.registry.hasBoundaryColumns).toBe(true);
     expect(plane.registry.rows.every((r) => r.boundaryCompleteness === "raw_only_unproven")).toBe(true);
+    // Only the eras an evidence manifest covers carry a hash; the rest declare nothing rather
+    // than declaring an absence as if it were a measurement.
+    expect(plane.registry.rows.filter((r) => r.boundaryEvidenceManifestHash !== null)).toHaveLength(41);
+    // Every row now makes a scope statement, which is what `scope_pending` exists to prevent
+    // being skipped.
+    expect(plane.registry.rows.every((r) => r.releaseScope === "in_release" || r.releaseScope === "out_of_release")).toBe(true);
+    expect(plane.registry.rows.filter((r) => r.releaseScope === "out_of_release")).toHaveLength(96);
   });
 });

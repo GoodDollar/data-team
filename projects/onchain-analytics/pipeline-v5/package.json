@@ -8,12 +8,13 @@
     "backfill": "tsx src/index.ts backfill",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "build:check": "tsx src/control-plane/build-check.ts",
     "test": "vitest run",
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
     "test:coverage": "vitest run --coverage",
     "test:known-failures": "vitest run --config vitest.known-failures.config.ts",
-    "verify:local": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:known-failures"
+    "verify:local": "npm run lint && npm run typecheck && npm run build:check && npm run test:coverage && npm run test:known-failures"
   },
   "dependencies": {
     "@envio-dev/hypersync-client": "^0.6.3",

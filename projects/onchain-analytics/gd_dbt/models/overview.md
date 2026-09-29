@@ -40,6 +40,17 @@ Marts (tables — dashboard-ready)
   └── invite_funnel_snapshot
 ```
 
+**Reference seeds** sit beside this flow rather than in it. They describe the contracts the pipeline reads, and every layer above raw may join to them:
+
+| Seed | What it answers |
+| - | - |
+| `chains` | Which networks exist, and which are active |
+| `contract_deployments` | Which implementation was behind each proxy at which block, and whether the row is inside the release |
+| `event_surface` | Which events each contract era can emit, keyed by the `topic0` the chain actually writes |
+| `era_intervals` | Each era as a validity interval, with its confidence grade and a receipt you can open |
+| `era_boundary_evidence` | The measurement behind each graded era, so any grade can be re-derived rather than trusted |
+| `tokens` | Token decimals per chain. **GD is 18 decimals on Celo and XDC and 2 on Fuse and Ethereum**, which is why a figure must never be scaled by a constant |
+
 ## Key Domains
 
 ### UBI Claims
@@ -111,6 +122,26 @@ Full record, including why Fuse was dropped and what it would take to bring it b
 > twice, so those seven days reported exactly double the real claim activity, and the invite
 > programme over-reported 1,223 bounties and 1,834,500 GD against a true 939 and 1,408,500 GD.
 > Any figure quoted from this warehouse before that date should be re-derived.
+
+### Contract Eras and Confidence
+
+- **Contract era**: The period during which one implementation sat behind a proxy address. Most GoodDollar addresses are proxies whose logic has changed, so a rule written against "the Identity contract" is silently wrong for part of history unless it names the era. Eras are stored as **half-open intervals** `[valid_from_block, valid_to_block)` in `era_intervals`; a live era carries the INT64 sentinel `9223372036854775807` as its upper bound.
+- **ABI union**: The set of every event definition a proxy has ever had, decoded by `topic0` with no block dimension. This is the industry default and for almost every event it is provably safe, because different parameter types produce different `topic0` values and cannot collide. **Unions are built newest-implementation-first**, which matters: a `topic0` is computed from the signature *excluding* `indexed` flags, so two implementations that only changed which parameters are indexed share one `topic0`, and a decoder that tries the older one first decodes a newer log into the wrong columns without raising an error.
+- **Decode ambiguity**: A `(chain, address, topic0)` key carrying more than one physical layout — the case the union cannot resolve on its own. Computed from the seed with no chain calls. **Two exist across all chains, and none inside the chains this release ingests.** A third one fails the build rather than decoding silently.
+- **Undecodable log**: A captured log whose `topic0` matches no event in that address's surface. It is indistinguishable from an absent log in every model downstream, so it is counted and reported beside block coverage rather than inferred from it.
+
+**Confidence grade** (`era_intervals.confidence_grade`) answers *how wrong could this interval be*. It **never** decides whether you may use the data — it propagates alongside it, so a figure can always state what backs it.
+
+| Grade | What stands behind the interval |
+| - | - |
+| `corroborated` | Two independent instruments agree: the contract's own implementation slot read either side of the boundary, **and** a second reader that re-read every upgrade event |
+| `slot_bisected` | The contract's own state binds the interval, from one voice |
+| `announced` | An on-chain record bounds it — an upgrade log or the contract's creation — and no state read confirms it |
+| `inferred` | A single unchallenged source, with no independent check available at all |
+
+> **A low grade is not a data defect.** No era in this system reaches a "fully proven" state, and that is a property of Ethereum rather than a gap in this work: EIP-1967 says a proxy *should* emit an upgrade event, not that it *must*, and OpenZeppelin's own implementation has a path that changes the code pointer while emitting nothing. Roughly 95 percent of questions asked of this warehouse concern the last twelve months, where the grades are strongest, and the raw logs are permanently re-readable, so deep history may sit at `inferred` indefinitely by design.
+
+> **What the interval tests do not tell you.** `era_intervals` is checked for overlaps, gaps, and that exactly one row covers any queried block. Those catch a broken interval chain. **They cannot detect weak evidence** — a perfectly shaped chain can still rest on a single unchallenged source. That is what the grade is for.
 
 ### Important Distinctions
 

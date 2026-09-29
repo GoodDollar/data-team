@@ -161,12 +161,227 @@ seeds:
         description: "How this row was established, as a single provenance string for the whole generation."
       - name: notes
         description: "Free text. Anything a reader would otherwise get wrong."
+      - name: boundary_completeness
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['complete', 'plain_contract', 'raw_only_unproven']
+        description: >
+          How well the era's own boundaries are evidenced. **Reads `raw_only_unproven` on every
+          row, and that is a measurement rather than a backlog.** Reaching `complete` required
+          every slot-writing path to obligatorily emit its upgrade event, and EIP-1967 says
+          upgrade events SHOULD be emitted, not MUST -- OpenZeppelin's own reference
+          implementation writes the slot before emitting on the rollback branch. Zero of the 41
+          assessed eras could reach it, and the remaining eras were never assessed.
+
+
+          **This column does not gate anything.** It used to forbid every decoder and every
+          user-facing model over every era, which was all of them. A bar that cannot tell a
+          well-understood contract from an unknown one moves no decision, so the refusal was
+          removed and the discrimination moved to `era_intervals.confidence_grade`, which
+          propagates instead.
+      - name: boundary_evidence_manifest_hash
+        description: >
+          SHA256 of the boundary-evidence manifest backing this era, `0x`-prefixed. Set on the 41
+          eras a manifest covers and empty elsewhere -- an era with no manifest declares nothing
+          rather than declaring an absence as though it had been measured. The manifest content
+          itself ships in `era_boundary_evidence`.
+      - name: boundary_checked_through_block
+        description: "Highest block the boundary scan actually read. Empty where no manifest exists."
+      - name: frozen_safe_head
+        description: >
+          The head the boundary scan was frozen against, so a later reader can tell what "through
+          head" meant at the time rather than assuming it meant now.
+      - name: release_scope
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['in_release', 'out_of_release', 'scope_pending']
+        description: >
+          Whether this row is inside the frozen release. **Every row states one**, which is the
+          point: `scope_pending` exists so an undecided contract is RECORDED as undecided rather
+          than resolved by whichever way the seed happens to fall, and a column that is simply
+          absent lets "nobody has decided yet" read as "everything is in". The 96 Fuse rows read
+          `out_of_release`: they are retained as a record of what was measured, and a retained row
+          is not a re-admission. See `docs/release-scope.md`.
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
             - chain
             - proxy_address
             - valid_from_block
+
+  - name: era_intervals
+    description: >
+      **What this is:** Each contract era as a validity interval, with the confidence grade and the
+      receipt behind it. 262 rows, one per deployed era on a release chain -- 206 on Celo and XDC,
+      56 on Ethereum, which is declared in the release and deliberately not ingested yet.
+
+
+      **Why it exists separately from `contract_deployments`:** "Which ABI was in force at block N"
+      is an as-of temporal join, which is a solved modelling problem. Shaping an era as what it is
+      -- a Type-2 validity interval -- puts the rigour where it belongs and makes the question
+      answerable by a join rather than by a convention everyone has to remember.
+
+
+      **Intervals are HALF-OPEN, `[valid_from_block, valid_to_block)`.** A live era carries the
+      INT64 sentinel 9223372036854775807 as its upper bound. Reading them as closed makes every
+      contiguous pair look like an overlap and returns two rows at every boundary.
+
+
+      **`confidence_grade` answers "how wrong could this be", never "may I proceed".** It
+      propagates to whatever reads the era and gates nothing. A low grade on deep history is not a
+      data defect: about 95 percent of questions asked of this system concern the last twelve
+      months, the raw logs are permanently re-readable, and deep history may sit at `inferred`
+      indefinitely by design. See the Business Glossary in `models/overview.md` for what each grade
+      means and which evidence produces it.
+
+
+      **Three tests hold the shape:** no overlapping intervals per contract, no gaps from
+      deployment to head, and exactly one row covering any queried block. They detect overlaps,
+      gaps and multi-coverage. **They do not detect weak evidence** -- that is what the grade is
+      for, and saying so is the difference between a test suite and a reassurance.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CELO', 'XDC', 'ETHEREUM']
+        description: "Uppercase chain name. Release chains only; Fuse is out of the release."
+      - name: chain_id
+        tests: [not_null]
+        description: "EVM chain id."
+      - name: proxy_address
+        tests: [not_null]
+        description: "The stable address a reader queries. Lowercase, 20 bytes."
+      - name: valid_from_block
+        tests: [not_null]
+        description: "First block of the interval, inclusive."
+      - name: valid_to_block
+        tests: [not_null]
+        description: "Upper bound, EXCLUSIVE. 9223372036854775807 means open ended."
+      - name: implementation
+        tests: [not_null]
+        description: "Implementation address behind the proxy for this interval."
+      - name: abi_id
+        tests: [not_null]
+        description: >
+          Identifies the ABI in force. The implementation's `runtime_code_hash` where it is held,
+          otherwise `impl:<address>`. Two eras sharing an `abi_id` are decodable by the same ABI.
+      - name: confidence_grade
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['corroborated', 'slot_bisected', 'announced', 'inferred']
+        description: >
+          How much independent agreement stands behind this interval. `corroborated` two
+          independent voices agree; `slot_bisected` the contract's own state binds it, from one
+          voice; `announced` an on-chain record bounds it and no state read binds it; `inferred` a
+          single unchallenged source with no independent check available. Assigned by a published
+          rule, never by hand.
+      - name: evidence_receipt_uri
+        tests: [not_null]
+        description: >
+          Where to open the evidence behind the grade, as a repository path with a row key. Points
+          at `era_boundary_evidence` for the 15 manifest-backed eras and at `contract_deployments`
+          otherwise. **It resolves inside this repository on purpose:** a receipt nobody else can
+          open is not a receipt, it is an assertion.
+      - name: contract_name
+        tests: [not_null]
+        description: "Logical contract name, for readability. A label, never evidence."
+      - name: era_index
+        tests: [not_null]
+        description: "1-based era number within the contract."
+      - name: is_live
+        tests: [not_null]
+        description: "Whether this is the era currently behind the proxy."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain_id
+            - proxy_address
+            - era_index
+
+  - name: era_boundary_evidence
+    description: >
+      **What this is:** The boundary-evidence measurement behind every graded era, flattened to one
+      row per era. 41 rows over 6 contracts -- 15 on release chains, 26 on Fuse, retained as a
+      record of what was measured.
+
+
+      **Why it exists:** `era_intervals.evidence_receipt_uri` has to point somewhere an outside
+      reader can actually open. This is that somewhere. Every field the grading rule reads is here,
+      so any grade in `era_intervals` can be re-derived from first principles by someone holding
+      only this repository.
+
+
+      **Read `obligatorily_emits` first.** It is `false` on every row, and it is the reason no era
+      can be `complete`: every proxy here reaches `_setImplementation` through a path that writes
+      the implementation slot without emitting an upgrade event. It is carried precisely because it
+      does NOT discriminate between eras -- hiding it would make the grades look arbitrary.
+
+
+      **One caveat that must not be lost.** The upstream scan's own "two or more sources agreed"
+      label is misleading on Celo and XDC: its two sources were two query shapes against ONE index
+      URL, not two hosts. Log-source count is therefore never treated as corroboration. The
+      genuinely independent second voices are the EIP-1967 slot read and the transaction-receipt
+      replay, and only those are used.
+    config:
+      tags: ['seed', 'reference']
+    columns:
+      - name: chain
+        tests: [not_null]
+        description: "Uppercase chain name. Includes FUSE, which is out of the release but measured."
+      - name: chain_id
+        tests: [not_null]
+      - name: proxy_address
+        tests: [not_null]
+      - name: era_index
+        tests: [not_null]
+      - name: implementation_address
+        description: "Implementation this era binds to."
+      - name: opening_both_measured
+        description: >
+          Whether the EIP-1967 slot was read on BOTH sides of this era's opening block. `true` is
+          what a bisection means; empty means no transition was recorded for the block at all.
+      - name: opening_address_agrees
+        description: "Whether the slot reading agrees with the announcing event's implementation."
+      - name: slot_agreeing
+        description: >
+          How many independent readers agreed on the head slot value. A reading is admissible at
+          two or more; one reader is one voice and cannot corroborate itself.
+      - name: slot_error_count
+        description: >
+          Errors encountered while reading the slot, counted SEPARATELY from the result. An absence
+          is a measurement only when this is zero. A non-zero count beside a positive answer that
+          two readers agree on does not void the answer, and is carried so a reader can weigh it.
+      - name: cross_check_blocked
+        description: >
+          `true` where no historical state read is obtainable at any level of patience -- Fuse has
+          at most one archive-capable endpoint. This is what separates `announced` from `inferred`.
+      - name: claimed_events
+        description: "Upgrade events the scan found for this contract."
+      - name: independently_confirmed_events
+        description: >
+          How many of those a second independent reader re-read. Used ALL-OR-NOTHING: a count is a
+          contract-level number and cannot be attributed to one era, so a partial count buys
+          nothing rather than being rounded up.
+      - name: obligatorily_emits
+        description: "See the note above. False everywhere; carried for the reader, never used to grade."
+      - name: source_manifest
+        tests: [not_null]
+        description: "The manifest file this row was flattened from."
+      - name: manifest_sha256
+        tests: [not_null]
+        description: "SHA256 of that manifest, so the promotion is verifiable rather than trusted."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - chain_id
+            - proxy_address
+            - era_index
 
   - name: event_surface
     description: >

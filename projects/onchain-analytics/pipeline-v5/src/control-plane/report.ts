@@ -16,6 +16,8 @@ import { inspectControlPlane } from "./index.js";
 import { CHAINS_PATH } from "./chains.js";
 import { REGISTRY_PATH, REGISTRY_BOUNDARY_COLUMNS } from "./contractRegistry.js";
 import { EVENT_SURFACE_PATH, canonicalSignature, topic0For, RAWLOGS_INDEXED_SLOTS } from "./eventSurface.js";
+import { eraConsumableBySemanticModel } from "./releaseScope.js";
+import { buildAllUnionAbis, isNewestFirst } from "./decodeSurface.js";
 import { INT64_MAX_LEXEME } from "./int64.js";
 
 function sha256(path: string): string {
@@ -61,6 +63,7 @@ if (inspection.plane) {
   const contracts = new Set(rows.map((r) => `${r.chainId}|${r.proxyAddress}`));
   const sentinelRows = rows.filter((r) => r.validTo?.kind === "open_ended");
   const liveRows = rows.filter((r) => r.isLive);
+  const unions = buildAllUnionAbis(eventSurface);
 
   // Task 10. The full list, not a count: an indexed dynamic parameter is unrecoverable from any
   // log capture at any completeness, so which ones they are is the deliverable.
@@ -202,16 +205,43 @@ if (inspection.plane) {
     violationsByCheck: tally(inspection.surfaceViolations, (v) => v.check),
   };
 
-  // Not a defect, a declared state: no boundary-evidence column exists in the shipped seed, so no
-  // era can be `complete` or `plain_contract` yet, and none may be consumed semantically.
-  report.boundaryEvidenceGap = {
+  // The grade is a propagating confidence signal, NOT a gate. REVERSED 2026-09-28, at the same
+  // time as the branch table in `releaseScope.ts`: changing one carrier and not the other would
+  // have left the old rule live in whichever path survived, and this file is the second carrier.
+  //
+  // What changed: `raw_only_unproven` used to forbid every decoder, every state interpretation
+  // and every user-facing model over every era, which was all of them. It no longer refuses
+  // anything. The bar it enforced required every slot-writing path to obligatorily emit an upgrade
+  // event, and EIP-1967 says SHOULD rather than MUST, so the bar was unreachable by construction
+  // and produced 0 provable eras out of 41 -- uninformative rather than conservative.
+  report.boundaryEvidence = {
     columnsPresent: registry.hasBoundaryColumns,
-    erasDefaultedToRawOnlyUnproven: registry.hasBoundaryColumns ? 0 : deployed.length,
-    consequence:
-      "No deployment era carries boundary-evidence columns, so every era defaults to " +
-      "raw_only_unproven. Under plan section 6 task 15 no user-facing semantic model may consume " +
-      "any of them until boundary evidence is generated. That work is task 15, which sits after " +
-      "the task 13 operator checkpoint and is not in this phase's scope.",
+    erasReadingRawOnlyUnproven: rows.filter((r) => r.boundaryCompleteness === "raw_only_unproven").length,
+    erasCarryingAManifestHash: rows.filter((r) => r.boundaryEvidenceManifestHash !== null).length,
+    consumableEras: rows.filter((r) => eraConsumableBySemanticModel(r).consumable).length,
+    refusalsByBranch: tally(
+      rows.filter((r) => !eraConsumableBySemanticModel(r).consumable),
+      (r) => eraConsumableBySemanticModel(r).branch,
+    ),
+    confidenceGradeDistribution: tally(rows, (r) => eraConsumableBySemanticModel(r).confidenceGrade),
+    policy:
+      "boundary_completeness='raw_only_unproven' is a CONFIDENCE GRADE that propagates to whatever " +
+      "reads the era; it is not a refusal. An era is refused only when it has no code, is not in " +
+      "the release, carries no boundary evidence at all, holds no ABI, carries an unbound decode " +
+      "ambiguity, or fails a magnitude tripwire. Every refusal names its branch above.",
+  };
+
+  // The computed ambiguous set, reported rather than inferred, with the two senses of scope kept
+  // apart because they differ: Ethereum is in the declared release and is not ingested here.
+  const INGESTION_SCOPE = new Set(["CELO", "XDC"]);
+  report.decodeAmbiguity = {
+    keysFound: inspection.decodeAmbiguities.length,
+    keysInDeclaredReleaseScope: inspection.decodeAmbiguities.filter((k) => ["CELO", "XDC", "ETHEREUM"].includes(k.chain)).length,
+    keysInIngestionScope: inspection.decodeAmbiguities.filter((k) => INGESTION_SCOPE.has(k.chain)).length,
+    keys: inspection.decodeAmbiguities,
+    undeclaredViolations: inspection.decodeViolations,
+    unionsBuilt: unions.size,
+    unionsNotNewestFirst: [...unions.values()].filter((u) => !isNewestFirst(u)).map((u) => ({ chain: u.chain, address: u.address, eraOrder: u.eraOrder })),
   };
 }
 
