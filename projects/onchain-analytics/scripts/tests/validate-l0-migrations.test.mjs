@@ -38,3 +38,29 @@ test('handles required and optional fields together, including case-insensitive 
     { name: 'finished_at', type: 'TIMESTAMP', mode: 'NULLABLE' },
   ]);
 });
+
+const preservationChecks = validator.match(/  assert\(Number\(pipelinePreservation\.rows_preserved\)[\s\S]*?(?=\r?\n\r?\n  await applyMigration)/);
+assert.ok(preservationChecks, 'The live historical-row assertions must be found without executing migrations');
+
+function checkHistoricalRows(unknownHashes) {
+  runInNewContext(preservationChecks[0], {
+    pipelinePreservation: {
+      rows_preserved: '22',
+      fixture_rows: '22',
+      old_rows_without_release_sha: String(unknownHashes),
+    },
+    assert: (condition, message) => assert.ok(condition, message),
+  });
+}
+
+test('accepts preserved historical rows with all release hashes unknown', () => {
+  assert.doesNotThrow(() => checkHistoricalRows(22));
+});
+
+test('rejects a release hash populated on even one historical row', () => {
+  assert.throws(() => checkHistoricalRows(21), /historical release_sha values changed/);
+});
+
+test('rejects populated release hashes even when all historical rows remain', () => {
+  assert.throws(() => checkHistoricalRows(0), /historical release_sha values changed/);
+});

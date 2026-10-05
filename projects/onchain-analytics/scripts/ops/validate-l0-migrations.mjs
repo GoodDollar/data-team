@@ -206,6 +206,7 @@ try {
     FROM ${dataset}.PipelineRuns`);
   assert(Number(pipelinePreservation.rows_preserved) === 22, 'PipelineRuns row count changed');
   assert(Number(pipelinePreservation.fixture_rows) === 22, 'PipelineRuns fixture rows changed');
+  assert(Number(pipelinePreservation.old_rows_without_release_sha) === 22, 'PipelineRuns historical release_sha values changed');
 
   await applyMigration('10_AddOracleReconciliationCompatibility_v1.sql', handle.datasetId);
   await applyMigration('10_AddOracleReconciliationCompatibility_v1.sql', handle.datasetId);
