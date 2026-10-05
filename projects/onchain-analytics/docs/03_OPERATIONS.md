@@ -129,8 +129,10 @@ one migration at a time:
 ```
 
 The service-account address above is illustrative; replace it only with the approved identity. The
-helper refuses production execution without an explicit account, temporarily sets the gcloud
-impersonation property for it, and restores the previous local setting after the command. The
+helper refuses production execution without an explicit account. It sets
+`CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT` only in the query child process's environment;
+persistent gcloud configuration and the caller's environment are never modified. Separate
+deployments therefore cannot overwrite each other's selected identity. The
 helper also requires a typed confirmation for `gooddollar.BlockchainEvents` and applies a 10 GiB
 per-job bytes cap. Stop if a live object differs from the measured schema baseline, an object that
 should be absent already exists, a migration returns `SCRIPT`, a legacy row count changes, or an

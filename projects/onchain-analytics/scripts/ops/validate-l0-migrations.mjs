@@ -68,7 +68,7 @@ function runtimeTableSchema(tableId) {
     return [{
       name: match[1],
       type: typeMap[sourceType] ?? sourceType,
-      mode: /\bNOT NULL\b/i.test(match[3]) ? 'REQUIRED' : 'NULLABLE',
+      mode: /\bNOT NULL\b/i.test(line) ? 'REQUIRED' : 'NULLABLE',
     }];
   });
 }

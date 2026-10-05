@@ -24,6 +24,25 @@ param(
     [string]$ImpersonateServiceAccount
 )
 
+function New-BqProcessStartInfo {
+    param(
+        [string]$BqExe,
+        [string[]]$Arguments,
+        [string]$ImpersonateServiceAccount
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $env:ComSpec
+    $startInfo.Arguments = '/d /s /c ""' + $BqExe + '" ' + ($Arguments -join ' ') + '"'
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.EnvironmentVariables['CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT'] = $ImpersonateServiceAccount
+    return $startInfo
+}
+
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
@@ -96,30 +115,27 @@ if (-not $BqExe) {
     exit 1
 }
 Write-Host "Using bq: $BqExe"
-$GcloudExe = (Get-Command gcloud -ErrorAction SilentlyContinue).Source
-if (-not $GcloudExe) {
-    throw "gcloud CLI not found; cannot establish the approved impersonated identity."
-}
-
-$PreviousImpersonation = (& $GcloudExe config get-value auth/impersonate_service_account 2>$null | Select-Object -First 1)
-$HadPreviousImpersonation = $PreviousImpersonation -and $PreviousImpersonation -notmatch '^\(unset\)$'
+$bqProcess = New-Object System.Diagnostics.Process
+$bqProcess.StartInfo = New-BqProcessStartInfo -BqExe $BqExe -ImpersonateServiceAccount $ImpersonateServiceAccount -Arguments @(
+    'query', '--use_legacy_sql=false', '--format=none', '--project_id=gooddollar', '--maximum_bytes_billed=10737418240'
+)
 try {
-    & $GcloudExe config set auth/impersonate_service_account $ImpersonateServiceAccount --quiet | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not set the approved temporary service-account impersonation."
-    }
-
     Write-Host "Executing $Migration as $ImpersonateServiceAccount" -ForegroundColor Cyan
-    $Sql | & $BqExe query --use_legacy_sql=false --format=none --project_id=gooddollar --maximum_bytes_billed=10737418240
-    if ($LASTEXITCODE -ne 0) {
-        throw "bq query failed for $Migration with exit code $LASTEXITCODE"
+    [void]$bqProcess.Start()
+    $stdoutTask = $bqProcess.StandardOutput.ReadToEndAsync()
+    $stderrTask = $bqProcess.StandardError.ReadToEndAsync()
+    $bqProcess.StandardInput.WriteLine($Sql)
+    $bqProcess.StandardInput.Close()
+    $bqProcess.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
+    if ($stdout) { Write-Host $stdout }
+    if ($bqProcess.ExitCode -ne 0) {
+        throw "bq query failed for $Migration with exit code $($bqProcess.ExitCode): $stderr"
     }
+    if ($stderr) { Write-Host $stderr }
 } finally {
-    if ($HadPreviousImpersonation) {
-        & $GcloudExe config set auth/impersonate_service_account $PreviousImpersonation --quiet | Out-Null
-    } else {
-        & $GcloudExe config unset auth/impersonate_service_account --quiet | Out-Null
-    }
+    $bqProcess.Dispose()
 }
 
 Write-Host "Migration completed." -ForegroundColor Green

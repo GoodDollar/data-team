@@ -19,6 +19,17 @@ The L1 SQL folder is not an execution queue. `04_L0Contract_v3.sql`, `06_L0Contr
 `07_RetireV3EventTables.sql`, and any unlisted file are refused. Run the labelled-sandbox migration
 validator from `pipeline-v5/` with `node --import tsx ..\scripts\ops\validate-l0-migrations.mjs ..\..\_scratch\unit-07a-commissioning\sandbox-validation.json`.
 
+Local regression checks from the project root, with no BigQuery jobs or credential acquisition:
+
+```powershell
+.\scripts\tests\deploy-warehouse.Tests.ps1
+node --test scripts/tests/validate-l0-migrations.test.mjs
+```
+
+The deployment checks verify overlapping child processes retain separate identities without
+changing persistent gcloud settings. The parser checks distinguish required and nullable columns
+without importing or executing the live sandbox validator.
+
 ## Everything else is dbt
 
 | Old script | Replaced by |
