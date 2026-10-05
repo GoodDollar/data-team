@@ -130,7 +130,7 @@ The pipeline and dbt are independent — the pipeline writes raw tables, dbt rea
 | [`gd_dbt/`](gd_dbt/) | dbt project — all warehouse models, tests, docs, macros |
 | [`pipeline-v5/`](pipeline-v5/) | The ingestion pipeline (TypeScript). The only one. Runbook in its own README |
 | [`warehouse/L1/`](warehouse/L1/) | Raw table DDL (pipeline-written tables, dbt *sources*) |
-| [`scripts/`](scripts/) | L1 bootstrap script (`deploy-warehouse.ps1`) |
+| [`scripts/`](scripts/) | Explicitly allowlisted L1 migration helper and sandbox validator |
 | [`contracts/`](contracts/) | ABI files, deployment block numbers, contract reference |
 | [`docs/`](docs/) | System documentation, data model, operations guide, governance |
 
@@ -142,7 +142,8 @@ The pipeline and dbt are independent — the pipeline writes raw tables, dbt rea
 
 - Node.js LTS (v20+)
 - Google Cloud SDK (`gcloud`, `bq`)
-- `gcloud auth application-default login` with BigQuery Job User + Data Editor on `gooddollar`
+- `gcloud auth application-default login` for metadata reads and labelled sandbox validation
+- Production L1 DDL and ingestion use separately approved impersonated identities; see [`03_OPERATIONS.md`](docs/03_OPERATIONS.md)
 - Python 3.9+ with dbt-bigquery (`pip install dbt-bigquery`)
 
 ### Run the warehouse
@@ -164,11 +165,15 @@ npx tsx src/index.ts daily    # Ingest from chain into the BigQuery raw tables
 npx tsx src/index.ts verify   # Reconcile what was ingested against the contracts
 ```
 
-### Bootstrap L1 raw tables (first time only)
+### Inspect the prepared L1 migration (plan-only)
 
 ```powershell
-.\scripts\deploy-warehouse.ps1
+.\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql
 ```
+
+This only prints the selected target. Validate migrations in a labelled sandbox first. Production
+execution requires separate approval, an explicit allowlisted migration, and service-account
+impersonation; see [`03_OPERATIONS.md`](docs/03_OPERATIONS.md).
 
 ---
 

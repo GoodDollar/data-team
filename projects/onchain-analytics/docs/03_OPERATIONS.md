@@ -97,15 +97,47 @@ nonzero.
 
 Two layers, two tools.
 
-### L1 raw tables — one-time bootstrap (PowerShell)
+### L1 raw tables -- allowlisted additive migrations
 
-The raw event tables (`BlockchainEvents.*`) are what the pipeline streams into. They are dbt
-*sources* (pipeline-written, dbt-read), not dbt models, so their DDL still lives in `warehouse/L1/`.
-Create them once:
+Raw tables are pipeline-written dbt sources, not dbt models. `scripts/deploy-warehouse.ps1` accepts
+one named migration from a fixed allowlist; it never scans `warehouse/L1/`. Its default mode only
+prints the target and migration name:
 
+```powershell
+.\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql
 ```
-.\scripts\deploy-warehouse.ps1        # creates the L1 raw tables
+
+Before any production change, validate the same migration files against a fresh labelled sandbox.
+From `pipeline-v5/`:
+
+```powershell
+node --import tsx ..\scripts\ops\validate-l0-migrations.mjs ..\..\_scratch\unit-07a-commissioning\sandbox-validation.json
 ```
+
+This sandbox check exercises the old `PipelineRuns` and `OracleReconciliation` shapes, repeats the
+migrations, checks their statement types and byte caps, verifies historical fixture rows remain,
+and proves the sandbox is absent after cleanup. It does not write production tables or ingest chain
+data.
+
+Production DDL is a separate operation and is not authorized by running the validator or plan mode.
+Only after separate approval of the exact migration and access list may the named administrator run
+one migration at a time:
+
+```powershell
+.\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql -Execute -AllowProduction `
+	-ImpersonateServiceAccount schema-commissioner@gooddollar.iam.gserviceaccount.com
+```
+
+The service-account address above is illustrative; replace it only with the approved identity. The
+helper refuses production execution without an explicit account. It sets
+`CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT` only in the query child process's environment;
+persistent gcloud configuration and the caller's environment are never modified. Separate
+deployments therefore cannot overwrite each other's selected identity. The
+helper also requires a typed confirmation for `gooddollar.BlockchainEvents` and applies a 10 GiB
+per-job bytes cap. Stop if a live object differs from the measured schema baseline, an object that
+should be absent already exists, a migration returns `SCRIPT`, a legacy row count changes, or an
+effective permission is broader than the approved list. Never run `04_L0Contract_v3.sql`,
+`06_L0Contract_v4.sql`, or `07_RetireV3EventTables.sql` through this path.
 
 ### Staging, Semantic, Marts — dbt
 
@@ -154,8 +186,8 @@ model/column docs with `dbt docs serve` (opens <http://localhost:8080>).
 |---|---|---|
 | `ENVIO_API_TOKEN is missing` | `pipeline-v5/.env` not created or empty | `cp pipeline-v5/.env.example pipeline-v5/.env` and fill in the token |
 | `Could not authenticate to Google` | gcloud ADC expired | `gcloud auth application-default login` again |
-| `Table not found: gooddollar.BlockchainEvents.…` | L1 DDL not run yet | Apply `warehouse/L1/04_L0Contract_v3.sql` |
-| `SCHEMA_MISMATCH: <table> has no column(s) …` | The pipeline writes a column the live table lacks | Apply the L0 contract. The pipeline refuses to write rather than corrupting a MERGE |
+| `Table not found: gooddollar.BlockchainEvents.…` | The prepared L1 schema migration has not been commissioned | Stop and check the approved migration list; do not run a historical contract file |
+| `SCHEMA_MISMATCH: <table> has no column(s) …` | The live schema differs from the runtime contract | Stop ingestion. Re-measure the schema and approve a new additive migration; do not recreate the table |
 | Run exits 1 with skipped chunks | HyperSync rate limiting or a timeout | Read `IngestionCoverage` for the exact ranges, then `backfill --from --to` over them |
 | `UNCONFIRMED EMPTY RANGE` | A range came back empty and no independent endpoint could confirm it | Not an error to clear by retrying. The watermark deliberately did not advance. Re-run when the endpoints recover |
 | `REORG SUSPECTED` | An existing key now sits under a different block hash | Delete and re-ingest that block range |

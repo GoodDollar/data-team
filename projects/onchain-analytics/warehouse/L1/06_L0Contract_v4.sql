@@ -1,3 +1,5 @@
+-- DO NOT RUN DIRECTLY. Multi-statement historical schema reference, not a deployment command.
+-- Apply only the explicitly allowlisted single-statement migrations through scripts/deploy-warehouse.ps1.
 -- =================================================================================================
 -- L0 INGESTION CONTRACT v4.0
 -- =================================================================================================

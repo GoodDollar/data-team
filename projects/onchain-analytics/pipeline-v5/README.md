@@ -86,10 +86,12 @@ cp .env.example .env          # then fill in ENVIO_API_TOKEN
 gcloud auth application-default login
 ```
 
-The BigQuery tables are created by the DDL in `../warehouse/L1/`, not by the pipeline. Apply
-`06_L0Contract_v4.sql` before ingesting anything. The pipeline refuses to write a column the
-live table does not have, and checks at startup that the bookkeeping tables carry the columns it
-is about to write, rather than failing part way into a backfill.
+The BigQuery tables are created by allowlisted migrations in `../warehouse/L1/`, not by the
+pipeline. The multi-statement `06_L0Contract_v4.sql` is a reference, not a deployment command.
+Before production commissioning, run the labelled-sandbox validator described in
+`../docs/03_OPERATIONS.md`. The pipeline refuses to write a column the live table does not have,
+and checks at startup that bookkeeping tables carry the columns it is about to write, rather than
+failing part way into a backfill.
 
 ### Two datasets, and why staging is not one of them
 

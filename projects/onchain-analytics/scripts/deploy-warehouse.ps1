@@ -1,34 +1,100 @@
 # deploy-warehouse.ps1
-# Creates the L1 raw event tables (BlockchainEvents.*) from the DDL in warehouse/L1/.
-# These are the tables pipeline-v5 writes into and dbt reads as sources; they are NOT managed
-# by dbt, so this bootstrap DDL still lives here.
-#
-# The Semantic (L2) and Marts (L3) layers are managed by dbt. Use `dbt run`, not this script.
-# See gd_dbt/ and docs/03_OPERATIONS.md.
-#
-# SAFETY: files whose header carries a DO NOT RUN or NOT THE LIVE SHAPE banner are skipped, and
-# -Force deliberately does not override that. Two files in warehouse/L1 are CREATE OR REPLACE
-# against tables holding 2.6 million rows of production data.
+# Applies one explicitly allowlisted L1 migration to gooddollar.BlockchainEvents.
+# It never scans the SQL directory. Unknown and historical files are refused by filename.
+# Default execution is plan-only. Production execution requires both switches and a typed prompt.
+# See docs/03_OPERATIONS.md for the migration and approval requirements.
 #
 # Usage:
-#   .\scripts\deploy-warehouse.ps1        # applies the L1 DDL that is safe to re-apply
+#   .\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql
+#   .\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql -Execute -AllowProduction
 #
 # Requires:
 #   - Google Cloud SDK installed (provides the `bq` CLI)
 #   - `gcloud auth application-default login` already run
+#   - Production execution is only for an administrator after separate approval
 
 param(
-    [Parameter(Position = 0)]
-    [ValidateSet("L1")]
-    [string]$Layer = "L1",
+    [Parameter(Mandatory = $true)]
+    [string]$Migration,
 
-    [switch]$Force
+    [switch]$Execute,
+
+    [switch]$AllowProduction,
+
+    [string]$ImpersonateServiceAccount
 )
+
+function New-BqProcessStartInfo {
+    param(
+        [string]$BqExe,
+        [string[]]$Arguments,
+        [string]$ImpersonateServiceAccount
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $env:ComSpec
+    $startInfo.Arguments = '/d /s /c ""' + $BqExe + '" ' + ($Arguments -join ' ') + '"'
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.EnvironmentVariables['CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT'] = $ImpersonateServiceAccount
+    return $startInfo
+}
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $WarehouseDir = Join-Path $RepoRoot "warehouse"
+$MigrationDir = Join-Path $WarehouseDir "L1"
+$AllowedMigrations = @(
+    "08_PipelineRunsOutcome_v1.sql",
+    "09_CreateRawLogs_v1.sql",
+    "10_AddOracleReconciliationCompatibility_v1.sql",
+    "11_CreateRawLogsAllHistory_v1.sql",
+    "12_CreateTransactionsAllHistory_v1.sql"
+)
+
+if ($Migration -notin $AllowedMigrations) {
+    throw "REFUSED_UNLISTED_MIGRATION: '$Migration' is not in the deployment allowlist. Historical and unknown SQL is never executed by this helper."
+}
+
+$MigrationPath = Join-Path $MigrationDir $Migration
+if (-not (Test-Path -LiteralPath $MigrationPath -PathType Leaf)) {
+    throw "Allowlisted migration is missing: $MigrationPath"
+}
+
+$Sql = Get-Content -LiteralPath $MigrationPath -Raw
+if (-not $Sql.Contains('${PROJECT}') -or -not $Sql.Contains('${DATASET}')) {
+    throw "Migration must use the literal project and dataset placeholders: $Migration"
+}
+$Sql = $Sql.Replace('${PROJECT}', 'gooddollar').Replace('${DATASET}', 'BlockchainEvents')
+if ($Sql -match '\$\{(PROJECT|DATASET)\}') {
+    throw "Unresolved identifier placeholder in $Migration"
+}
+
+Write-Host "Migration: $Migration"
+Write-Host "Target: gooddollar.BlockchainEvents"
+
+if (-not $Execute) {
+    Write-Host "PLAN ONLY. No BigQuery client was resolved and no query was submitted."
+    return
+}
+
+if (-not $AllowProduction) {
+    throw "REFUSED_PRODUCTION_EXECUTION: production execution requires -AllowProduction after separate production authorization."
+}
+
+if ($ImpersonateServiceAccount -notmatch '^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.iam\.gserviceaccount\.com$') {
+    throw "REFUSED_IMPERSONATION_REQUIRED: provide the separately approved commissioner service account with -ImpersonateServiceAccount."
+}
+
+$ExpectedConfirmation = "APPLY APPROVED DDL TO gooddollar.BlockchainEvents"
+$Confirmation = Read-Host "Type '$ExpectedConfirmation' to continue"
+if ($Confirmation -cne $ExpectedConfirmation) {
+    throw "Production confirmation did not match. Nothing was submitted."
+}
 
 # Resolve the bq.cmd location (gcloud SDK ships it as bq.cmd on Windows).
 # Try common paths; fall back to PATH lookup.
@@ -49,71 +115,27 @@ if (-not $BqExe) {
     exit 1
 }
 Write-Host "Using bq: $BqExe"
-
-function Invoke-SqlFile {
-    param([string]$Path)
-    Write-Host ""
-    Write-Host "==== $Path ====" -ForegroundColor Cyan
-    $sql = Get-Content -Raw -Path $Path
-    # bq query reads SQL from stdin
-    $sql | & $BqExe query --use_legacy_sql=false --format=none --project_id=gooddollar
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "bq query failed for $Path"
-        exit $LASTEXITCODE
+$bqProcess = New-Object System.Diagnostics.Process
+$bqProcess.StartInfo = New-BqProcessStartInfo -BqExe $BqExe -ImpersonateServiceAccount $ImpersonateServiceAccount -Arguments @(
+    'query', '--use_legacy_sql=false', '--format=none', '--project_id=gooddollar', '--maximum_bytes_billed=10737418240'
+)
+try {
+    Write-Host "Executing $Migration as $ImpersonateServiceAccount" -ForegroundColor Cyan
+    [void]$bqProcess.Start()
+    $stdoutTask = $bqProcess.StandardOutput.ReadToEndAsync()
+    $stderrTask = $bqProcess.StandardError.ReadToEndAsync()
+    $bqProcess.StandardInput.WriteLine($Sql)
+    $bqProcess.StandardInput.Close()
+    $bqProcess.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
+    if ($stdout) { Write-Host $stdout }
+    if ($bqProcess.ExitCode -ne 0) {
+        throw "bq query failed for $Migration with exit code $($bqProcess.ExitCode): $stderr"
     }
+    if ($stderr) { Write-Host $stderr }
+} finally {
+    $bqProcess.Dispose()
 }
 
-function Deploy-Layer {
-    param([string]$LayerName)
-    $layerDir = Join-Path $WarehouseDir $LayerName
-    if (-not (Test-Path $layerDir)) {
-        Write-Error "Layer folder not found: $layerDir"
-        exit 1
-    }
-    $files = Get-ChildItem -Path $layerDir -Filter "*.sql" | Sort-Object Name
-    if ($files.Count -eq 0) {
-        Write-Warning "No .sql files in $layerDir"
-        return
-    }
-
-    # Refuse anything that would drop a table holding production data. warehouse/L1 now contains
-    # historical DDL that is NOT the live shape: 01 and 02 are CREATE OR REPLACE against the two
-    # tables holding 2.6 million rows, and 03 was superseded. Running this folder end to end used
-    # to be safe and no longer is. Each such file carries a banner and is skipped by name.
-    $skipped = @()
-    $toRun = @()
-    foreach ($f in $files) {
-        $head = Get-Content -Path $f.FullName -TotalCount 20 -Raw
-        if ($head -match 'DO NOT RUN|NOT THE LIVE SHAPE') {
-            $skipped += $f.Name
-        } else {
-            $toRun += $f
-        }
-    }
-
-    if ($skipped.Count -gt 0) {
-        Write-Host ""
-        Write-Host "SKIPPED (superseded or destructive, banner in file header):" -ForegroundColor Yellow
-        foreach ($s in $skipped) { Write-Host "  $s" -ForegroundColor Yellow }
-        if ($Force) {
-            Write-Error "-Force does not override this. These files would drop tables holding production data. Run the individual statements you actually want, by hand."
-            exit 1
-        }
-    }
-
-    if ($toRun.Count -eq 0) {
-        Write-Warning "Nothing to run in $LayerName after skips."
-        return
-    }
-
-    Write-Host "Deploying $($toRun.Count) file(s) in $LayerName..." -ForegroundColor Green
-    foreach ($f in $toRun) {
-        Invoke-SqlFile -Path $f.FullName
-    }
-    Write-Host "$LayerName complete." -ForegroundColor Green
-}
-
-Deploy-Layer $Layer
-
-Write-Host ""
-Write-Host "Done." -ForegroundColor Green
+Write-Host "Migration completed." -ForegroundColor Green

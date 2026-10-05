@@ -5,14 +5,30 @@ One PowerShell helper remains. The warehouse (Semantic + Marts) is managed by **
 ## Prerequisites
 
 - Google Cloud SDK installed: <https://cloud.google.com/sdk/docs/install>
-- `gcloud auth application-default login` already run
-- Authenticated user has BQ Data Editor + Job User on the `gooddollar` project
+- `gcloud auth application-default login` already run for metadata reads and sandbox validation
+- Production schema changes require a separately authorized administrator; do not grant the ordinary
+	analytics identity raw-dataset write permissions
 
 ## What's here
 
 | Script | Purpose | When to run |
 |---|---|---|
-| [`deploy-warehouse.ps1`](deploy-warehouse.ps1) | Creates the **L1 raw tables** (`BlockchainEvents.*`) from the DDL in [`warehouse/L1/`](../warehouse/L1/). These are dbt *sources* (pipeline-written, dbt-read), not dbt models, so their bootstrap DDL still lives here. | Once after a clone, or if a raw table schema changes. |
+| [`deploy-warehouse.ps1`](deploy-warehouse.ps1) | Applies one named migration from a fixed allowlist. Default is plan-only; production execution requires `-Execute`, `-AllowProduction`, explicit service-account impersonation, and a typed confirmation. | Only after the exact migration and production access are separately approved. |
+
+The L1 SQL folder is not an execution queue. `04_L0Contract_v3.sql`, `06_L0Contract_v4.sql`,
+`07_RetireV3EventTables.sql`, and any unlisted file are refused. Run the labelled-sandbox migration
+validator from `pipeline-v5/` with `node --import tsx ..\scripts\ops\validate-l0-migrations.mjs ..\..\_scratch\unit-07a-commissioning\sandbox-validation.json`.
+
+Local regression checks from the project root, with no BigQuery jobs or credential acquisition:
+
+```powershell
+.\scripts\tests\deploy-warehouse.Tests.ps1
+node --test scripts/tests/validate-l0-migrations.test.mjs
+```
+
+The deployment checks verify overlapping child processes retain separate identities without
+changing persistent gcloud settings. The parser checks distinguish required and nullable columns
+without importing or executing the live sandbox validator.
 
 ## Everything else is dbt
 
