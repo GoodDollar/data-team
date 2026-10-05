@@ -1,4 +1,6 @@
-﻿-- =================================================================================================
+﻿-- DO NOT RUN. Historical v3 schema; retained as a reference only.
+-- Apply only the explicitly allowlisted additive migrations through scripts/deploy-warehouse.ps1.
+-- =================================================================================================
 -- L0 INGESTION CONTRACT v3.0
 -- =================================================================================================
 -- The raw-event and state-snapshot tables for the Celo Phase 1 expansion. Numbered 04 because it
