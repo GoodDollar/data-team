@@ -168,7 +168,7 @@ npx tsx src/index.ts verify   # Reconcile what was ingested against the contract
 ### Inspect the prepared L1 migration (plan-only)
 
 ```powershell
-\.\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql
+.\scripts\deploy-warehouse.ps1 -Migration 09_CreateRawLogs_v1.sql
 ```
 
 This only prints the selected target. Validate migrations in a labelled sandbox first. Production
