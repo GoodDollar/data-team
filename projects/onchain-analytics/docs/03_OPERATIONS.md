@@ -2,6 +2,11 @@
 
 How to run everything in this repo. Written for someone who has never used BigQuery before.
 
+> **Status, 2026-10-05.** The raw-table migrations in this guide are approved but **not applied
+> to production**, and the pipeline has **not been run against production**. Commands that write
+> to `BlockchainEvents` are documented for when that is authorized; until then, use the plan-only
+> and sandbox paths. Read [`START_HERE.md`](START_HERE.md) for current status and the next step.
+
 ---
 
 ## One-time setup (do these before anything else)
@@ -37,6 +42,11 @@ gcloud config set project gooddollar
 
 The pipeline and `bq` CLI both read these credentials automatically — no passwords stored anywhere in this repo.
 
+A personal login is enough for metadata reads, dbt development in `dev_sandbox`, and the labelled
+sandbox validator. It is **not** a production writer: on 2026-10-05 the account that prepared this
+release could read `BlockchainEvents` but could not create tables, change schemas, or write rows.
+Production schema changes and ingestion use separately approved service-account identities.
+
 ### 4. Install pipeline dependencies
 
 ```
@@ -60,36 +70,51 @@ The pipeline is [`pipeline-v5/`](../pipeline-v5/), and it is the only one. Its f
 [`pipeline-v5/README.md`](../pipeline-v5/README.md); this section is the short version. All
 commands run from inside `pipeline-v5/`.
 
-### Backfill, load full history
+### Preview a run (safe now)
 
 ```
 cd pipeline-v5
-npx tsx src/index.ts backfill --contracts=ClaimContractEvents
-npx tsx src/index.ts backfill --contracts=InviteContractEvents
+npx tsx src/index.ts plan --chains=XDC --addresses=0x.. --from=N --to=N
 ```
 
-Add `--from=N --to=N` to target a range. A run reports its chunk plan and, for every range it
-attempted, writes a row to `BlockchainEvents.IngestionCoverage` recording whether every chunk
-succeeded.
+`plan` reads no chain and writes nothing to BigQuery. It lists the exact work units and the budget
+verdict, and exits nonzero if anything would be refused.
+
+### Backfill a named range (needs production authorization)
+
+```
+cd pipeline-v5
+npx tsx src/index.ts backfill --chains=XDC --addresses=0x.. --from=N --to=N
+```
+
+`backfill` requires both `--from` and `--to`; a bare `backfill` is refused. There is no
+`--contracts` option. Always pass `--chains`, because the default selection includes a chain
+outside the release scope and the run then cannot exit 0. A run reports its chunk plan and, for
+every range it attempted, writes a row to `BlockchainEvents.IngestionCoverage` recording whether
+every chunk succeeded.
 
 **Re-running the same range is safe and is expected.** The write path is a staging table plus a
-`MERGE` on `(network, tx_hash, log_index)`, so a repeated backfill leaves the table
-byte-identical. This was not true of the predecessor, which appended through streaming inserts
-whose `insertId` de-duplication window is minutes rather than months; re-running a range four
-months later wrote 43,000 phantom rows. If you read that older instruction anywhere, it is
-wrong.
+`MERGE` on `(chain_id, tx_hash, log_index)`, so a repeated backfill leaves one row per log.
+This was not true of the predecessor, which appended through streaming inserts whose `insertId`
+de-duplication window is minutes rather than months.
 
-### Daily incremental
+### Daily incremental (needs production authorization)
 
 ```
 cd pipeline-v5
-npx tsx src/index.ts daily
-npx tsx src/index.ts verify
+npx tsx src/index.ts daily --chains=CELO,XDC
+npx tsx src/index.ts coverage --chains=CELO,XDC
+npx tsx src/index.ts verify --chains=CELO,XDC
 ```
 
-`verify` reconciles the warehouse against the contracts' own per-day ledgers and is the only
-check here that consults something outside the warehouse. A run that does not reconcile exits
-nonzero.
+`daily` resumes each contract from its coverage record. While that record is empty, every contract
+would resume from its creation block, so the run-size and span limits refuse it; capture history
+with explicit `backfill` ranges first. `verify` reconciles the warehouse against the contracts' own
+per-day ledgers and is the only check here that consults something outside the warehouse. A run
+that does not reconcile exits nonzero.
+
+Every mode except `plan` starts by checking the bookkeeping tables and records a `PipelineRuns`
+row, so even `verify` and `coverage` need the migrated schema and write access.
 
 ---
 
@@ -111,8 +136,11 @@ Before any production change, validate the same migration files against a fresh 
 From `pipeline-v5/`:
 
 ```powershell
-node --import tsx ..\scripts\ops\validate-l0-migrations.mjs ..\..\_scratch\unit-07a-commissioning\sandbox-validation.json
+node --import tsx ..\scripts\ops\validate-l0-migrations.mjs
 ```
+
+The report is written to `_scratch/schema-migration-validation.json` at the repository root; pass a
+different path as the first argument to change it.
 
 This sandbox check exercises the old `PipelineRuns` and `OracleReconciliation` shapes, repeats the
 migrations, checks their statement types and byte caps, verifies historical fixture rows remain,
@@ -190,7 +218,7 @@ model/column docs with `dbt docs serve` (opens <http://localhost:8080>).
 | `SCHEMA_MISMATCH: <table> has no column(s) …` | The live schema differs from the runtime contract | Stop ingestion. Re-measure the schema and approve a new additive migration; do not recreate the table |
 | Run exits 1 with skipped chunks | HyperSync rate limiting or a timeout | Read `IngestionCoverage` for the exact ranges, then `backfill --from --to` over them |
 | `UNCONFIRMED EMPTY RANGE` | A range came back empty and no independent endpoint could confirm it | Not an error to clear by retrying. The watermark deliberately did not advance. Re-run when the endpoints recover |
-| `REORG SUSPECTED` | An existing key now sits under a different block hash | Delete and re-ingest that block range |
+| `REORG SUSPECTED` / `REORG_APPLIED` | An existing key now sits under a different block hash | No manual action. The MERGE has already rewritten the row whole, including its block facts, and the coverage row records it |
 | `Unrecognized name` during `dbt run` | A Semantic model references an L1 column that does not exist | Check the L1 schema matches `02_DATA_MODEL.md` |
 | Mart numbers look wrong | Marts rebuilt before L1 was fully ingested | Run `verify` first. If it reports short days, `repair --days=…`, then `cd gd_dbt && dbt run --select marts` |
 
@@ -198,8 +226,13 @@ model/column docs with `dbt docs serve` (opens <http://localhost:8080>).
 
 ## Cron / daily automation (post-MVP)
 
-There is **no daily job set up yet** — the pipeline and dbt are run manually. When it's time to
-automate, the daily flow is two ordered steps: ingest first, then dbt.
+There is **no daily job set up yet** — the pipeline and dbt are run manually. The GitHub workflow
+`.github/workflows/pipeline-daily.yml` runs only on manual dispatch and refuses production
+datasets. It is not ready to dispatch: it still expects a `GCP_SA_KEY` secret, whose absence was
+last measured on 2026-09-28. Reconcile the workflow with the keyless identity design and verify its
+authentication before using it. Do not add a long-lived service-account key for convenience, and
+do not schedule ingestion until production ingestion is authorized. When it is time to automate,
+the daily flow is two ordered steps: ingest first, then dbt. The examples below are illustrative.
 
 **Linux/macOS:**
 

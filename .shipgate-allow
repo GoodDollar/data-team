@@ -11,8 +11,7 @@
 # "was this actually checked?".
 
 # --- contract registries: public infrastructure, not per-account data --------
-# These list GoodDollar/Uniswap/Ubeswap contract addresses. Confirmed 2026-09-23
-# that none of them contain user wallets.
+# These files list deployed contract addresses, not user wallet balances.
 docs/subgraph/*.txt :: content:address-list :: subgraph manifests, contract addresses and start blocks only
 projects/onchain-analytics/contracts/ABIs/*.csv :: content:address-list :: contract ABI export, deployed contract addresses only
 projects/onchain-analytics/contracts/README.md :: content:address-list :: the contract registry doc, by definition a list of contracts
@@ -22,25 +21,10 @@ queries/dune/reserve-analysis/lp-v3-positions.sql :: content:address-list :: Uni
 projects/onchain-analytics/gd_dbt/seeds/contract_deployments.csv :: content:holder-table :: contract address paired with its deployment BLOCK, not a holder balance
 projects/onchain-analytics/gd_dbt/seeds/tokens.csv :: content:holder-table :: token contract address paired with its DECIMALS, not a holder balance
 # event_surface.csv is the event ABI catalogue: one row per (contract, era, event).
-# Checked 2026-09-28 before waiving, not assumed. All 347 distinct addresses in the
-# file are contract addresses already present in contract_deployments.csv above,
-# including the 11 that appear outside the two address columns (all in abi_source,
-# all of the form bytecode_equality_with_celo_0x..., naming a registry contract).
-# Its only numeric columns are chain_id, era_index, indexed_positions and the two
-# era block bounds. No balance column and no wallet address exists in it.
-# Receipt: specs/_scratch/coord-unit-01/out/01-event-surface-address-provenance.json
+# It contains contract addresses and event/era metadata, not holder balances.
 projects/onchain-analytics/gd_dbt/seeds/event_surface.csv :: content:holder-table :: contract address paired with its era BLOCK BOUNDS, not a holder balance
-# era_intervals.csv and era_boundary_evidence.csv are the era validity-interval table
-# and the evidence behind it: which implementation was live between which blocks, and
-# how that was established. Checked 2026-09-28 before waiving, not assumed.
-#   era_intervals.csv        262 rows, 278 distinct addresses, ALL already present in
-#                            contract_deployments.csv above. Numeric columns are chain_id,
-#                            valid_from_block, valid_to_block, era_index.
-#   era_boundary_evidence.csv 41 rows, 44 distinct addresses, ALL already present above.
-#                            Numeric columns are block numbers plus COUNTS of verification
-#                            checkpoints, events and chunks.
-# Neither file has an amount column, a balance, or a wallet address.
-# Receipt: specs/_scratch/coord-unit-02-gate/verify-new-seeds.mjs
+# These files describe contract implementation eras and the block evidence for their boundaries.
+# Their address-and-number pairs are deployment metadata, not per-account holdings.
 projects/onchain-analytics/gd_dbt/seeds/era_intervals.csv :: content:holder-table :: contract address paired with its era BLOCK BOUNDS, not a holder balance
 projects/onchain-analytics/gd_dbt/seeds/era_boundary_evidence.csv :: content:holder-table :: contract address paired with block numbers and verification COUNTS, not a holder balance
 

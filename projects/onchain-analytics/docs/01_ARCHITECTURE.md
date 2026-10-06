@@ -1,5 +1,13 @@
 # Architecture
 
+> **Partly outdated (2026-10-05).** The L1 (raw) section below describes the older per-contract
+> tables, which current dbt models still read. The new raw design is one universal `RawLogs` table
+> plus `Transactions`, written undecoded; see [`START_HERE.md`](START_HERE.md#4-the-raw-layer-design).
+> Do not follow steps 2 to 4 of "How to add a new contract": `CONTRACTS` in `config.ts` and the
+> `--contracts` option no longer exist. Use "Adding a contract" in
+> [`pipeline-v5/README.md`](../pipeline-v5/README.md#adding-a-contract) instead. The L2/L3 sections
+> remain accurate.
+
 ## The three layers
 
 | Layer | BigQuery dataset | Owns | Cadence | Storage type |
