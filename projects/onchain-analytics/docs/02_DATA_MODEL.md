@@ -4,6 +4,11 @@ The canonical reference for every entity in the warehouse. If a column or busine
 
 For naming conventions, partitioning rules, and layer responsibilities see [`01_ARCHITECTURE.md`](01_ARCHITECTURE.md).
 
+> **Scope note (2026-10-05).** The L1 tables below are the older per-contract tables that current
+> dbt models and dashboards read. The new universal raw tables, `RawLogs` and `Transactions`, are
+> not documented here yet; see [`START_HERE.md`](START_HERE.md#4-the-raw-layer-design) and the
+> migration files in [`warehouse/L1/`](../warehouse/L1/).
+
 ---
 
 ## L1 — `gooddollar.BlockchainEvents.*`

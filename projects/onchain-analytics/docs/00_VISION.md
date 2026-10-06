@@ -1,5 +1,10 @@
 # Vision: GoodDollar Onchain Analytics Platform
 
+> **Historical MVP-era vision.** This page records the original XDC invites proof of concept, not
+> the current system design or production status. Its references to a decoded, per-contract raw
+> layer, the old `pipeline/` folder, and Fuse support are outdated. For the current architecture,
+> release scope, and verified status, start with [`START_HERE.md`](START_HERE.md).
+
 ## The problem
 
 Today's analytics setup is a Google Apps Script glued to a Google Sheet. Every new question requires a custom scraper or a manual export. We can't cross-reference invite signups with claim activity. We can't cohort users by retention. We can't run a simple "how many invitees who signed up in March made it to 3 claims" query without writing code.

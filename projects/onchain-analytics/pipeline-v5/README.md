@@ -4,6 +4,10 @@ This is the **only** pipeline in this repository. It reads contract logs from En
 or over JSON-RPC on the chains no index serves, and writes them into BigQuery **undecoded**, then
 checks its own work against the contracts.
 
+> **Status, 2026-10-05:** not yet run against production. The raw-table migrations it depends on
+> are approved but not applied, and there is no writer identity or staging dataset yet. Start with
+> [`../docs/START_HERE.md`](../docs/START_HERE.md) for current status and the next step.
+
 Two older versions existed, `pipeline/` and `future/pipeline-v4/`, and both are gone. What they
 could do that this one could not has been ported, and what they did that was wrong is the reason
 several of the rules below exist.
@@ -13,7 +17,8 @@ several of the rules below exist.
 ## Nothing is decoded here, and that is the point
 
 The warehouse holds one row per log entry, with all four topic slots and the data blob stored
-verbatim, for every contract on Celo, XDC, Fuse and Ethereum. It does not hold a column per event
+verbatim, for every contract on the chains in the release scope (Celo, XDC and Ethereum; see
+[`../docs/release-scope.md`](../docs/release-scope.md)). It does not hold a column per event
 field, and it does not try to match a log against an expected event at ingestion time.
 
 That is a deliberate trade with a stated cost. A row carries no meaning until a model joins it to
@@ -86,6 +91,9 @@ cp .env.example .env          # then fill in ENVIO_API_TOKEN
 gcloud auth application-default login
 ```
 
+A personal login is enough for `plan`, the tests, and sandbox work. It is not a production writer;
+production ingestion runs under a separately approved writer identity.
+
 The BigQuery tables are created by allowlisted migrations in `../warehouse/L1/`, not by the
 pipeline. The multi-statement `06_L0Contract_v4.sql` is a reference, not a deployment command.
 Before production commissioning, run the labelled-sandbox validator described in
@@ -128,16 +136,20 @@ never pass through this process and are bounded instead by the size of the table
 
 ### One writer at a time
 
-A cross-process lease excludes a second writer on the same host from merging into the same table.
+A cross-process lease excludes a second writer on the same host from writing to the same table.
 Two concurrent captures of one range previously produced two rows per key while both processes
 exited zero and both recorded the range as completely captured. A writer that cannot take the
 lease within `WRITE_LOCK_WAIT_MS` is refused, exits nonzero, and records the range as incomplete
-so the next run reads it again. A lease whose holder is no longer running is reclaimed at once;
-one from another host expires after `WRITE_LOCK_STALE_MS`.
+so the next run reads it again. A dead same-host process is detected and its lease reclaimed
+immediately. A lease older than `WRITE_LOCK_STALE_MS` (60 minutes by default) can also be
+reclaimed by age, even if a same-host process still exists; another host's process cannot be
+checked directly. The production workload has not tested this timeout boundary, so a run that
+reaches it should be treated as a safety incident and checked before retrying. This file lock
+does not coordinate writers on separate hosts.
 
 ---
 
-## The seven modes
+## The eight modes
 
 ```
 npx tsx src/index.ts <mode> [options]
@@ -145,15 +157,25 @@ npx tsx src/index.ts <mode> [options]
 
 | Mode | What it does | Writes |
 | - | - | - |
+| `plan` | Says exactly what a run would do and checks it against the budgets. Reads no chain | Nothing |
 | `daily` | Ingests from each contract's coverage frontier to the chain tip, minus the finality margin | `RawLogs`, `Transactions` |
-| `backfill` | Ingests a named range, or each contract's whole history from its creation block | `RawLogs`, `Transactions` |
+| `backfill` | Ingests a named range. `--from` and `--to` are both required | `RawLogs`, `Transactions` |
 | `verify` | Reconciles the warehouse against a contract's own ledger, per protocol day | Nothing except a reconciliation record |
 | `coverage` | Reports every block range not covered by a clean capture, and every contract with no capture at all | Nothing |
 | `dedup` | Collapses repeated natural keys, in place | `RawLogs`, `Transactions` |
 | `repair` | Re-reads every range the coverage ledger records as not covered, then re-checks | `RawLogs`, `Transactions` |
 | `calibrate` | Repeats one identical query against every source and reports each one's miss rate | Nothing |
 
-Options: `--chains=A,B`, `--addresses=0x..`, `--from=N --to=N`, `--days=N,N`, `--dry-run`.
+Every mode except `plan` also checks the bookkeeping tables at startup and records a
+`PipelineRuns` row.
+
+Options: `--chains=A,B`, `--addresses=0x..`, `--from=N --to=N`, `--days=N,N`, `--dry-run`,
+`--max-capture-blocks=N`, `--max-captures=N`.
+
+Budgets: a run may attempt at most 12 contracts and one capture at most 30 days of blocks, unless
+raised with the last two options or, for the span, named with `--from` and `--to` (capped at
+100,000,000 blocks). A one-sided range is refused. Always pass `--chains`: the default selection
+includes Fuse, which is outside the release scope and is reported as unsupported.
 
 Exit codes: `0` everything attempted completed and reconciled, `1` partial, `2` nothing
 succeeded or the arguments were wrong. Every mode fails closed. A run that skipped a chunk, or
@@ -170,10 +192,10 @@ npx tsx src/index.ts coverage
 npx tsx src/index.ts verify
 ```
 
-`daily` is what the scheduled workflow runs. `coverage` says what the warehouse does and does not
+`daily` is the incremental run. `coverage` says what the warehouse does and does not
 cover, which is the question an empty query result cannot answer on its own. `verify` is cheap
 relative to being wrong, and it is the only check here that consults something outside the
-warehouse.
+warehouse. Pass `--chains` to each.
 
 ## Adding a contract
 
@@ -200,7 +222,7 @@ what is missing and claims no coverage, so an empty result over it can be read c
 | Symptom | What to run |
 | - | - |
 | `coverage` reports open gaps | `repair`, which re-reads exactly those ranges and re-checks the ledger afterwards |
-| `coverage` reports a contract with no capture at all | `backfill --addresses=0x..`, because no range has ever been read for it |
+| `coverage` reports a contract with no capture at all | `backfill --chains=.. --addresses=0x.. --from=N --to=N`, because no range has ever been read for it |
 | `verify` reports days as `missing` | `repair`, then `verify --days=...` |
 | `verify` reports days as `duplicated` | `dedup --dry-run`, then `dedup` |
 | `verify` reports days as `amount_unreadable` | A value in `log_data` exceeded what the decoder can represent. It is reported rather than summed as a zero |
@@ -230,31 +252,30 @@ rows are left where they are; this program simply no longer adds to them.
 
 ## Scheduling
 
-`.github/workflows/pipeline-daily.yml`, 01:00 UTC daily, plus manual dispatch.
-
-**It has never successfully run.** `PipelineRuns` holds eight rows, every one of them from a
-laptop, none from a runner, across the seven weeks since the workflow was merged. The pipeline
-log shows the GCP credential setup failing four different ways on 2026-08-18. Before relying on
-the schedule, dispatch it manually and confirm a row appears in `PipelineRuns` with a runner
-hostname.
+There is no scheduled ingestion. `.github/workflows/pipeline-daily.yml` runs only on manual
+dispatch, requires a target dataset and a typed confirmation, and refuses `BlockchainEvents`,
+`Staging`, `Semantic` and `Marts`. It is for sandbox runs only, but is not ready to dispatch: it
+still expects a `GCP_SA_KEY` secret, whose absence was last measured on 2026-09-28. Reconcile its
+authentication with the keyless identity design before use. Do not add a long-lived service-account
+key for convenience. Scheduling production ingestion is a separate decision that follows a
+successful production canary.
 
 ---
 
 ## Known limits, stated rather than discovered later
 
-- **No historical backfill has been run.** The pipeline has been exercised over small ranges on
-  XDC and Ethereum against a sandbox dataset. The full history is a separate, larger piece of
-  work with its own cost and access decisions.
-- **Two of the four chains have no index.** `fuse.hypersync.xyz` and `eth.hypersync.xyz` do not
-  resolve, so those chains are enumerated over JSON-RPC, which costs two calls per transaction
-  and one per block on top of the log query. One explorer in that set publishes a quota of ten
-  reads per eleven minutes; hydration rotates across the available endpoints and backs off hard
-  on a rate limit, but a wide range there is slow by construction.
+- **No historical backfill has been run, and nothing has been run against production.** The
+  pipeline has been exercised over small ranges on XDC and Ethereum against a sandbox dataset.
+  The full history is a separate, larger piece of work with its own cost and access decisions.
+- **Ethereum has no index.** `eth.hypersync.xyz` does not resolve (nor does `fuse.hypersync.xyz`,
+  for the dropped Fuse chain), so Ethereum is enumerated over JSON-RPC, which costs two calls per
+  transaction and one per block on top of the log query. Hydration rotates across the available
+  endpoints and backs off hard on a rate limit, but a wide range there is slow by construction.
 - **Assurance grade A needs two independent readers that both answer.** A complete capture from a
   single index earns C, because one source is one source however good it is. That is the
-  definition rather than a judgement on the reader, and it means the two chains with no index can
-  reach a higher grade than the two with one. Raising the index chains to B means confirming
-  non-empty ranges against a second source, which is real cost and is not done today.
+  definition rather than a judgement on the reader, and it means Ethereum, with no index, can
+  reach a higher grade than Celo and XDC, which have one. Raising the index chains to B means
+  confirming non-empty ranges against a second source, which is real cost and is not done today.
 - **`era_resolution` is `era_map_lookup` or `unresolved`, never `slot_read_at_block`.** The era
   is resolved from the reference seed's block ranges rather than by reading the proxy slot at
   each row's own block, which would be one archive call per log. A block the seed does not cover
@@ -265,7 +286,9 @@ hostname.
 - **Empty-chunk confirmation is expensive on sparse ranges.** Each empty chunk costs one
   JSON-RPC query per endpoint per sub-range. `CONFIRM_EMPTY_CHUNKS=false` turns it off, and
   turning it off is how a false zero becomes a permanent gap.
-- **A `daily` run over a contract with no coverage is a full backfill of that contract.** The
+- **A `daily` run over a contract with no coverage would be a full backfill of that contract.** The
   coverage ledger is the only thing that can say a range was read, so a contract with no coverage
-  row resumes from its creation block. That is deliberate: Inferring coverage from the rows that
-  happen to be present is the defect this pipeline was rewritten to remove.
+  row resumes from its creation block, and the run-size and span budgets then refuse the run
+  rather than start a history read nobody asked for. Capture history with explicit `backfill`
+  ranges. Inferring coverage from the rows that happen to be present is the defect this pipeline
+  was rewritten to remove.

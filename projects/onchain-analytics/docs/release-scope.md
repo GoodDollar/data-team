@@ -8,7 +8,7 @@ without something failing.
 
 | Chain | In the release | Ingested in this release | Note |
 | - | - | - | - |
-| Celo | Yes | Yes | Primary chain for claims |
+| Celo | Yes | No, not yet in the new raw pipeline | Primary chain for claims; production ingestion has not run |
 | XDC | Yes | Yes | Holds the existing invites and claims dataset |
 | Ethereum | Yes | No | Declared, deliberately not ingested here. Reserve paused since 2023-12-17, and no model reads an Ethereum contract today |
 | **Fuse** | **No, dropped 2026-09-28** | No | See below |
@@ -23,7 +23,8 @@ can be declared in scope and still not be captured yet; Ethereum is exactly that
 Fuse data is disproportionately expensive to obtain, and the cost was holding up everything else.
 Specifically:
 
-- There is no HyperSync index for Fuse, so it is the only chain that needs a raw RPC adapter.
+- There is no HyperSync index for Fuse, so every Fuse read would go through the slower JSON-RPC
+  reader.
 - The one archive-capable Fuse endpoint this project could find is rate limited to roughly 54
   reads per hour, and both enumerating readers cap at 20,000 logs per response.
 - Fuse prunes its transaction index, so a receipt lookup cannot establish a contract's creation
@@ -36,8 +37,8 @@ serve it to the same standard as the rest, and the decision was to ship the rest
 
 **Fuse can be added back as its own piece of work.** Nothing has been thrown away: Fuse history is
 permanently readable from the chain itself, and the inventory this project already measured is
-still in the repository (see the next section). Bringing it back means building the RPC reader and
-re-running ingestion, not rediscovering what is there.
+still in the repository (see the next section). Bringing it back means returning it to the release
+scope and running ingestion over the existing RPC reader, not rediscovering what is there.
 
 ## What "dropped" means for data that is already recorded
 
