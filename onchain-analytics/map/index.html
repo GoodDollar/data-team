@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive map of current and target GoodDollar onchain analytics models.">
+  <title>Onchain Analytics | Data Map</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3f5f0;
+      --surface: #ffffff;
+      --ink: #1e2c27;
+      --muted: #64716a;
+      --line: #d7ded7;
+      --forest: #255844;
+      --forest-light: #e2efe7;
+      --teal: #126d68;
+      --teal-light: #e2f1ee;
+      --gold: #8a6413;
+      --gold-light: #f6efd9;
+      --rust: #965039;
+      --rust-light: #f5e9e3;
+      --slate: #4c5e66;
+      --slate-light: #e9eef0;
+      --shadow: 0 10px 28px rgba(30, 44, 39, 0.07);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Aptos", "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button, input { font: inherit; }
+
+    .topline {
+      height: 5px;
+      background: linear-gradient(90deg, #255844 0 39%, #126d68 39% 67%, #c48f23 67% 82%, #965039 82%);
+    }
+
+    .shell { max-width: 1680px; margin: 0 auto; padding: 24px 28px 32px; }
+
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: var(--teal);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 32px;
+      font-weight: 500;
+      line-height: 1.15;
+    }
+
+    .lede { max-width: 760px; margin: 8px 0 0; color: var(--muted); }
+
+    .dbt-link {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--forest);
+      text-decoration: none;
+      font-weight: 650;
+    }
+
+    .dbt-link:hover { border-color: var(--forest); background: var(--forest-light); }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 0 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .84);
+      box-shadow: var(--shadow);
+    }
+
+    .segmented { display: inline-flex; gap: 4px; padding: 3px; background: #e9ede8; }
+
+    .segmented button {
+      min-height: 34px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .segmented button[aria-pressed="true"] {
+      border-color: #d4dfd7;
+      background: var(--surface);
+      color: var(--forest);
+      box-shadow: 0 1px 3px rgba(30, 44, 39, .08);
+    }
+
+    .toolbar-right { display: flex; align-items: center; gap: 14px; }
+
+    .search-wrap { position: relative; width: min(300px, 30vw); }
+
+    .search-wrap input {
+      width: 100%;
+      min-height: 38px;
+      padding: 0 12px 0 34px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
+      outline: none;
+    }
+
+    .search-wrap input:focus { border-color: var(--teal); box-shadow: 0 0 0 2px #126d6822; }
+
+    .search-icon {
+      position: absolute;
+      top: 50%;
+      left: 12px;
+      width: 13px;
+      height: 13px;
+      border: 1.5px solid var(--muted);
+      border-radius: 50%;
+      transform: translateY(-60%);
+    }
+
+    .search-icon::after {
+      position: absolute;
+      right: -5px;
+      bottom: -3px;
+      width: 6px;
+      height: 1.5px;
+      background: var(--muted);
+      content: "";
+      transform: rotate(48deg);
+    }
+
+    .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); }
+    .legend-dot.live { background: var(--forest); }
+    .legend-dot.rewire { background: var(--gold); }
+    .legend-dot.planned { background: var(--slate); }
+    .legend-dot.later { background: var(--rust); }
+
+    .scope-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 0 0 16px;
+      padding: 10px 13px;
+      border-left: 3px solid var(--gold);
+      background: var(--gold-light);
+      color: #52421e;
+      font-size: 12px;
+    }
+
+    .scope-note strong { white-space: nowrap; }
+
+    .references {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+      margin: 0 0 14px;
+    }
+
+    .references-label { margin-right: 3px; color: var(--muted); font-size: 11px; font-weight: 750; text-transform: uppercase; }
+
+    .reference-chip {
+      padding: 5px 9px;
+      border: 1px solid #c8d9d4;
+      background: #edf5f2;
+      color: #245b52;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .reference-chip:hover, .reference-chip:focus-visible { border-color: var(--teal); outline: none; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      align-items: start;
+      gap: 14px;
+    }
+
+    .graph-panel, .inspector {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .graph-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .graph-heading h2 { margin: 0; font-size: 13px; font-weight: 750; }
+    .graph-caption { color: var(--muted); font-size: 11px; }
+    .scroll-cue { display: none; color: var(--teal); font-size: 10px; font-weight: 700; white-space: nowrap; }
+
+    .graph-scroll { overflow: auto; overscroll-behavior: contain; }
+
+    .board {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(var(--column-count), minmax(175px, 1fr));
+      align-items: stretch;
+      gap: 0;
+      width: max(100%, calc(var(--column-count) * 190px));
+      min-height: 620px;
+      padding: 15px 12px 22px;
+      isolation: isolate;
+    }
+
+    .connections { position: absolute; inset: 0; z-index: -1; overflow: visible; pointer-events: none; }
+
+    .connection {
+      fill: none;
+      stroke: #b9c7c1;
+      stroke-width: 1.25;
+      opacity: .72;
+      transition: stroke .16s ease, opacity .16s ease, stroke-width .16s ease;
+    }
+
+    .connection.is-active { stroke: var(--teal); stroke-width: 2.4; opacity: 1; }
+
+    .layer {
+      position: relative;
+      min-width: 0;
+      padding: 0 9px;
+      border-right: 1px solid #e7ece7;
+    }
+
+    .layer:last-child { border-right: 0; }
+
+    .layer-header {
+      position: relative;
+      z-index: 2;
+      min-height: 49px;
+      margin: 0 0 9px;
+      padding: 3px 4px 8px;
+      border-bottom: 2px solid var(--layer-accent, var(--line));
+    }
+
+    .layer-index { display: block; color: var(--layer-accent, var(--muted)); font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .layer-name { display: block; margin-top: 2px; font-size: 12px; font-weight: 750; }
+
+    .nodes { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 7px; }
+
+    .node {
+      position: relative;
+      display: block;
+      width: 100%;
+      min-height: 50px;
+      padding: 8px 9px 7px;
+      border: 1px solid var(--node-line, #d2ddd7);
+      border-left: 3px solid var(--node-accent, var(--forest));
+      background: var(--node-bg, #f6faf7);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+      transition: box-shadow .13s ease, border-color .13s ease;
+    }
+
+    .node:hover, .node:focus-visible {
+      z-index: 3;
+      border-color: var(--node-accent, var(--forest));
+      outline: none;
+      box-shadow: 0 4px 12px rgba(30, 44, 39, .13);
+    }
+
+    .node.is-selected { border-color: var(--node-accent, var(--forest)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-accent, var(--forest)) 20%, transparent); }
+    .node.is-dimmed { opacity: .25; }
+    .node[hidden] { display: none; }
+    .node-name { display: block; font-size: 11px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+    .node-grain { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.25; }
+
+    .status {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 1px 5px;
+      border: 1px solid transparent;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .035em;
+      line-height: 1.55;
+      text-transform: uppercase;
+    }
+
+    .status.live { border-color: #b9d4c3; background: #e6f2e9; color: #285c3b; }
+    .status.rewire { border-color: #e2d19b; background: #fbf4db; color: #76570f; }
+    .status.planned { border-color: #c9d5d8; background: #edf2f3; color: #4b626a; }
+    .status.later { border-color: #e1c7b9; background: #f7ece6; color: #864d35; }
+
+    .inspector { position: sticky; top: 12px; min-height: 390px; }
+
+    .inspector-top { padding: 15px 16px 13px; border-bottom: 1px solid var(--line); }
+    .inspector-label { margin: 0 0 4px; color: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .inspector h2 { margin: 0; font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+    .inspector-status { margin-top: 8px; }
+    .inspector-body { padding: 14px 16px 16px; }
+    .inspector-summary { margin: 0 0 14px; color: #405149; }
+
+    .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 15px; }
+    .fact { padding-top: 7px; border-top: 1px solid var(--line); }
+    .fact dt { color: var(--muted); font-size: 10px; font-weight: 750; text-transform: uppercase; }
+    .fact dd { margin: 3px 0 0; font-size: 12px; font-weight: 650; }
+
+    .detail-section { margin: 13px 0 0; }
+    .detail-section h3 { margin: 0 0 5px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .detail-section p { margin: 0; color: #405149; font-size: 12px; }
+
+    .model-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 16px;
+      padding: 7px 9px;
+      border: 1px solid #b9d4c3;
+      background: var(--forest-light);
+      color: #214e37;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .model-link:hover { border-color: var(--forest); }
+    .model-link[hidden] { display: none; }
+
+    .empty-state { padding: 12px 8px; color: var(--muted); font-size: 11px; }
+
+    .footnote {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      margin-top: 13px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .footnote a { color: var(--teal); }
+
+    @media (max-width: 980px) {
+      .shell { padding: 18px 16px 24px; }
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .inspector { position: static; min-height: 0; }
+      .inspector-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; }
+      .inspector-summary, .facts, .model-link { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 620px) {
+      h1 { font-size: 27px; }
+      .masthead { flex-direction: column; gap: 14px; }
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .toolbar-right { align-items: stretch; flex-direction: column-reverse; }
+      .search-wrap { width: 100%; }
+      .legend { gap: 8px; }
+      .scroll-cue { display: inline; }
+      .scope-note { flex-direction: column; gap: 2px; }
+      .inspector-body { display: block; }
+      .footnote { flex-direction: column; gap: 5px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topline" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">GoodDollar / Data systems</p>
+        <h1>Onchain analytics map</h1>
+        <p class="lede">Follow data from capture to dashboard. Select any node to inspect its grain, role, dependencies, and status.</p>
+      </div>
+      <a class="dbt-link" href="https://gooddollar.github.io/data-team/onchain-analytics/#!/overview?g_v=1">Open dbt Docs</a>
+    </header>
+
+    <section class="toolbar" aria-label="Map controls">
+      <div class="segmented" role="group" aria-label="Choose architecture view">
+        <button type="button" data-view="current" aria-pressed="false">Current dbt</button>
+        <button type="button" data-view="target" aria-pressed="true">Target system</button>
+      </div>
+      <div class="toolbar-right">
+        <div class="legend" aria-label="Node status legend">
+          <span class="legend-item"><i class="legend-dot live"></i>Live in dbt</span>
+          <span class="legend-item"><i class="legend-dot rewire"></i>Rebuild / rewire</span>
+          <span class="legend-item"><i class="legend-dot planned"></i>Planned</span>
+          <span class="legend-item"><i class="legend-dot later"></i>Later scope</span>
+        </div>
+        <label class="search-wrap">
+          <span class="search-icon" aria-hidden="true"></span>
+          <input id="search" type="search" placeholder="Find a model or table" autocomplete="off" aria-label="Find a model or table">
+        </label>
+      </div>
+    </section>
+
+    <div class="scope-note" id="scope-note" role="note"></div>
+    <div class="references" id="references" aria-label="Reference inputs"></div>
+
+    <section class="workspace" aria-label="Interactive data lineage map">
+      <div class="graph-panel">
+        <div class="graph-heading">
+          <div><h2 id="graph-title">Target medallion architecture</h2><span class="graph-caption" id="graph-caption">Solid lines are model flow. Reference data is shown above.</span></div>
+          <span class="scroll-cue">Swipe across layers</span>
+        </div>
+        <div class="graph-scroll" id="graph-scroll">
+          <div class="board" id="board"></div>
+        </div>
+      </div>
+
+      <aside class="inspector" aria-live="polite" aria-label="Selected model details">
+        <div class="inspector-top">
+          <p class="inspector-label" id="detail-layer">Select a node</p>
+          <h2 id="detail-name">Model details</h2>
+          <div class="inspector-status" id="detail-status"></div>
+        </div>
+        <div class="inspector-body">
+          <p class="inspector-summary" id="detail-summary">Choose a table or model in the graph to see its purpose, grain, dependencies, and caveats.</p>
+          <dl class="facts" id="detail-facts"></dl>
+          <section class="detail-section" id="inputs-section" hidden>
+            <h3>Inputs</h3><p id="detail-inputs"></p>
+          </section>
+          <section class="detail-section" id="outputs-section" hidden>
+            <h3>Feeds</h3><p id="detail-outputs"></p>
+          </section>
+          <section class="detail-section" id="caveat-section" hidden>
+            <h3>Boundary / caveat</h3><p id="detail-caveat"></p>
+          </section>
+          <a class="model-link" id="model-link" target="_blank" rel="noopener noreferrer" hidden>Open model in dbt Docs</a>
+        </div>
+      </aside>
+    </section>
+
+    <footer class="footnote">
+      <span>Target view is a design map, not a deployment manifest. Exact ownership and scope remain with the release plan.</span>
+      <span>Source: onchain analytics dbt project and system design, 2026-10-08.</span>
+    </footer>
+  </main>
+
+  <script>
+    const DBT_DOCS = 'https://gooddollar.github.io/data-team/onchain-analytics/#!/model/model.gd_dbt.';
+
+    const references = [
+      { id: 'event_surface', name: 'event_surface + contract_deployments', status: 'Registry', grain: 'Event signature and contract era', purpose: 'Tell the decoder which event layout belongs to a contract at a block. These are reference inputs, not business facts.', caveat: 'Registry metadata enables decoding; it does not itself mean every listed contract is in the current ingestion scope.' },
+      { id: 'address_labels', name: 'address_labels', status: 'Curated seed', grain: 'One known address per network', purpose: 'Shared labels for protocol contracts, pools, relayers, bridges, exchanges, and builder projects. This makes flow classification consistent across models.', caveat: 'Human-maintained and governed. Unlabelled addresses are not automatically classified as users.' },
+      { id: 'conformed_dims', name: 'network / token / date', status: 'Shared refs', grain: 'One network, token, or calendar date', purpose: 'Conformed values used to apply consistent chain identifiers, token decimals, and time periods across facts and marts.', caveat: 'The repository currently has a tokens seed. The full dimension set is target design, not a set of completed dbt models.' },
+      { id: 'token_price', name: 'dim_token_price_daily', status: 'Proposed', grain: 'One token per day', purpose: 'Proposed price lookup with source and confidence for USD-valued economics and cost reporting.', caveat: 'Price source and gap policy are not a frozen implementation decision.' }
+    ];
+
+    const current = {
+      title: 'Current dbt lineage',
+      caption: 'The current repo DAG. Select a model for details or open its dbt Docs page.',
+      noteTitle: 'Current model state',
+      note: 'The checked-in dbt models still use decoded contract-specific sources. This is the MVP DAG, not the completed RawLogs path.',
+      layers: [
+        { id: 'src', label: 'Pipeline sources', sub: 'BigQuery tables', accent: 'var(--slate)', nodes: [
+          { id: 'claim_src', name: 'ClaimContractEvents', status: 'live', grain: 'One decoded claim event', materialization: 'Pipeline table', summary: 'Current decoded source for UBI claim events. The ingestion pipeline writes it; dbt reads it.', inputs: 'HyperSync capture for the claim contract.', outputs: 'claim_contract_events.', caveat: 'This contract-specific source is the MVP shape being replaced by universal raw capture.' },
+          { id: 'invite_src', name: 'InviteContractEvents', status: 'live', grain: 'One decoded invite event', materialization: 'Pipeline table', summary: 'Current decoded source for InviteeJoined and InviterBounty events.', inputs: 'HyperSync capture for the invite contract.', outputs: 'invite_contract_events.', caveat: 'This source feeds the current XDC invite models; the target design must be re-ingested and revalidated.' }
+        ]},
+        { id: 'stg', label: 'L1 Staging', sub: 'Views', accent: 'var(--slate)', nodes: [
+          { id: 'claim_stg', name: 'claim_contract_events', status: 'live', grain: 'One source event', materialization: 'View', summary: 'Lowercases addresses, removes duplicate rows, and filters to the latest closed day. Keeps raw amounts for semantic conversion.', inputs: 'ClaimContractEvents.', outputs: 'claim_events.', caveat: 'Staging performs source cleanup only; token-decimal interpretation happens in L2.', dbt: 'claim_contract_events' },
+          { id: 'invite_stg', name: 'invite_contract_events', status: 'live', grain: 'One source event', materialization: 'View', summary: 'Normalizes invite addresses, removes duplicate rows, and filters to closed days without classifying event business meaning.', inputs: 'InviteContractEvents.', outputs: 'invite_signups and invite_payouts.', caveat: 'Signup and payout classification happens in L2.', dbt: 'invite_contract_events' }
+        ]},
+        { id: 'sem', label: 'L2 Semantic', sub: 'Facts + entities - views', accent: 'var(--teal)', nodes: [
+          { id: 'claim_events', name: 'claim_events', status: 'live', grain: 'One claim per log', materialization: 'View', summary: 'Canonical claim fact. Joins the token seed to preserve raw uint256 amounts while deriving human-readable GD with the chain-specific decimal factor.', inputs: 'claim_contract_events and tokens seed.', outputs: 'claimer_activity, daily_claim_activity, weekly_claimer_retention, invitee_lifecycle.', caveat: 'The target version needs to source the universal log path and preserve transaction context.', dbt: 'claim_events' },
+          { id: 'claimer_activity', name: 'claimer_activity', status: 'live', grain: 'One claimer per network', materialization: 'View', summary: 'Lifetime claims, amount, first and latest claim times, and active days per claimer and chain.', inputs: 'claim_events.', outputs: 'Wallet-level analytics and claim dashboard metrics.', caveat: 'Current view recalculates from the full claim fact; target design may materialize wallet-grain entities.', dbt: 'claimer_activity' },
+          { id: 'invite_signups', name: 'invite_signups', status: 'live', grain: 'One InviteeJoined event', materialization: 'View', summary: 'Classifies signups as referral, campaign, or no-code from inviter and contract addresses.', inputs: 'invite_contract_events.', outputs: 'invitee_lifecycle and daily_invite_metrics.', caveat: 'Business classification is intentionally centralized here.', dbt: 'invite_signups' },
+          { id: 'invite_payouts', name: 'invite_payouts', status: 'live', grain: 'One InviterBounty event', materialization: 'View', summary: 'Classifies bounty origin and derives payout amounts in GD.', inputs: 'invite_contract_events.', outputs: 'invitee_lifecycle and daily_invite_metrics.', caveat: 'Invitee reward is a fixed assumption in the current model; transfer-level attribution is a later improvement.', dbt: 'invite_payouts' },
+          { id: 'invitee_lifecycle', name: 'invitee_lifecycle -> invitee', status: 'live', grain: 'One invitee', materialization: 'View (alias: invitee)', summary: 'Joins signup, post-signup claim activity, bounty payment, and post-payout retention into one invite lifecycle.', inputs: 'invite_signups, claim_events, invite_payouts.', outputs: 'invite_funnel_snapshot.', caveat: 'The alias preserves the current physical model name used by downstream dashboards.', dbt: 'invitee_lifecycle' }
+        ]},
+        { id: 'mart', label: 'L3 Marts', sub: 'Dashboard tables', accent: 'var(--gold)', nodes: [
+          { id: 'daily_claim_activity', name: 'daily_claim_activity', status: 'live', grain: 'Date x network', materialization: 'Table', summary: 'Daily claim counts, unique claimers, GD volume, averages, and running totals.', inputs: 'claim_events.', outputs: 'Claim activity and trend dashboard.', caveat: 'Cumulative unique claimers is an approximation because it sums daily distinct counts.', dbt: 'daily_claim_activity' },
+          { id: 'weekly_claimer_retention', name: 'weekly_claimer_retention', status: 'live', grain: 'Cohort week x network x week offset', materialization: 'Table', summary: 'Weekly first-claim cohorts and the share still claiming up to twelve weeks later.', inputs: 'claim_events.', outputs: 'Retention heatmap.', caveat: 'Claim-only retention; all-activity wallet retention is target work.', dbt: 'weekly_claimer_retention' },
+          { id: 'daily_invite_metrics', name: 'daily_invite_metrics', status: 'live', grain: 'Date x network', materialization: 'Table', summary: 'Daily and cumulative signup mix, bounty counts, and invite-program expenditure.', inputs: 'invite_signups and invite_payouts.', outputs: 'Invite program performance dashboard.', caveat: 'Numbers are only trustworthy after the target source is re-ingested and reconciled.', dbt: 'daily_invite_metrics' },
+          { id: 'invite_funnel_snapshot', name: 'invite_funnel_snapshot', status: 'live', grain: 'One row per funnel stage', materialization: 'Table', summary: 'Current invite funnel from signup through claims, eligibility, and bounty paid.', inputs: 'invitee_lifecycle.', outputs: 'Invite funnel dashboard.', caveat: 'A snapshot table; refreshed on dbt build.', dbt: 'invite_funnel_snapshot' }
+        ]}
+      ],
+      edges: [
+        ['claim_src', 'claim_stg'], ['invite_src', 'invite_stg'],
+        ['claim_stg', 'claim_events'], ['invite_stg', 'invite_signups'], ['invite_stg', 'invite_payouts'],
+        ['claim_events', 'claimer_activity'], ['claim_events', 'invitee_lifecycle'],
+        ['invite_signups', 'invitee_lifecycle'], ['invite_payouts', 'invitee_lifecycle'],
+        ['claim_events', 'daily_claim_activity'], ['claim_events', 'weekly_claimer_retention'],
+        ['invite_signups', 'daily_invite_metrics'], ['invite_payouts', 'daily_invite_metrics'],
+        ['invitee_lifecycle', 'invite_funnel_snapshot']
+      ]
+    };
+
+    const target = {
+      title: 'Target medallion architecture',
+      caption: 'Target design. Select current, planned, and later nodes to inspect their purpose and boundaries.',
+      noteTitle: 'Target scope boundary',
+      note: 'The immediate slice is bounded to Celo and XDC over the declared recent window. The universal schema is a capture foundation; later contract families and marts require separate scope and build work.',
+      layers: [
+        { id: 'raw', label: 'L0 Raw', sub: 'Pipeline-owned tables', accent: 'var(--rust)', nodes: [
+          { id: 'rawlogs', name: 'RawLogs', status: 'rewire', grain: 'One captured log', materialization: 'Partitioned BigQuery table', summary: 'Universal, undecoded log storage. Keeps the original topics and data so an event can be decoded again without changing a contract-specific raw schema.', inputs: 'Configured chain and contract capture.', outputs: 'Event-family staging and L2 facts.', caveat: 'Only logs in the configured ingestion scope are captured; the schema alone does not ingest every contract.' },
+          { id: 'transactions', name: 'Transactions', status: 'rewire', grain: 'One transaction with a captured log', materialization: 'Partitioned BigQuery table', summary: 'Transaction context associated with captured logs, separated from the log grain.', inputs: 'Transactions referenced by captured logs.', outputs: 'Transaction context for facts such as claim attribution.', caveat: 'Transactions with no captured log, including eventless reverted transactions, are absent by construction.' }
+        ]},
+        { id: 'target_stg', label: 'L1 Staging', sub: 'Logical decode families', accent: 'var(--slate)', nodes: [
+          { id: 'stg_claim', name: 'Claim staging', status: 'planned', grain: 'One decoded claim event', materialization: 'View', summary: 'Typed and normalized claim rows decoded from RawLogs against the event registry.', inputs: 'RawLogs, event_surface, contract_deployments.', outputs: 'claim_events.', caveat: 'Logical family label. Final dbt node name is set during the v4 model implementation.' },
+          { id: 'stg_identity', name: 'Identity staging', status: 'planned', grain: 'One decoded identity event', materialization: 'View', summary: 'Normalized whitelist, authentication, and blacklist event rows.', inputs: 'RawLogs and event registry.', outputs: 'identity_events.', caveat: 'Events alone do not reconstruct every historical identity state change; the model must preserve that limitation.' },
+          { id: 'stg_transfer', name: 'Transfer staging', status: 'planned', grain: 'One decoded transfer', materialization: 'View', summary: 'Normalized ERC20 transfer legs with addresses and exact raw amounts.', inputs: 'RawLogs and event registry.', outputs: 'gd_transfers.', caveat: 'Discrete Transfer events do not capture continuous Superfluid balance movement.' },
+          { id: 'stg_faucet', name: 'Faucet staging', status: 'planned', grain: 'One top-up event', materialization: 'View', summary: 'Normalized gas subsidy events with recipient, amount, and relayer context.', inputs: 'RawLogs and event registry.', outputs: 'faucet_topups.', caveat: 'Only chains and faucet contracts included in the active release scope are present.' },
+          { id: 'stg_invite', name: 'Invite staging', status: 'planned', grain: 'One decoded invite event', materialization: 'View', summary: 'Normalized invite signup and bounty events from the shared raw-log format.', inputs: 'RawLogs and event registry.', outputs: 'invite_signups and invite_payouts.', caveat: 'Existing invite semantics are to be rewired and validated, not assumed correct by virtue of schema migration.' }
+        ]},
+        { id: 'target_facts', label: 'L2 Facts', sub: 'One row per business event', accent: 'var(--teal)', nodes: [
+          { id: 'target_claim_events', name: 'claim_events', status: 'rewire', grain: 'One claim', materialization: 'View', summary: 'Canonical claim event with normalized GD amount and traceable token-decimal source.', inputs: 'Claim staging, token reference, and transaction context where available.', outputs: 'Claimer activity, wallet-day activity, invite lifecycle, claim marts.', caveat: 'The current model exists; its input path and retained columns need migration testing.', dbt: 'claim_events' },
+          { id: 'identity_events', name: 'identity_events', status: 'planned', grain: 'One identity event', materialization: 'View', summary: 'Canonical identity-change fact across supported Identity event types.', inputs: 'Identity staging.', outputs: 'Wallet identity history and identity-related metrics.', caveat: 'An event stream is not a complete point-in-time identity state source.' },
+          { id: 'gd_transfers', name: 'gd_transfers', status: 'planned', grain: 'One ERC20 transfer', materialization: 'View', summary: 'Canonical GoodDollar movement fact. A single transfer_class definition classifies mint, burn, claim, invite, DEX, bridge, builder, relayer, contract, and peer-to-peer flows.', inputs: 'Transfer staging and address_labels.', outputs: 'Wallet flows, wallet-day activity, supply and flow marts, integrity signals.', caveat: 'Transfer classification depends on governed address labels; it does not observe stream settlement without events.' },
+          { id: 'faucet_topups', name: 'faucet_topups', status: 'planned', grain: 'One faucet top-up', materialization: 'View', summary: 'Canonical gas subsidy fact with recipient, amount, and funding-source context.', inputs: 'Faucet staging.', outputs: 'Wallet subsidy attributes, wallet-day activity, and subsidy marts.', caveat: 'USD cost requires an explicit price source.' },
+          { id: 'invite_signups_target', name: 'invite_signups', status: 'rewire', grain: 'One InviteeJoined event', materialization: 'View', summary: 'Classifies referral, campaign, and no-code signup once for every downstream consumer.', inputs: 'Invite staging.', outputs: 'invitee_lifecycle and daily invite metrics.', caveat: 'Current semantic definition is reused, with new source data re-ingested and validated.', dbt: 'invite_signups' },
+          { id: 'invite_payouts_target', name: 'invite_payouts', status: 'rewire', grain: 'One InviterBounty event', materialization: 'View', summary: 'Canonical payout fact with payout origin and GD amounts.', inputs: 'Invite staging.', outputs: 'invitee_lifecycle and daily invite metrics.', caveat: 'The invitee amount is currently a fixed assumption; transfer attribution is needed to observe both payment legs.', dbt: 'invite_payouts' },
+          { id: 'later_facts', name: 'Later contract facts', status: 'later', grain: 'Process-specific event grains', materialization: 'Views when scoped', summary: 'Future facts for cross-chain bridge transfers, detailed DEX swaps, reserve trades, supply expansion, governance, and staking.', inputs: 'Additional contract/event coverage and event-registry entries.', outputs: 'Later economics and governance marts.', caveat: 'These domains are not part of the immediate release. Several exact dbt model names remain unspecified.' }
+        ]},
+        { id: 'target_entities', label: 'L2 Entities', sub: 'Reusable wallet / invitee grain', accent: 'var(--forest)', nodes: [
+          { id: 'wallet_identity_history', name: 'wallet_identity_history', status: 'planned', grain: 'Address x identity state interval', materialization: 'Table', summary: 'Type-2 history of identity state with valid-from and valid-to dates for point-in-time questions.', inputs: 'Identity facts plus required state evidence.', outputs: 'dim_wallet, daily wallet activity, activation and integrity metrics.', caveat: 'The Celo brief also names a separate wallet_identity table. Whether current state is a separate relation or only in dim_wallet remains unresolved.' },
+          { id: 'claimer_activity_target', name: 'claimer_activity', status: 'rewire', grain: 'Claimer x network', materialization: 'Target table; current view', summary: 'Reusable lifetime claimer attributes, extended with cohort and streak measures as needed.', inputs: 'claim_events.', outputs: 'dim_wallet and retention/engagement marts.', caveat: 'Materialization change is part of target design, not the current dbt config.', dbt: 'claimer_activity' },
+          { id: 'wallet_gd_flows', name: 'wallet_gd_flows', status: 'planned', grain: 'Wallet x network', materialization: 'Table', summary: 'Lifetime GD received/sent by flow class and approximate current balance.', inputs: 'gd_transfers and address_labels.', outputs: 'dim_wallet and wallet/economic marts.', caveat: 'Balance from Transfer history is approximate where token balances change without discrete events.' },
+          { id: 'wallet_faucet', name: 'wallet_faucet', status: 'planned', grain: 'Wallet x network', materialization: 'Table', summary: 'Cumulative subsidy received and first known funding source.', inputs: 'faucet_topups.', outputs: 'dim_wallet and subsidy/activation metrics.', caveat: 'Native-token USD valuation depends on the price policy.' },
+          { id: 'invitee_lifecycle_target', name: 'invitee_lifecycle -> invitee', status: 'rewire', grain: 'One invitee', materialization: 'Target entity; current view', summary: 'Signup-to-claim-to-payout lifecycle, including retention after payout.', inputs: 'invite_signups, claim_events, invite_payouts.', outputs: 'Invite funnel and cost-of-acquisition metrics.', caveat: 'Keep current business rules, but prove the wider-chain behavior against onchain totals.', dbt: 'invitee_lifecycle' },
+          { id: 'dim_wallet', name: 'dim_wallet', status: 'planned', grain: 'Address x network', materialization: 'Table', summary: 'Conformed wallet profile assembled from activity, identity, flow, subsidy, and governed labels.', inputs: 'Wallet entities plus address_labels.', outputs: 'Protocol activity, activation, scorecard, and integrity marts.', caveat: 'Risk scores stay separate so they do not leak into every ordinary wallet join.' }
+        ]},
+        { id: 'target_bridge', label: 'L2 Activity Bridge', sub: 'Sparse wallet-day grain', accent: 'var(--forest)', nodes: [
+          { id: 'daily_wallet_activity', name: 'daily_wallet_activity', status: 'planned', grain: 'Activity date x network x address', materialization: 'Incremental table', summary: 'Sparse daily activity spine combining claims, transfers, faucet top-ups, and identity state. Reuses one wallet-day grain for DAU, cohorts, retention, and streaks.', inputs: 'claim_events, gd_transfers, faucet_topups, identity history.', outputs: 'Daily protocol, wallet retention, activation, and monthly KPI marts.', caveat: 'Only active wallet-days are stored; this avoids a dense all-wallet calendar snapshot.' }
+        ]},
+        { id: 'target_marts', label: 'L3 Marts', sub: 'Question-shaped dashboard tables', accent: 'var(--gold)', nodes: [
+          { id: 'daily_protocol_activity', name: 'daily_protocol_activity', status: 'planned', grain: 'Date x network', materialization: 'Table', summary: 'Headline activity: active claimers/wallets, new wallets/verified identities, GD claimed, and GD movement.', inputs: 'dim_wallet and daily_wallet_activity.', outputs: 'Growth and adoption dashboard.', caveat: 'Target output; not present in the current dbt project.' },
+          { id: 'daily_claim_activity_target', name: 'daily_claim_activity', status: 'rewire', grain: 'Date x network', materialization: 'Table', summary: 'Daily claim count, unique claimers, GD amount, and trend measures.', inputs: 'claim_events.', outputs: 'Claim activity dashboard.', caveat: 'Current table exists; it must be rebuilt from the v4-backed fact.', dbt: 'daily_claim_activity' },
+          { id: 'weekly_retention_target', name: 'weekly_claimer_retention', status: 'rewire', grain: 'Cohort week x network x week offset', materialization: 'Table', summary: 'Claim-based cohort retention over time.', inputs: 'claim_events.', outputs: 'Retention heatmap.', caveat: 'Current table exists; any-activity retention is a separate target mart.', dbt: 'weekly_claimer_retention' },
+          { id: 'wallet_cohort_retention', name: 'wallet_cohort_retention', status: 'planned', grain: 'Cohort week x network x week offset', materialization: 'Table', summary: 'Retention by any wallet activity, not claims alone.', inputs: 'daily_wallet_activity.', outputs: 'Growth and adoption dashboard.', caveat: 'Target output; not present in the current dbt project.' },
+          { id: 'activation_funnel', name: 'activation_funnel_snapshot', status: 'planned', grain: 'Funnel stage x network', materialization: 'Table', summary: 'Verification, funding, first claim, third claim, first spend, and active-at-30-day progression.', inputs: 'Identity, faucet, claim, transfer, and wallet entities.', outputs: 'Growth and adoption dashboard.', caveat: 'Stage rules and snapshot timing must be documented before publication.' },
+          { id: 'daily_invite_metrics_target', name: 'daily_invite_metrics', status: 'rewire', grain: 'Date x network', materialization: 'Table', summary: 'Daily and cumulative signup mix, bounty counts, and invite expenditure.', inputs: 'invite_signups and invite_payouts.', outputs: 'Invite program dashboard.', caveat: 'Current mart exists and should generalize only after multi-chain validation.', dbt: 'daily_invite_metrics' },
+          { id: 'invite_funnel_target', name: 'invite_funnel_snapshot', status: 'rewire', grain: 'Funnel stage x network', materialization: 'Table', summary: 'Invite signup, claim, eligibility, and payout conversion.', inputs: 'invitee_lifecycle.', outputs: 'Invite program dashboard.', caveat: 'Current mart exists; scope by network in the target.', dbt: 'invite_funnel_snapshot' },
+          { id: 'daily_gd_supply', name: 'daily_gd_supply', status: 'planned', grain: 'Date x network', materialization: 'Table', summary: 'GD minted, burned, net issuance, and cumulative supply.', inputs: 'gd_transfers zero-address legs.', outputs: 'Token economics dashboard.', caveat: 'Reconcile cumulative supply against the token contract before publishing.' },
+          { id: 'daily_gd_flows', name: 'daily_gd_flows', status: 'planned', grain: 'Date x network x transfer class', materialization: 'Table', summary: 'Transfer volume, count, senders, and receivers by governed flow class.', inputs: 'gd_transfers and address_labels.', outputs: 'Token economics dashboard.', caveat: 'Relayer hops must be flagged to avoid double-counting economic activity.' },
+          { id: 'gd_holder_distribution', name: 'gd_holder_distribution', status: 'planned', grain: 'Snapshot date x network x balance bucket', materialization: 'Table', summary: 'Holder concentration and balance-bucket distribution.', inputs: 'Wallet flows and transfer history.', outputs: 'Token economics dashboard.', caveat: 'Transfer-derived balances are approximate for continuous stream movement.' },
+          { id: 'daily_dex_gd_flows', name: 'daily_dex_gd_flows', status: 'planned', grain: 'Date x pool', materialization: 'Table', summary: 'GD flowing into and out of labelled DEX pools, with net flow and counterparties.', inputs: 'gd_transfers and address_labels.', outputs: 'Token economics dashboard.', caveat: 'The GD leg is available from transfers; quote-token valuation may need DEX event coverage.' },
+          { id: 'wallet_risk_signals', name: 'wallet_risk_signals', status: 'later', grain: 'One wallet per signal set', materialization: 'Restricted table', summary: 'Named risk indicators kept out of the shared wallet dimension.', inputs: 'Identity, claims, transfers, labels, and wallet activity.', outputs: 'Integrity analysis.', caveat: 'Restricted by design; not a general dashboard dimension.' },
+          { id: 'sweep_clusters', name: 'sweep_clusters', status: 'later', grain: 'Date x receiving address', materialization: 'Table', summary: 'Potential sweep destinations and distinct-claimer source counts.', inputs: 'Transfer graph and claim activity.', outputs: 'Integrity analysis.', caveat: 'Signals require interpretation; not a definitive fraud label.' },
+          { id: 'daily_faucet_subsidy', name: 'daily_faucet_subsidy', status: 'planned', grain: 'Date x network', materialization: 'Table', summary: 'Top-ups, subsidized wallets, native-token amount, and estimated USD cost.', inputs: 'faucet_topups and price reference.', outputs: 'Capital and cost reporting.', caveat: 'USD conversion depends on an explicit price source and confidence policy.' },
+          { id: 'monthly_protocol_kpis', name: 'monthly_protocol_kpis', status: 'planned', grain: 'Month x network', materialization: 'Table', summary: 'Board and grant-report summary of activity, onboarding, claimed GD, velocity, and subsidy cost.', inputs: 'Wallet, daily activity, transfer, identity, and faucet entities.', outputs: 'Capital narrative and reporting.', caveat: 'Every component metric inherits its own source and confidence limitations.' },
+          { id: 'daily_builder_attribution', name: 'daily_builder_attribution', status: 'later', grain: 'Date x project', materialization: 'Table', summary: 'GD activity attributed to registered builder-project contracts.', inputs: 'gd_transfers and populated project/address registry.', outputs: 'Builder impact reporting.', caveat: 'Gated on a governed project registry.' },
+          { id: 'governance_outputs', name: 'Governance / staking outputs', status: 'later', grain: 'Not specified', materialization: 'Not specified', summary: 'The domain design calls for voter participation, proposal outcomes, power concentration, and stake metrics.', inputs: 'Governance and staking facts after those contract families are scoped.', outputs: 'Future governance reporting.', caveat: 'These output models and grains are not named or frozen yet.' }
+        ]}
+      ],
+      edges: [
+        ['rawlogs', 'stg_claim'], ['rawlogs', 'stg_identity'], ['rawlogs', 'stg_transfer'], ['rawlogs', 'stg_faucet'], ['rawlogs', 'stg_invite'], ['rawlogs', 'later_facts'],
+        ['stg_claim', 'target_claim_events'], ['stg_identity', 'identity_events'], ['stg_transfer', 'gd_transfers'], ['stg_faucet', 'faucet_topups'], ['stg_invite', 'invite_signups_target'], ['stg_invite', 'invite_payouts_target'],
+        ['target_claim_events', 'claimer_activity_target'], ['target_claim_events', 'invitee_lifecycle_target'], ['target_claim_events', 'daily_wallet_activity'],
+        ['identity_events', 'wallet_identity_history'], ['gd_transfers', 'wallet_gd_flows'], ['gd_transfers', 'daily_wallet_activity'], ['faucet_topups', 'wallet_faucet'], ['faucet_topups', 'daily_wallet_activity'],
+        ['invite_signups_target', 'invitee_lifecycle_target'], ['invite_payouts_target', 'invitee_lifecycle_target'],
+        ['wallet_identity_history', 'dim_wallet'], ['claimer_activity_target', 'dim_wallet'], ['wallet_gd_flows', 'dim_wallet'], ['wallet_faucet', 'dim_wallet'],
+        ['target_claim_events', 'daily_claim_activity_target'], ['target_claim_events', 'weekly_retention_target'], ['daily_wallet_activity', 'daily_protocol_activity'], ['daily_wallet_activity', 'wallet_cohort_retention'], ['dim_wallet', 'daily_protocol_activity'], ['dim_wallet', 'activation_funnel'],
+        ['invitee_lifecycle_target', 'invite_funnel_target'], ['invite_signups_target', 'daily_invite_metrics_target'], ['invite_payouts_target', 'daily_invite_metrics_target'],
+        ['gd_transfers', 'daily_gd_supply'], ['gd_transfers', 'daily_gd_flows'], ['gd_transfers', 'gd_holder_distribution'], ['gd_transfers', 'daily_dex_gd_flows'], ['wallet_gd_flows', 'gd_holder_distribution'],
+        ['target_claim_events', 'wallet_risk_signals'], ['gd_transfers', 'wallet_risk_signals'], ['daily_wallet_activity', 'sweep_clusters'], ['gd_transfers', 'sweep_clusters'],
+        ['faucet_topups', 'daily_faucet_subsidy'], ['dim_wallet', 'monthly_protocol_kpis'], ['daily_wallet_activity', 'monthly_protocol_kpis'], ['gd_transfers', 'daily_builder_attribution'],
+        ['later_facts', 'governance_outputs'], ['later_facts', 'daily_gd_supply']
+      ]
+    };
+
+    const views = { current, target };
+    const statusLabels = { live: 'Live in dbt', rewire: 'Rebuild / rewire', planned: 'Planned', later: 'Later scope' };
+    let activeView = 'target';
+    let selectedNode = null;
+    let activeReference = null;
+    let searchTerm = '';
+
+    const board = document.getElementById('board');
+    const graphScroll = document.getElementById('graph-scroll');
+    const scopeNote = document.getElementById('scope-note');
+    const referenceRow = document.getElementById('references');
+    const searchInput = document.getElementById('search');
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+    }
+
+    function allNodes(view) {
+      return view.layers.flatMap((layer) => layer.nodes.map((node) => ({ ...node, layerLabel: layer.label })));
+    }
+
+    function renderReferences() {
+      referenceRow.innerHTML = '<span class="references-label">Shared references</span>' + references.map((reference) =>
+        `<button class="reference-chip" type="button" data-reference="${escapeHtml(reference.id)}">${escapeHtml(reference.name)}</button>`
+      ).join('');
+      referenceRow.querySelectorAll('[data-reference]').forEach((button) => {
+        button.addEventListener('click', () => showReference(button.dataset.reference));
+      });
+    }
+
+    function renderNode(node, layer) {
+      const grain = node.grain ? `<span class="node-grain">${escapeHtml(node.grain)}</span>` : '';
+      return `<button type="button" class="node" id="node-${escapeHtml(node.id)}" data-node="${escapeHtml(node.id)}" data-status="${escapeHtml(node.status)}" style="--node-accent:${layer.accent};--node-line:#d2ddd7;--node-bg:#f7faf8" aria-label="Inspect ${escapeHtml(node.name)}">
+        <span class="node-name">${escapeHtml(node.name)}</span>
+        ${grain}
+        <span class="status ${escapeHtml(node.status)}">${escapeHtml(statusLabels[node.status] || node.status)}</span>
+      </button>`;
+    }
+
+    function renderGraph() {
+      const view = views[activeView];
+      document.getElementById('graph-title').textContent = view.title;
+      document.getElementById('graph-caption').textContent = view.caption;
+      scopeNote.innerHTML = `<strong>${escapeHtml(view.noteTitle)}</strong><span>${escapeHtml(view.note)}</span>`;
+      board.style.setProperty('--column-count', view.layers.length);
+      board.innerHTML = view.layers.map((layer, index) => `<section class="layer" data-layer="${escapeHtml(layer.id)}" style="--layer-accent:${layer.accent}">
+        <header class="layer-header"><span class="layer-index">${String(index + 1).padStart(2, '0')} / ${escapeHtml(activeView === 'current' ? 'LIVE' : 'TARGET')}</span><span class="layer-name">${escapeHtml(layer.label)}</span><span class="graph-caption">${escapeHtml(layer.sub)}</span></header>
+        <div class="nodes">${layer.nodes.map((node) => renderNode(node, layer)).join('')}</div>
+      </section>`).join('') + '<svg class="connections" aria-hidden="true"></svg>';
+
+      board.querySelectorAll('[data-node]').forEach((button) => {
+        button.addEventListener('click', () => {
+          selectedNode = button.dataset.node;
+          activeReference = null;
+          showNodeDetails(selectedNode);
+          updateHighlights();
+        });
+      });
+
+      applySearch();
+      requestAnimationFrame(drawConnections);
+    }
+
+    function appendFact(label, value) {
+      if (!value) return '';
+      return `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+    }
+
+    function showNodeDetails(id) {
+      const node = allNodes(views[activeView]).find((entry) => entry.id === id);
+      if (!node) return;
+      document.getElementById('detail-layer').textContent = node.layerLabel;
+      document.getElementById('detail-name').textContent = node.name;
+      document.getElementById('detail-status').innerHTML = `<span class="status ${escapeHtml(node.status)}">${escapeHtml(statusLabels[node.status] || node.status)}</span>`;
+      document.getElementById('detail-summary').textContent = node.summary || '';
+      document.getElementById('detail-facts').innerHTML = appendFact('Grain', node.grain) + appendFact('Materialization', node.materialization) + appendFact('Status', statusLabels[node.status] || node.status);
+      setDetailSection('inputs-section', 'detail-inputs', node.inputs);
+      setDetailSection('outputs-section', 'detail-outputs', node.outputs);
+      setDetailSection('caveat-section', 'detail-caveat', node.caveat);
+      const link = document.getElementById('model-link');
+      if (node.dbt) {
+        link.href = `${DBT_DOCS}${encodeURIComponent(node.dbt)}?g_v=1`;
+        link.hidden = false;
+      } else {
+        link.hidden = true;
+        link.removeAttribute('href');
+      }
+    }
+
+    function setDetailSection(sectionId, textId, value) {
+      const section = document.getElementById(sectionId);
+      section.hidden = !value;
+      if (value) document.getElementById(textId).textContent = value;
+    }
+
+    function showReference(id) {
+      const reference = references.find((entry) => entry.id === id);
+      if (!reference) return;
+      activeReference = id;
+      selectedNode = null;
+      document.getElementById('detail-layer').textContent = 'Shared reference';
+      document.getElementById('detail-name').textContent = reference.name;
+      document.getElementById('detail-status').innerHTML = `<span class="status planned">${escapeHtml(reference.status)}</span>`;
+      document.getElementById('detail-summary').textContent = reference.purpose;
+      document.getElementById('detail-facts').innerHTML = appendFact('Grain', reference.grain) + appendFact('Type', 'Shared input');
+      setDetailSection('inputs-section', 'detail-inputs', null);
+      setDetailSection('outputs-section', 'detail-outputs', null);
+      setDetailSection('caveat-section', 'detail-caveat', reference.caveat);
+      document.getElementById('model-link').hidden = true;
+      updateHighlights();
+    }
+
+    function drawConnections() {
+      const view = views[activeView];
+      const svg = board.querySelector('.connections');
+      if (!svg) return;
+      const boardRect = board.getBoundingClientRect();
+      const width = board.scrollWidth;
+      const height = board.scrollHeight;
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.innerHTML = view.edges.map(([from, to]) => {
+        const source = board.querySelector(`[data-node="${CSS.escape(from)}"]`);
+        const targetNode = board.querySelector(`[data-node="${CSS.escape(to)}"]`);
+        if (!source || !targetNode || source.hidden || targetNode.hidden) return '';
+        const a = source.getBoundingClientRect();
+        const b = targetNode.getBoundingClientRect();
+        const x1 = a.right - boardRect.left;
+        const y1 = a.top - boardRect.top + a.height / 2;
+        const x2 = b.left - boardRect.left;
+        const y2 = b.top - boardRect.top + b.height / 2;
+        const bend = Math.max(24, (x2 - x1) * .38);
+        const active = selectedNode && (selectedNode === from || selectedNode === to);
+        return `<path class="connection${active ? ' is-active' : ''}" data-from="${from}" data-to="${to}" d="M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}"/>`;
+      }).join('');
+      updateHighlights();
+    }
+
+    function updateHighlights() {
+      const view = views[activeView];
+      const connected = new Set();
+      if (selectedNode) {
+        connected.add(selectedNode);
+        view.edges.forEach(([from, to]) => {
+          if (from === selectedNode) connected.add(to);
+          if (to === selectedNode) connected.add(from);
+        });
+      }
+      board.querySelectorAll('[data-node]').forEach((button) => {
+        const matchesSearch = !searchTerm || button.textContent.toLowerCase().includes(searchTerm);
+        button.classList.toggle('is-selected', button.dataset.node === selectedNode);
+        button.classList.toggle('is-dimmed', Boolean(selectedNode) && !connected.has(button.dataset.node));
+        button.hidden = !matchesSearch;
+      });
+      board.querySelectorAll('.connection').forEach((path) => {
+        const from = path.dataset.from;
+        const to = path.dataset.to;
+        path.classList.toggle('is-active', Boolean(selectedNode) && (from === selectedNode || to === selectedNode));
+      });
+    }
+
+    function applySearch() {
+      searchTerm = searchInput.value.trim().toLowerCase();
+      board.querySelectorAll('[data-node]').forEach((button) => {
+        button.hidden = Boolean(searchTerm) && !button.textContent.toLowerCase().includes(searchTerm);
+      });
+      requestAnimationFrame(drawConnections);
+    }
+
+    document.querySelectorAll('[data-view]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (activeView === button.dataset.view) return;
+        activeView = button.dataset.view;
+        selectedNode = null;
+        activeReference = null;
+        document.querySelectorAll('[data-view]').forEach((candidate) => candidate.setAttribute('aria-pressed', String(candidate === button)));
+        renderGraph();
+        const firstNode = allNodes(views[activeView])[0];
+        if (firstNode) { selectedNode = firstNode.id; showNodeDetails(selectedNode); updateHighlights(); }
+      });
+    });
+
+    searchInput.addEventListener('input', applySearch);
+    graphScroll.addEventListener('scroll', () => requestAnimationFrame(drawConnections), { passive: true });
+    window.addEventListener('resize', () => requestAnimationFrame(drawConnections));
+    renderReferences();
+    renderGraph();
+    selectedNode = 'rawlogs';
+    showNodeDetails(selectedNode);
+    updateHighlights();
+  </script>
+</body>
+</html>
