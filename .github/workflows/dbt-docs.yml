@@ -14,6 +14,7 @@ on:
     branches: [master]
     paths:
       - 'projects/onchain-analytics/gd_dbt/**'
+      - 'projects/onchain-analytics/lineage-map/**'
       - 'tools/utm-builder/**'
       - 'projects/antseed-analytics/dashboard/**'
       - '.github/workflows/dbt-docs.yml'
@@ -81,6 +82,9 @@ jobs:
           # Deploy dbt docs into /onchain-analytics/ subfolder
           mkdir -p "$tmp/onchain-analytics"
           cp source/projects/onchain-analytics/gd_dbt/target/static_index.html "$tmp/onchain-analytics/index.html"
+          # Deploy the interactive current/target model map beside dbt Docs
+          mkdir -p "$tmp/onchain-analytics/map"
+          cp source/projects/onchain-analytics/lineage-map/index.html "$tmp/onchain-analytics/map/index.html"
           # Deploy UTM builder tool into /utm-builder/ subfolder
           mkdir -p "$tmp/utm-builder"
           cp source/tools/utm-builder/index.html "$tmp/utm-builder/index.html"
