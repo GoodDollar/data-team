@@ -1,6 +1,18 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v6.2
+ * GOODDOLLAR DASHBOARD v6.3
  * =========================================
+ *
+ * CHANGELOG v6.3 (2026-10-19)
+ * - XDC invites ingest now reads logs from public XDC RPC (eth_getLogs)
+ *   instead of Envio HyperSync. HyperSync's XDC index froze at block
+ *   107807702 (2026-09-29) and the old code treated its archive height as
+ *   the chain tip, so it appended nothing without raising an error.
+ * - XDC_RPC_URLS: added rpc.xdcrpc.com, rpc.ankr.com/xdc, xdc.public-rpc.com
+ *   as fallbacks (xinfin endpoints answered HTTP 403 on 2026-10-19).
+ * - xdcInvitesRebuildFacts(): one-off repair that replaces every
+ *   xdc_invites_* Daily Facts row with values recomputed from the raw sheet.
+ *   Needed because facts are append-only, so zero rows written during an
+ *   ingest stall are never corrected by later runs.
  *
  * CHANGELOG v6.2 (2026-09-08)
  * - buildRows: added a staleness scan for Dune/Subgraph/Reserve metrics.
@@ -201,7 +213,18 @@ const XDC_COLLATERAL_TOKENS = {
 const XDC_RPC_URLS = [
   'https://rpc.xinfin.network',
   'https://rpc1.xinfin.network',
+  'https://rpc.xdcrpc.com',
+  'https://rpc.ankr.com/xdc',
+  'https://xdc.public-rpc.com',
 ];
+
+/** XDC endpoints for eth_getLogs, each with its max accepted block span (measured 2026-10-19). */
+const XDC_LOGS_RPCS = [
+  { url: 'https://rpc.xdcrpc.com',     span: 10000 },
+  { url: 'https://rpc.ankr.com/xdc',   span: 1000 },
+  { url: 'https://xdc.public-rpc.com', span: 1000 },
+];
+const XDC_FINALITY_BLOCKS = 15;
 const XDC_RPC_URL = XDC_RPC_URLS[0];
 
 /** Dune Analytics query IDs — each powers one or more metrics via column indices */
@@ -3997,6 +4020,129 @@ function hypersyncPostWithRetry(body) {
   throw new Error('Hypersync failed after retries: ' + (lastError && lastError.message));
 }
 
+// ----- XDC RPC log reader (replaces Hypersync for invites, v6.3) -----
+
+/** Send a batch of JSON-RPC calls to one endpoint in parallel. Throws on any HTTP or RPC error. */
+function xdcLogsRpcBatch(url, calls) {
+  const reqs = calls.map(function(c, i) {
+    return {
+      url: url,
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      payload: JSON.stringify({ jsonrpc: '2.0', id: i + 1, method: c.method, params: c.params })
+    };
+  });
+  return UrlFetchApp.fetchAll(reqs).map(function(res) {
+    const status = res.getResponseCode();
+    const text = res.getContentText();
+    if (status < 200 || status >= 300) throw new Error(url + ' HTTP ' + status + ': ' + text.slice(0, 200));
+    const json = JSON.parse(text);
+    if (json.error) throw new Error(url + ' RPC error: ' + JSON.stringify(json.error).slice(0, 200));
+    return json.result;
+  });
+}
+
+/** Same batch, trying each XDC_LOGS_RPCS endpoint in turn. */
+function xdcLogsRpcBatchAny(calls) {
+  var lastError = null;
+  for (var i = 0; i < XDC_LOGS_RPCS.length; i++) {
+    try {
+      return xdcLogsRpcBatch(XDC_LOGS_RPCS[i].url, calls);
+    } catch (e) {
+      lastError = e;
+      Logger.log('  xdc rpc: ' + e.message + ' -- trying next endpoint');
+    }
+  }
+  throw lastError || new Error('All XDC log RPC endpoints failed');
+}
+
+function xdcRpcLogToRecord(l) {
+  return {
+    block_number:     parseInt(l.blockNumber, 16),
+    transaction_hash: l.transactionHash,
+    log_index:        parseInt(l.logIndex, 16),
+    address:          String(l.address).toLowerCase(),
+    topic0:           l.topics[0] || null,
+    topic1:           l.topics[1] || null,
+    topic2:           l.topics[2] || null,
+    data:             l.data
+  };
+}
+
+/**
+ * Fetch invites-contract events + G$ Transfers out of the invites contract
+ * from fromBlock to (chain tip - finality), via public XDC RPC.
+ * Returns the same shape as hypersyncFetchLogs().
+ */
+function xdcRpcFetchInviteLogs(opts) {
+  const deadlineMs = opts.deadlineMs || (Date.now() + XDC_INVITES_CFG.TIME_BUDGET_MS);
+  const paddedInvites = '0x' + XDC_INVITES_CFG.CONTRACT.replace(/^0x/, '').toLowerCase().padStart(64, '0');
+  const target = parseInt(xdcLogsRpcBatchAny([{ method: 'eth_blockNumber', params: [] }])[0], 16)
+                 - XDC_FINALITY_BLOCKS;
+
+  const logs = [];
+  var cursor = opts.fromBlock;
+  var calls = 0;
+  var lastError = null;
+  var outOfTime = false;
+
+  for (var ep = 0; ep < XDC_LOGS_RPCS.length && cursor <= target && !outOfTime; ep++) {
+    const url = XDC_LOGS_RPCS[ep].url;
+    const span = XDC_LOGS_RPCS[ep].span;
+    try {
+      while (cursor <= target) {
+        if (Date.now() > deadlineMs) { outOfTime = true; break; }
+        const to = Math.min(cursor + span - 1, target);
+        const fromHex = '0x' + cursor.toString(16);
+        const toHex = '0x' + to.toString(16);
+        const res = xdcLogsRpcBatch(url, [
+          { method: 'eth_getLogs', params: [{
+              address: XDC_INVITES_CFG.CONTRACT, fromBlock: fromHex, toBlock: toHex,
+              topics: [[XDC_INVITES_CFG.TOPIC_INVITEE_JOINED, XDC_INVITES_CFG.TOPIC_INVITER_BOUNTY]] }] },
+          { method: 'eth_getLogs', params: [{
+              address: XDC_INVITES_CFG.GD_TOKEN, fromBlock: fromHex, toBlock: toHex,
+              topics: [XDC_INVITES_CFG.TOPIC_TRANSFER, paddedInvites] }] }
+        ]);
+        calls += 2;
+        for (var a = 0; a < res.length; a++) {
+          for (var j = 0; j < res[a].length; j++) logs.push(xdcRpcLogToRecord(res[a][j]));
+        }
+        cursor = to + 1;
+      }
+    } catch (e) {
+      lastError = e;
+      Logger.log('  xdc logs: ' + e.message + ' at block ' + cursor + ' -- trying next endpoint');
+    }
+  }
+
+  if (cursor === opts.fromBlock && cursor <= target && lastError) throw lastError;
+
+  // Block timestamps for the blocks that carry invite events
+  const blocksByNumber = {};
+  const needed = {};
+  for (var k = 0; k < logs.length; k++) {
+    if (logs[k].address === XDC_INVITES_CFG.CONTRACT.toLowerCase()) needed[logs[k].block_number] = true;
+  }
+  const blockNums = Object.keys(needed).map(Number);
+  for (var b = 0; b < blockNums.length; b += 25) {
+    const slice = blockNums.slice(b, b + 25);
+    const blocks = xdcLogsRpcBatchAny(slice.map(function(n) {
+      return { method: 'eth_getBlockByNumber', params: ['0x' + n.toString(16), false] };
+    }));
+    for (var s = 0; s < slice.length; s++) blocksByNumber[slice[s]] = parseInt(blocks[s].timestamp, 16);
+  }
+
+  Logger.log('  xdc rpc: ' + calls + ' getLogs calls, ' + blockNums.length + ' block timestamps');
+  return {
+    logs: logs,
+    blocksByNumber: blocksByNumber,
+    lastScannedBlock: cursor - 1,
+    reachedTip: cursor > target,
+    pages: calls
+  };
+}
+
 // ----- Event parsers -----
 
 function xdcInvitesAddressFromTopic(topic) {
@@ -4268,31 +4414,10 @@ function xdcInvitesIngestStep() {
     Logger.log('  WARNING: campaign owner unresolved — campaign-code joins will be classified as referral until resolved');
   }
 
-  // Build the topic1 filter for G$ Transfer events FROM the invites contract.
-  const paddedInvitesContract = '0x' +
-    XDC_INVITES_CFG.CONTRACT.replace(/^0x/, '').toLowerCase().padStart(64, '0');
-
-  const result = hypersyncFetchLogs({
+  // Hypersync's XDC index froze 2026-09-29; read from public RPC instead.
+  const result = xdcRpcFetchInviteLogs({
     fromBlock: cursor,
-    deadlineMs: Date.now() + XDC_INVITES_CFG.TIME_BUDGET_MS,
-    logSelections: [
-      {
-        // Selection 1: invites contract events
-        address: [XDC_INVITES_CFG.CONTRACT],
-        topics: [[
-          XDC_INVITES_CFG.TOPIC_INVITEE_JOINED,
-          XDC_INVITES_CFG.TOPIC_INVITER_BOUNTY
-        ]]
-      },
-      {
-        // Selection 2: G$ Transfer events where from = invites contract
-        address: [XDC_INVITES_CFG.GD_TOKEN],
-        topics: [
-          [XDC_INVITES_CFG.TOPIC_TRANSFER],
-          [paddedInvitesContract]
-        ]
-      }
-    ]
+    deadlineMs: Date.now() + XDC_INVITES_CFG.TIME_BUDGET_MS
   });
 
   Logger.log('  fetched ' + result.logs.length + ' logs across ' + result.pages +
@@ -4352,6 +4477,55 @@ function xdcInvitesIngestStep() {
     lastBlock: result.lastScannedBlock,
     reachedTip: result.reachedTip
   };
+}
+
+// ----- Facts repair (v6.3) -----
+
+/**
+ * One-off repair, run manually AFTER updateXdcInvitesPipeline() reports "(at tip)".
+ * Deletes every xdc_invites_* row in Daily Facts and re-appends all of them,
+ * recomputed from the raw sheet. Only touches xdc_invites_* rows.
+ */
+function xdcInvitesRebuildFacts() {
+  const facts = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_FACTS);
+  const lastRow = facts.getLastRow();
+  if (lastRow >= 2) {
+    const keys = facts.getRange(2, 3, lastRow - 1, 1).getValues();
+    const rowNums = [];
+    for (var i = 0; i < keys.length; i++) {
+      if (String(keys[i][0]).indexOf('xdc_invites_') === 0) rowNums.push(i + 2);
+    }
+    // Delete bottom-up in contiguous runs so earlier row numbers stay valid.
+    var j = rowNums.length - 1;
+    while (j >= 0) {
+      var end = rowNums[j];
+      var start = end;
+      while (j - 1 >= 0 && rowNums[j - 1] === start - 1) { start--; j--; }
+      j--;
+      facts.deleteRows(start, end - start + 1);
+    }
+    Logger.log('xdcInvitesRebuildFacts: deleted ' + rowNums.length + ' xdc_invites_* rows');
+  }
+
+  const registryKeyByInviteKey = {};
+  Object.keys(METRICS).forEach(function(k) {
+    const spec = METRICS[k];
+    if (spec.adapter === 'XdcInvites' && spec.xdcInvites) registryKeyByInviteKey[spec.xdcInvites.metricKey] = k;
+  });
+
+  const runId = generateRunId();
+  const ts = nowIso();
+  const rows = [];
+  const agg = xdcInvitesAggregateRaw(CONFIG.XDC_GENESIS, getYesterdayYMD());
+  for (var r = 0; r < agg.length; r++) {
+    const key = registryKeyByInviteKey[agg[r].metric_key];
+    if (!key) continue;
+    rows.push({ date: agg[r].date, chain: 'XDC', metric_key: key, value: agg[r].value,
+                source: agg[r].source, run_id: runId, updated_at: ts });
+  }
+  // Empty batchByKey: no AGG rows are derived from this repair write.
+  writeFactsAndHealth({ rows: rows, health: [], runId: runId, batchByKey: {} }, getExistingFactsIndex());
+  Logger.log('xdcInvitesRebuildFacts: re-appended ' + rows.length + ' rows');
 }
 
 // ----- Aggregate -----
