@@ -31,7 +31,7 @@
  *  2) v6-specific diagnostics   — safe, no writes
  *  3) Dry-run / preview tools   — safe, no writes
  *  4) Gap and coverage reports  — safe, no writes
- *  5) Facts sheet maintenance   — deleteOldInviteRows
+ *  5) Facts sheet maintenance   — deleteOldInviteRows, xdcInvitesDedupeRaw
  *****/
 
 
@@ -608,4 +608,85 @@ function deleteOldInviteRows() {
   Logger.log('deleteOldInviteRows: deleting ' + toDelete.length + ' rows');
   toDelete.forEach(function(rowNum) { sheet.deleteRow(rowNum); });
   Logger.log('deleteOldInviteRows: done');
+}
+
+function xdcInvitesDedupeRaw() {
+  const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(XDC_INVITES_CFG.SHEET_RAW);
+  if (!sheet) throw new Error('XDC Invites Raw not found');
+  const lastRow = sheet.getLastRow();
+  if (!lastRow) throw new Error('Raw header missing');
+  const data = sheet.getRange(1, 1, lastRow, XDC_INVITES_RAW_COLS).getValues();
+  const header = data[0].slice();
+  if (header[8] === 'invite_type_or_bounty') header[8] = 'invite_type';
+  if (header[11] === 'total_paid_g' && !header[12]) {
+    header[11] = 'campaign_returned_g';
+    header[12] = 'total_paid_g';
+  }
+  if (JSON.stringify(header) !== JSON.stringify(XDC_INVITES_RAW_HEADERS)) {
+    throw new Error('Unsupported raw headers; no changes made');
+  }
+
+  const seen = {};
+  const rows = [];
+  var legacyRows = 0;
+  for (var index = 1; index < data.length; index++) {
+    const row = data[index].slice();
+    row[0] = formatYMD(row[0]);
+    row[1] = Number(row[1]);
+    row[2] = Number(row[2]);
+    row[3] = String(row[3]).trim().toLowerCase();
+    if (row[4] === '' || row[4] == null) throw new Error('Invalid log index at raw row ' + (index + 1));
+    row[4] = Number(row[4]);
+    row[6] = String(row[6]).trim().toLowerCase();
+    row[7] = String(row[7]).trim().toLowerCase();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(row[0]) || !isFinite(row[1]) || row[1] <= 0 ||
+        !isFinite(row[2]) || row[2] <= 0 || !/^0x[0-9a-f]{64}$/.test(row[3]) ||
+        !Number.isInteger(row[4]) || row[4] < 0 || !/^0x[0-9a-f]{40}$/.test(row[6]) ||
+        !/^0x[0-9a-f]{40}$/.test(row[7]) || ['InviteeJoined', 'InviterBounty'].indexOf(row[5]) === -1) {
+      throw new Error('Invalid event at raw row ' + (index + 1));
+    }
+    row[9] = Number(row[9] || 0);
+    row[10] = Number(row[10] || 0);
+    if (row[12] === '' || row[12] == null) {
+      row[12] = Number(row[11] || 0);
+      row[11] = Math.max(0, row[12] - row[9] - row[10]);
+      legacyRows++;
+    } else {
+      row[11] = Number(row[11] || 0);
+      row[12] = Number(row[12]);
+    }
+    if (row.slice(9, 13).some(function(value) { return !isFinite(value) || value < 0; })) {
+      throw new Error('Invalid payout at raw row ' + (index + 1));
+    }
+    if (Math.abs(row[12] - row[9] - row[10] - row[11]) > 0.000001) {
+      throw new Error('Inconsistent payout at raw row ' + (index + 1));
+    }
+    const key = row[3] + '|' + row[4];
+    const payload = JSON.stringify(row);
+    if (seen[key]) {
+      if (seen[key] !== payload) throw new Error('Conflicting duplicate ' + key + '; no changes made');
+      continue;
+    }
+    seen[key] = payload;
+    rows.push(row);
+  }
+
+  const summary = { rowsBefore: data.length - 1, rowsAfter: rows.length,
+    duplicatesRemoved: data.length - 1 - rows.length, legacyRowsNormalized: legacyRows, backupSheet: null };
+  if (!summary.duplicatesRemoved && !legacyRows && JSON.stringify(data[0]) === JSON.stringify(XDC_INVITES_RAW_HEADERS)) {
+    Logger.log('xdcInvitesDedupeRaw: ' + JSON.stringify(summary));
+    return summary;
+  }
+  summary.backupSheet = XDC_INVITES_CFG.SHEET_RAW + ' backup ' + Date.now();
+  sheet.copyTo(ss).setName(summary.backupSheet);
+  Logger.log('xdcInvitesDedupeRaw backup: ' + summary.backupSheet);
+  if (sheet.getLastRow() !== lastRow) throw new Error('Raw changed during backup; retry between scheduled executions');
+  sheet.getRange(1, 1, rows.length + 1, XDC_INVITES_RAW_COLS).setValues([XDC_INVITES_RAW_HEADERS].concat(rows));
+  if (summary.duplicatesRemoved) {
+    sheet.getRange(rows.length + 2, 1, summary.duplicatesRemoved, XDC_INVITES_RAW_COLS).clearContent();
+  }
+  SpreadsheetApp.flush();
+  Logger.log('xdcInvitesDedupeRaw: ' + JSON.stringify(summary));
+  return summary;
 }
