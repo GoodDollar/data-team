@@ -119,6 +119,61 @@ export function windowForSpan(from: Date, to: Date, paddingMonths = DEFAULT_PADD
 }
 
 /**
+ * Where to look for the twin of a key a run wrote, for the duplicate check that follows a run.
+ *
+ * WHY IT HAS TO REACH PAST THE MERGE WINDOW. Inside its own window a MERGE sees an existing row as
+ * a match and updates it, so the duplicate it can create always has its twin OUTSIDE that window.
+ * A check scoped to the written range, or even to the MERGE window, is the one check guaranteed
+ * not to find it.
+ *
+ * WHY TWICE THE PADDING IS ENOUGH. Two rows under one key carry the timestamps of the blocks their
+ * readers saw the log in, and a final log lives in one block. A reorganisation moves a log by
+ * minutes, well inside the merge padding, so the MERGE matches it. A twin outside the MERGE window
+ * therefore comes from a stored timestamp that was wrong or later corrected, and the nearest such
+ * twin is the one the MERGE only just missed. Doubling the padding looks a full padding band
+ * further on each side. At the default of one month that reaches back to the start of the second
+ * month before the row's own, 59 to 92 days depending where in its month the row sits, so a twin
+ * the MERGE missed in that band is found the day it is created. For a daily run the forward half lies in
+ * the future and reads nothing, so the extra cost is one more monthly partition behind.
+ *
+ * WHAT IT DOES NOT BOUND. A timestamp can be wrong by any amount. A twin further out than this is
+ * left to the full-history scan, `verifyMergeKeyUniqueness`, which is run by hand after a migration
+ * or the first full-history load, the operations that can rewrite old timestamps anywhere.
+ */
+export function twinWindowFor(written: MergeWindow): MergeWindow {
+  // A padding of zero would make this the MERGE window itself, which is blind by construction.
+  const padding = 2 * Math.max(written.paddingMonths, DEFAULT_PADDING_MONTHS);
+  return windowForSpan(new Date(written.sourceMinTs + "Z"), new Date(written.sourceMaxTs + "Z"), padding);
+}
+
+/**
+ * A written span cut into calendar months, each slice keeping the original padding.
+ *
+ * WHY A CHECK IS RUN MONTH BY MONTH. BigQuery compares the per-job byte ceiling with its estimate
+ * BEFORE clustering prunes anything, so the estimate is every byte in the partitions a statement
+ * can touch. A duplicate check over a year-long backfill in one statement would be refused. One
+ * month at a time, each statement touches the same handful of partitions a daily run's does, and
+ * the split loses nothing: every written row is in exactly one slice, and that slice's twin window
+ * is the one `twinWindowFor` would give the row on its own.
+ */
+export function monthSlices(w: MergeWindow): MergeWindow[] {
+  const lo = new Date(w.sourceMinTs + "Z");
+  const hi = new Date(w.sourceMaxTs + "Z");
+  const slices: MergeWindow[] = [];
+  for (let m = startOfMonthUtc(lo); m <= hi; m = addMonthsUtc(m, 1)) {
+    const next = addMonthsUtc(m, 1);
+    slices.push({
+      fromTs: sqlTs(addMonthsUtc(m, -w.paddingMonths)),
+      toTs: sqlTs(addMonthsUtc(m, 1 + w.paddingMonths)),
+      sourceMinTs: sqlTs(m < lo ? lo : m),
+      sourceMaxTs: sqlTs(next > hi ? hi : new Date(next.getTime() - 1000)),
+      paddingMonths: w.paddingMonths,
+    });
+  }
+  return slices;
+}
+
+/**
  * The window rendered as the two lines that go into an ON clause, aliased to the target.
  *
  * Returned as SQL text rather than as a parameter because a required partition filter has to be

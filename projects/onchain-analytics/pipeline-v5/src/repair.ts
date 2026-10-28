@@ -38,7 +38,7 @@ import { dedupTable } from "./bq.js";
 import { targetsFor, releaseScopedNetworks } from "./registry.js";
 import { loadCoverage, openGaps, loadDecodeCoverage } from "./coverage.js";
 import { loadControlPlane } from "./control-plane/index.js";
-import { processTarget } from "./pipeline.js";
+import { processTarget, checkWrittenRanges } from "./pipeline.js";
 import { reconcileDaily } from "./reconcile.js";
 import type { PipelineOpts } from "./types.js";
 
@@ -190,6 +190,13 @@ export async function runRepair(opts: PipelineOpts): Promise<boolean> {
         log.info(`${label}: every open gap is now covered by a clean capture`);
       }
     }
+  }
+
+  // The duplicate check over what the re-reads wrote, the same one a daily run gets. A re-read
+  // whose MERGE window missed an existing row would otherwise heal a gap by doubling it.
+  for (const outcome of await checkWrittenRanges()) {
+    log.error(`Repair left duplicate keys or could not check them: ${outcome.detail}`);
+    allClean = false;
   }
 
   // The external check, where one exists. Two contracts out of 146 publish a usable ledger, so
