@@ -33,7 +33,7 @@ import {
   RAW_LOGS_TABLE,
 } from "./config.js";
 import { log } from "./log.js";
-import { windowPredicate, windowForSpan, partitionsSpanned } from "./window.js";
+import { windowPredicate, windowForSpan, partitionsSpanned, twinWindowFor, monthSlices } from "./window.js";
 import {
   getBigQueryClient, setBigQueryFactory, getWriteLock, setWriteLockFactory,
   type BigQueryClientLike,
@@ -830,6 +830,12 @@ export interface DuplicateReport {
   maxTs: string | null;
 }
 
+/** The rows one run wrote into one table: the run, and the widest MERGE window it wrote under. */
+export interface WrittenRange {
+  runId: string;
+  window: MergeWindow;
+}
+
 /**
  * What the table looks like against its own natural key.
  *
@@ -838,15 +844,47 @@ export interface DuplicateReport {
  * same statement straight at the table is refused. Measured, including the view correctly finding
  * a duplicate seeded into a DIFFERENT partition from its twin, which is exactly how a
  * non-covering MERGE window creates one.
+ *
+ * WITH A WRITTEN RANGE it answers the same question for the keys one run wrote, and reads the
+ * TABLE rather than the view, because that question has a natural window. The keys are taken from
+ * the months the run's rows sit in, matched on `ingestion_run_id`, which a MERGE rewrites on
+ * update as well as on insert. Every copy of those keys is then counted over `twinWindowFor`,
+ * which reaches past the MERGE window to where the twin of a MERGE-created duplicate sits. Both
+ * references carry a literal partition filter, so the guard accepts it and the engine prunes.
+ * Only the key, block_number and block_timestamp columns are read.
  */
-export async function duplicateReport(tableId: string, chainId: number): Promise<DuplicateReport> {
+export async function duplicateReport(
+  tableId: string,
+  chainId: number,
+  written?: WrittenRange
+): Promise<DuplicateReport> {
   const keyCols = MERGE_KEYS[tableId];
   if (!keyCols) throw new Error(`MERGE_KEY_UNKNOWN: no merge key is declared for ${tableId}`);
   const keyList = keyCols.join(", ");
 
+  let scope = `SELECT * FROM ${allHistory(tableId)} WHERE chain_id = @chainId`;
+  const params: Record<string, any> = { chainId };
+  if (written) {
+    const w = written.window;
+    const ownMonths = windowForSpan(new Date(w.sourceMinTs + "Z"), new Date(w.sourceMaxTs + "Z"), 0);
+    scope = `
+      SELECT ${keyCols.map((k) => `T.${k}`).join(", ")}, T.block_number, T.block_timestamp
+      FROM ${fullTableName(tableId)} T
+      WHERE ${windowPredicate("T", twinWindowFor(w))}
+        AND T.chain_id = @chainId
+        AND STRUCT(${keyCols.map((k) => `T.${k}`).join(", ")}) IN (
+          SELECT AS STRUCT ${keyCols.map((k) => `W.${k}`).join(", ")}
+          FROM ${fullTableName(tableId)} W
+          WHERE ${windowPredicate("W", ownMonths)}
+            AND W.chain_id = @chainId
+            AND W.ingestion_run_id = @runId
+        )`;
+    params.runId = written.runId;
+  }
+
   const rows = await bqQuery(`
     WITH scoped AS (
-      SELECT * FROM ${allHistory(tableId)} WHERE chain_id = @chainId
+      ${scope}
     ),
     keyed AS (
       SELECT block_number, block_timestamp,
@@ -861,7 +899,7 @@ export async function duplicateReport(tableId: string, chainId: number): Promise
       MIN(IF(copies > 1, block_timestamp, NULL)) AS min_dup_ts,
       MAX(IF(copies > 1, block_timestamp, NULL)) AS max_dup_ts
     FROM keyed
-  `, { chainId });
+  `, params, written ? { chainId: "INT64", runId: "STRING" } : undefined);
 
   const r = rows[0] ?? {};
   const stored = Number(r.stored_rows ?? 0);
@@ -914,6 +952,68 @@ export async function verifyMergeKeyUniqueness(
       `dedupTable, which deletes the surplus copies in place.`,
       { tableId, chainId, phantomRows: report.phantomRows }
     );
+  }
+  return { ok: report.phantomRows === 0, report };
+}
+
+/**
+ * The same post-condition, scoped to the keys one run wrote. Runs after every daily ingestion,
+ * backfill and repair.
+ *
+ * A daily run writes a day of blocks, so scanning all of history after it reads years of rows to
+ * check a few thousand keys. This reads the run's own months and the band around them where a
+ * MERGE-created twin can sit; see `twinWindowFor` for how far that reaches and why. The full scan
+ * above stays the manual check after a migration or the first full-history load.
+ *
+ * ONE STATEMENT PER WRITTEN MONTH, so a long backfill stays under the per-job byte ceiling; see
+ * `monthSlices`. The slices' counts are added up. A pair whose two copies were BOTH written by this
+ * run in different months is counted once per slice, which can only overstate a failure.
+ *
+ * The counts are logged either way, so a clean result is evidence in the run log rather than an
+ * absence of a line.
+ */
+export async function verifyWrittenRangeUniqueness(
+  tableId: string,
+  chainId: number,
+  written: WrittenRange
+): Promise<{ ok: boolean; report: DuplicateReport }> {
+  const slices = monthSlices(written.window);
+  const report: DuplicateReport = {
+    chainId, storedRows: 0, distinctKeys: 0, phantomRows: 0,
+    minBlock: null, maxBlock: null, minTs: null, maxTs: null,
+  };
+  const lower = <T extends number | string>(a: T | null, b: T | null) => (a === null ? b : b === null ? a : (a < b ? a : b));
+  const upper = <T extends number | string>(a: T | null, b: T | null) => (a === null ? b : b === null ? a : (a > b ? a : b));
+  for (const slice of slices) {
+    const r = await duplicateReport(tableId, chainId, { runId: written.runId, window: slice });
+    report.storedRows += r.storedRows;
+    report.distinctKeys += r.distinctKeys;
+    report.phantomRows += r.phantomRows;
+    report.minBlock = lower(report.minBlock, r.minBlock);
+    report.maxBlock = upper(report.maxBlock, r.maxBlock);
+    report.minTs = lower(report.minTs, r.minTs);
+    report.maxTs = upper(report.maxTs, r.maxTs);
+  }
+  const lookup = {
+    fromTs: twinWindowFor(slices[0]).fromTs,
+    toTs: twinWindowFor(slices[slices.length - 1]).toTs,
+  };
+  const fields = {
+    tableId, chainId, runId: written.runId, storedRows: report.storedRows,
+    distinctKeys: report.distinctKeys, phantomRows: report.phantomRows,
+    lookup: `${lookup.fromTs} to ${lookup.toTs}`,
+  };
+  if (report.phantomRows > 0) {
+    log.error(
+      `MERGE_KEY_NOT_UNIQUE: the ${report.distinctKeys} key(s) run ${written.runId} wrote into ` +
+      `${tableId}/chain ${chainId} are held by ${report.storedRows} rows between ${lookup.fromTs} and ` +
+      `${lookup.toTs}, so ${report.phantomRows} are phantoms, on blocks ${report.minBlock} to ` +
+      `${report.maxBlock} (${report.minTs} to ${report.maxTs}). Repair with dedupTable, then run the ` +
+      `full-history check, because a twin further out than this window is not looked for here.`,
+      fields
+    );
+  } else {
+    log.info(`Duplicate check clean: ${report.distinctKeys} key(s) written into ${tableId}/chain ${chainId}, one row each`, fields);
   }
   return { ok: report.phantomRows === 0, report };
 }

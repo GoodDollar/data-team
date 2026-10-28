@@ -297,6 +297,15 @@ export class BigQuerySimulator implements BigQueryClientLike {
     };
   }
 
+  /** The window predicate on one named alias, for a statement that carries more than one. */
+  private static windowOf(sql: string, alias: string): { from: number; to: number } | null {
+    const m = new RegExp(
+      `\\b${alias}\\.block_timestamp >= TIMESTAMP\\('([^']+)'\\)\\s+AND\\s+${alias}\\.block_timestamp < TIMESTAMP\\('([^']+)'\\)`
+    ).exec(sql);
+    if (!m) return null;
+    return { from: Date.parse(m[1] + "Z"), to: Date.parse(m[2] + "Z") };
+  }
+
   private inWindow(row: Record<string, any>, w: { from: number; to: number } | null): boolean {
     if (!w) return true;
     const t = Date.parse(String(row.block_timestamp).replace(" ", "T").replace(/Z?$/, "Z"));
@@ -338,15 +347,33 @@ export class BigQuerySimulator implements BigQueryClientLike {
    * that changed the key would change what this counts.
    */
   private duplicateReport(sql: string, params: Record<string, any>): Record<string, any> {
-    const from = /FROM\s+(\S+)\s+WHERE\s+chain_id/i.exec(sql);
-    if (!from) throw new Error(`SIM_NO_TABLE_REF in duplicate report:\n${sql}`);
-    const table = BigQuerySimulator.baseName(from[1]);
     const keyCols = /PARTITION BY\s+([\w,\s]+?)\)/i.exec(sql)?.[1].split(",").map((c) => c.trim())
       ?? [];
     if (keyCols.length === 0) throw new Error(`SIM_NO_MERGE_KEY parsed from:\n${sql}`);
-
-    const scoped = this.rowsOf(table).filter((r) => Number(r.chain_id) === Number(params.chainId));
     const key = (r: Record<string, any>) => keyCols.map((k) => String(r[k])).join("|");
+    const onChain = (r: Record<string, any>) => Number(r.chain_id) === Number(params.chainId);
+
+    let scoped: Record<string, any>[];
+    if (/ingestion_run_id = @runId/.test(sql)) {
+      // The run-scoped form. The keys come from rows the run wrote inside its own months (alias W),
+      // and their copies are counted inside the wider lookup window (alias T). Both windows are read
+      // out of the statement, so a test that narrowed either one would change what this counts.
+      const from = /FROM\s+(\S+)\s+T\s+WHERE/i.exec(sql);
+      if (!from) throw new Error(`SIM_NO_TABLE_REF in run-scoped duplicate report:\n${sql}`);
+      const lookup = BigQuerySimulator.windowOf(sql, "T");
+      const own = BigQuerySimulator.windowOf(sql, "W");
+      if (!lookup || !own) throw new Error(`SIM_NO_WINDOW in run-scoped duplicate report:\n${sql}`);
+      const rows = this.rowsOf(BigQuerySimulator.baseName(from[1]));
+      const written = new Set(rows
+        .filter((r) => onChain(r) && r.ingestion_run_id === params.runId && this.inWindow(r, own))
+        .map(key));
+      scoped = rows.filter((r) => onChain(r) && this.inWindow(r, lookup) && written.has(key(r)));
+    } else {
+      const from = /FROM\s+(\S+)\s+WHERE\s+chain_id/i.exec(sql);
+      if (!from) throw new Error(`SIM_NO_TABLE_REF in duplicate report:\n${sql}`);
+      scoped = this.rowsOf(BigQuerySimulator.baseName(from[1])).filter(onChain);
+    }
+
     const copies = new Map<string, number>();
     for (const r of scoped) copies.set(key(r), (copies.get(key(r)) ?? 0) + 1);
 
