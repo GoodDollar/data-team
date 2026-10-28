@@ -46,6 +46,10 @@ docs/other/
 projects/onchain-analytics/docs/antseed-tracking-plan.md
 projects/onchain-analytics/docs/tracking-plan-research.md
 docs/utm-tracking-architecture.md
+projects/goodbuilders-s4/share-metrics-*.md
+projects/goodbuilders-s4/data-dictionary-draft.md
+projects/goodbuilders-s5/s5-metrics.md
+projects/superfluid-s4/*.pdf
 # Agent context & process files — local only, never published
 # This is a public repo: instructions files of any kind do not belong here,
 # only working code and reader-facing documentation. Keep this list ahead of
