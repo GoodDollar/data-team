@@ -1,6 +1,15 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v6.3
+ * GOODDOLLAR DASHBOARD v6.4
  * =========================================
+ *
+ * CHANGELOG v6.4 (2026-11-02)
+ * - XDC invites ingest: rpc.xdcrpc.com froze at block 108914237
+ *   (2026-10-31 15:37 UTC) but kept answering without errors. Being first
+ *   in XDC_LOGS_RPCS, its old head was taken as the chain tip, so invites
+ *   stopped at Oct 31. The tip is now the highest head across all log
+ *   endpoints, and each endpoint is only read up to its own head.
+ * - xdcLogsRpcBatch: a null result (block the node doesn't have) is now an
+ *   error, so block timestamps fall through to the next endpoint.
  *
  * CHANGELOG v6.3 (2026-10-19)
  * - XDC invites ingest now reads logs from public XDC RPC (eth_getLogs)
@@ -4039,7 +4048,27 @@ function xdcLogsRpcBatch(url, calls) {
     if (status < 200 || status >= 300) throw new Error(url + ' HTTP ' + status + ': ' + text.slice(0, 200));
     const json = JSON.parse(text);
     if (json.error) throw new Error(url + ' RPC error: ' + JSON.stringify(json.error).slice(0, 200));
+    // A node behind the chain answers null for blocks it doesn't have yet.
+    if (json.result === null || json.result === undefined) throw new Error(url + ' returned null (node behind?)');
     return json.result;
+  });
+}
+
+/**
+ * Head block of each XDC_LOGS_RPCS endpoint, or null if it didn't answer.
+ * A frozen node keeps answering with its old head and no error, so we
+ * never trust one endpoint's head alone.
+ */
+function xdcLogsRpcHeads() {
+  return XDC_LOGS_RPCS.map(function(ep) {
+    try {
+      const head = parseInt(xdcLogsRpcBatch(ep.url, [{ method: 'eth_blockNumber', params: [] }])[0], 16);
+      Logger.log('  xdc rpc head: ' + ep.url + ' at ' + head);
+      return head;
+    } catch (e) {
+      Logger.log('  xdc rpc head: ' + e.message);
+      return null;
+    }
   });
 }
 
@@ -4073,13 +4102,18 @@ function xdcRpcLogToRecord(l) {
 /**
  * Fetch invites-contract events + G$ Transfers out of the invites contract
  * from fromBlock to (chain tip - finality), via public XDC RPC.
+ * The chain tip is the highest head any endpoint reports, and each endpoint
+ * is only asked for blocks below its own head (a node that is behind returns
+ * empty logs above its head, which would silently skip events).
  * Returns the same shape as hypersyncFetchLogs().
  */
 function xdcRpcFetchInviteLogs(opts) {
   const deadlineMs = opts.deadlineMs || (Date.now() + XDC_INVITES_CFG.TIME_BUDGET_MS);
   const paddedInvites = '0x' + XDC_INVITES_CFG.CONTRACT.replace(/^0x/, '').toLowerCase().padStart(64, '0');
-  const target = parseInt(xdcLogsRpcBatchAny([{ method: 'eth_blockNumber', params: [] }])[0], 16)
-                 - XDC_FINALITY_BLOCKS;
+  const heads = xdcLogsRpcHeads();
+  const knownHeads = heads.filter(function(h) { return h !== null; });
+  if (!knownHeads.length) throw new Error('No XDC log RPC endpoint reported a head block');
+  const target = Math.max.apply(null, knownHeads) - XDC_FINALITY_BLOCKS;
 
   const logs = [];
   var cursor = opts.fromBlock;
@@ -4088,12 +4122,14 @@ function xdcRpcFetchInviteLogs(opts) {
   var outOfTime = false;
 
   for (var ep = 0; ep < XDC_LOGS_RPCS.length && cursor <= target && !outOfTime; ep++) {
+    if (heads[ep] === null) continue;
     const url = XDC_LOGS_RPCS[ep].url;
     const span = XDC_LOGS_RPCS[ep].span;
+    const epTarget = Math.min(target, heads[ep] - XDC_FINALITY_BLOCKS);
     try {
-      while (cursor <= target) {
+      while (cursor <= epTarget) {
         if (Date.now() > deadlineMs) { outOfTime = true; break; }
-        const to = Math.min(cursor + span - 1, target);
+        const to = Math.min(cursor + span - 1, epTarget);
         const fromHex = '0x' + cursor.toString(16);
         const toHex = '0x' + to.toString(16);
         const res = xdcLogsRpcBatch(url, [
