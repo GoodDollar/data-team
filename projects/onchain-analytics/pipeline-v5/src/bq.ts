@@ -33,7 +33,7 @@ import {
   RAW_LOGS_TABLE,
 } from "./config.js";
 import { log } from "./log.js";
-import { windowPredicate, windowForSpan, partitionsSpanned, twinWindowFor, monthSlices } from "./window.js";
+import { windowPredicate, windowForSpan, partitionsSpanned, twinWindowFor } from "./window.js";
 import {
   getBigQueryClient, setBigQueryFactory, getWriteLock, setWriteLockFactory,
   type BigQueryClientLike,
@@ -836,6 +836,12 @@ export interface WrittenRange {
   window: MergeWindow;
 }
 
+/** The same, kept per calendar month: one window for each month the run's rows landed in. */
+export interface WrittenMonths {
+  runId: string;
+  months: MergeWindow[];
+}
+
 /**
  * What the table looks like against its own natural key.
  *
@@ -965,9 +971,17 @@ export async function verifyMergeKeyUniqueness(
  * MERGE-created twin can sit; see `twinWindowFor` for how far that reaches and why. The full scan
  * above stays the manual check after a migration or the first full-history load.
  *
- * ONE STATEMENT PER WRITTEN MONTH, so a long backfill stays under the per-job byte ceiling; see
- * `monthSlices`. The slices' counts are added up. A pair whose two copies were BOTH written by this
- * run in different months is counted once per slice, which can only overstate a failure.
+ * ONE STATEMENT PER WRITTEN MONTH, so a long backfill stays under the per-job byte ceiling, and
+ * only for months that received rows; see `windowsByMonth`. The months' counts are added up. A
+ * pair whose two copies were BOTH written by this run in different months is counted once per
+ * month, which can only overstate a failure.
+ *
+ * KEYS ARE PICKED BY `ingestion_run_id`, WHICH ANOTHER WRITER CAN REPLACE. The lease is released
+ * after each MERGE, so a second writer overlapping this run can re-stamp one of its rows before
+ * this check runs, and this run then does not look at that key. The duplicate is still reported:
+ * the row now carries the other writer's run ID, inside the months that writer wrote, and its own
+ * check runs after its MERGE. Only a writer killed between its MERGE and its check leaves it to
+ * the full-history scan.
  *
  * The counts are logged either way, so a clean result is evidence in the run log rather than an
  * absence of a line.
@@ -975,9 +989,10 @@ export async function verifyMergeKeyUniqueness(
 export async function verifyWrittenRangeUniqueness(
   tableId: string,
   chainId: number,
-  written: WrittenRange
+  written: WrittenMonths
 ): Promise<{ ok: boolean; report: DuplicateReport }> {
-  const slices = monthSlices(written.window);
+  const slices = written.months;
+  if (slices.length === 0) throw new Error(`NOTHING_TO_CHECK: no written month for ${tableId}/chain ${chainId}`);
   const report: DuplicateReport = {
     chainId, storedRows: 0, distinctKeys: 0, phantomRows: 0,
     minBlock: null, maxBlock: null, minTs: null, maxTs: null,
@@ -994,20 +1009,18 @@ export async function verifyWrittenRangeUniqueness(
     report.minTs = lower(report.minTs, r.minTs);
     report.maxTs = upper(report.maxTs, r.maxTs);
   }
-  const lookup = {
-    fromTs: twinWindowFor(slices[0]).fromTs,
-    toTs: twinWindowFor(slices[slices.length - 1]).toTs,
-  };
+  const months = slices.map((s) => s.sourceMinTs.slice(0, 7)).join(", ");
   const fields = {
     tableId, chainId, runId: written.runId, storedRows: report.storedRows,
     distinctKeys: report.distinctKeys, phantomRows: report.phantomRows,
-    lookup: `${lookup.fromTs} to ${lookup.toTs}`,
+    months,
+    lookup: slices.map((s) => { const t = twinWindowFor(s); return `${t.fromTs} to ${t.toTs}`; }).join("; "),
   };
   if (report.phantomRows > 0) {
     log.error(
       `MERGE_KEY_NOT_UNIQUE: the ${report.distinctKeys} key(s) run ${written.runId} wrote into ` +
-      `${tableId}/chain ${chainId} are held by ${report.storedRows} rows between ${lookup.fromTs} and ` +
-      `${lookup.toTs}, so ${report.phantomRows} are phantoms, on blocks ${report.minBlock} to ` +
+      `${tableId}/chain ${chainId} in ${months} are held by ${report.storedRows} rows in the lookup ` +
+      `window around each month, so ${report.phantomRows} are phantoms, on blocks ${report.minBlock} to ` +
       `${report.maxBlock} (${report.minTs} to ${report.maxTs}). Repair with dedupTable, then run the ` +
       `full-history check, because a twin further out than this window is not looked for here.`,
       fields

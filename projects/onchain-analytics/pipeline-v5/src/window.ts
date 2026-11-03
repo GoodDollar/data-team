@@ -147,30 +147,33 @@ export function twinWindowFor(written: MergeWindow): MergeWindow {
 }
 
 /**
- * A written span cut into calendar months, each slice keeping the original padding.
+ * One window per calendar month that holds at least one of the rows, in month order.
  *
  * WHY A CHECK IS RUN MONTH BY MONTH. BigQuery compares the per-job byte ceiling with its estimate
  * BEFORE clustering prunes anything, so the estimate is every byte in the partitions a statement
  * can touch. A duplicate check over a year-long backfill in one statement would be refused. One
  * month at a time, each statement touches the same handful of partitions a daily run's does, and
- * the split loses nothing: every written row is in exactly one slice, and that slice's twin window
+ * the split loses nothing: every written row is in exactly one month, and that month's twin window
  * is the one `twinWindowFor` would give the row on its own.
+ *
+ * WHY ONLY MONTHS THAT HOLD ROWS. A repair can write January 2020 and June 2026 and nothing in
+ * between. Cutting the span between them into months would check about 78 months the run never
+ * wrote, each one billed for its partitions.
  */
-export function monthSlices(w: MergeWindow): MergeWindow[] {
-  const lo = new Date(w.sourceMinTs + "Z");
-  const hi = new Date(w.sourceMaxTs + "Z");
-  const slices: MergeWindow[] = [];
-  for (let m = startOfMonthUtc(lo); m <= hi; m = addMonthsUtc(m, 1)) {
-    const next = addMonthsUtc(m, 1);
-    slices.push({
-      fromTs: sqlTs(addMonthsUtc(m, -w.paddingMonths)),
-      toTs: sqlTs(addMonthsUtc(m, 1 + w.paddingMonths)),
-      sourceMinTs: sqlTs(m < lo ? lo : m),
-      sourceMaxTs: sqlTs(next > hi ? hi : new Date(next.getTime() - 1000)),
-      paddingMonths: w.paddingMonths,
-    });
+export function windowsByMonth(
+  rows: Record<string, any>[],
+  paddingMonths = DEFAULT_PADDING_MONTHS
+): MergeWindow[] {
+  const groups = new Map<string, Record<string, any>[]>();
+  for (const r of rows) {
+    const t = Date.parse(r.block_timestamp);
+    // windowForRows below names the bad value; this only has to not misfile it.
+    const month = Number.isNaN(t) ? "invalid" : sqlTs(startOfMonthUtc(new Date(t)));
+    const group = groups.get(month);
+    if (group) group.push(r);
+    else groups.set(month, [r]);
   }
-  return slices;
+  return [...groups.keys()].sort().map((m) => windowForRows(groups.get(m)!, paddingMonths)!);
 }
 
 /**

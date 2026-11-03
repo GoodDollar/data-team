@@ -41,7 +41,7 @@ import { confirmEmptyRange } from "./rpc.js";
 import { targetsFor, eraIndexFor, partitionByReleaseScope } from "./registry.js";
 import { rawLogRows, transactionRows, missingTransactionCount } from "./rawrow.js";
 import { projectChunk, projectFetchResult, unionRange } from "./batch.js";
-import { windowForRows, widen } from "./window.js";
+import { windowForRows, widen, windowsByMonth } from "./window.js";
 import {
   ensureInfraTables, stageAndMerge, recordCoverage, getMaxBlockTimestamp, setCaptureAssurance,
   verifyWrittenRangeUniqueness,
@@ -75,15 +75,21 @@ function captureIdFor(target: CaptureTarget, fromBlock: number, toBlock: number)
 }
 
 /**
- * Every (table, chain) this run merged into, with the widest window it wrote under there. Read by
- * the duplicate check at the end of a daily run, so the check covers exactly what the run wrote.
- * Cleared when a run starts, for the same reason `captureSeq` is module state: it is per process.
+ * Every (table, chain) this run merged into, and each calendar month its rows landed in, with the
+ * widest window written in that month. Read by the duplicate check at the end of a run, so the
+ * check covers exactly the months the run wrote and none between them. Cleared when a run starts,
+ * for the same reason `captureSeq` is module state: it is per process.
  */
-const writtenThisRun = new Map<string, { tableId: string; chainId: number; window: MergeWindow }>();
+const writtenThisRun = new Map<string, { tableId: string; chainId: number; months: Map<string, MergeWindow> }>();
 
-function recordWrite(tableId: string, chainId: number, w: MergeWindow): void {
+function recordWrite(tableId: string, chainId: number, rows: Record<string, any>[]): void {
   const k = `${tableId}|${chainId}`;
-  writtenThisRun.set(k, { tableId, chainId, window: widen(writtenThisRun.get(k)?.window ?? null, w) });
+  const entry = writtenThisRun.get(k) ?? { tableId, chainId, months: new Map<string, MergeWindow>() };
+  for (const w of windowsByMonth(rows, CONFIG.MERGE_PADDING_MONTHS)) {
+    const month = w.sourceMinTs.slice(0, 7);
+    entry.months.set(month, widen(entry.months.get(month) ?? null, w));
+  }
+  writtenThisRun.set(k, entry);
 }
 
 /** The common part of a coverage row, so no call site can forget a field. */
@@ -340,7 +346,7 @@ function makeSink(p: PreparedCapture) {
       if (w === null) throw new Error("L0_9: rows to write but no window could be derived");
       writtenWindow = widen(writtenWindow, w);
       // Recorded before the MERGE, so a MERGE that throws after writing is still checked.
-      recordWrite(RAW_LOGS_TABLE, target.chainId, w);
+      recordWrite(RAW_LOGS_TABLE, target.chainId, logBuffer);
       const r = await stageAndMerge(RAW_LOGS_TABLE, logBuffer, RAW_LOGS_SCHEMA, RUN_ID, w);
       inserted += r.inserted;
       updated += r.updated;
@@ -352,7 +358,7 @@ function makeSink(p: PreparedCapture) {
       const w = windowForRows(txBuffer, CONFIG.MERGE_PADDING_MONTHS);
       if (w === null) throw new Error("L0_9: transactions to write but no window could be derived");
       writtenWindow = widen(writtenWindow, w);
-      recordWrite(TRANSACTIONS_TABLE, target.chainId, w);
+      recordWrite(TRANSACTIONS_TABLE, target.chainId, txBuffer);
       const r = await stageAndMerge(TRANSACTIONS_TABLE, txBuffer, TRANSACTIONS_SCHEMA, RUN_ID, w);
       txInserted += r.inserted;
       txUpdated += r.updated;
@@ -817,9 +823,12 @@ export async function checkWrittenRanges(): Promise<UnitOutcome[]> {
   const outcomes: UnitOutcome[] = [];
   const written = [...writtenThisRun.values()];
   writtenThisRun.clear();
-  for (const { tableId, chainId, window } of written) {
+  for (const { tableId, chainId, months } of written) {
     try {
-      const { ok, report } = await verifyWrittenRangeUniqueness(tableId, chainId, { runId: RUN_ID, window });
+      const { ok, report } = await verifyWrittenRangeUniqueness(tableId, chainId, {
+        runId: RUN_ID,
+        months: [...months.keys()].sort().map((m) => months.get(m)!),
+      });
       if (!ok) {
         outcomes.push(unit(
           "failed", tableId,
