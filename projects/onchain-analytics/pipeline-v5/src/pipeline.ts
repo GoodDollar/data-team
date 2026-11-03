@@ -986,6 +986,35 @@ export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
   }
 
   let totalRows = 0;
+  try {
+    totalRows = await captureAll(inScope, opts, summary);
+  } finally {
+    // Daily and backfill alike, over what the run wrote. The full-history check stays a manual
+    // step after a migration or the first full-history load, which can rewrite timestamps anywhere.
+    //
+    // In a `finally` because the capture loop can throw after an earlier chain has merged rows,
+    // for instance when recording a later chain's capability gap fails. Those captures are
+    // already recorded complete, so the next run resumes past them and their keys would never be
+    // checked. A thrown error still propagates after this runs; `checkWrittenRanges` turns its own
+    // failures into outcomes rather than throwing, so it cannot replace that error.
+    for (const outcome of await checkWrittenRanges()) summary.add(outcome);
+  }
+  if (opts.mode === "daily") await checkFreshness(networks);
+
+  return resultOf(summary, totalRows);
+}
+
+/**
+ * Capture every in-scope chain into `summary`. Returns the RawLogs rows merged.
+ *
+ * Separate from `runPipeline` so the duplicate check there can run whether or not this throws.
+ */
+async function captureAll(
+  inScope: NetworkConfig[],
+  opts: PipelineOpts,
+  summary: RunSummary,
+): Promise<number> {
+  let totalRows = 0;
 
   for (const network of inScope) {
     const reader = readerFor(network);
@@ -1030,12 +1059,7 @@ export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
     }
   }
 
-  // Daily and backfill alike, over what the run wrote. The full-history check stays a manual step
-  // after a migration or the first full-history load, which can rewrite timestamps anywhere.
-  for (const outcome of await checkWrittenRanges()) summary.add(outcome);
-  if (opts.mode === "daily") await checkFreshness(networks);
-
-  return resultOf(summary, totalRows);
+  return totalRows;
 }
 
 /**

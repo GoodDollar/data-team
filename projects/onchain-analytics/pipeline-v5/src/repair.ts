@@ -147,6 +147,52 @@ export async function reportCoverage(opts: PipelineOpts): Promise<boolean> {
  */
 export async function runRepair(opts: PipelineOpts): Promise<boolean> {
   let allClean = true;
+  try {
+    allClean = await repairGaps(opts);
+  } finally {
+    // The duplicate check over what the re-reads wrote, the same one a daily run gets. A re-read
+    // whose MERGE window missed an existing row would otherwise heal a gap by doubling it.
+    //
+    // In a `finally` because the gap loop can throw after a re-read has merged rows, for instance
+    // when the coverage read that follows it fails. That capture has already closed its gap, so no
+    // later repair would read the range again, and its keys would never be checked. A thrown
+    // error still propagates after this runs; `checkWrittenRanges` turns its own failures into
+    // outcomes rather than throwing, so it cannot replace that error.
+    for (const outcome of await checkWrittenRanges()) {
+      log.error(`Repair left duplicate keys or could not check them: ${outcome.detail}`);
+      allClean = false;
+    }
+  }
+
+  // The external check, where one exists. Two contracts out of 146 publish a usable ledger, so
+  // this cannot be the only route to a re-read, but it is the only evidence in this system that
+  // does not come from the system itself.
+  //
+  // Release-scoped like every other loop in this file. It was not, and that was inert only while
+  // ORACLES held entries for one chain; it stops being inert the moment a second chain is added.
+  for (const oracle of oraclesFor(releaseScopedNetworks(selectedNetworks(opts.chains)))) {
+    if (oracle.kind !== "ubi_daily") continue;
+    const network = networkByChainId(oracle.network.chainId);
+    if (!network) continue;
+    const result = await reconcileDaily(oracle, opts.days);
+    if (!result) continue;
+    if (!result.clean) {
+      log.error(
+        `Oracle reconciliation on ${oracle.address} is NOT clean after repair: ` +
+        `${result.days.filter((d) => d.verdict !== "exact").length} day(s) disagree with the contract`
+      );
+      allClean = false;
+    } else {
+      log.info(`Oracle reconciliation on ${oracle.address} is exact across ${result.interiorDays} interior day(s)`);
+    }
+  }
+
+  return allClean;
+}
+
+/** Re-read every open gap through the ordinary capture path. Returns false if any did not heal. */
+async function repairGaps(opts: PipelineOpts): Promise<boolean> {
+  let allClean = true;
 
   for (const network of releaseScopedNetworks(selectedNetworks(opts.chains))) {
     for (const target of targetsFor(network, { addresses: opts.addresses })) {
@@ -189,36 +235,6 @@ export async function runRepair(opts: PipelineOpts): Promise<boolean> {
       } else {
         log.info(`${label}: every open gap is now covered by a clean capture`);
       }
-    }
-  }
-
-  // The duplicate check over what the re-reads wrote, the same one a daily run gets. A re-read
-  // whose MERGE window missed an existing row would otherwise heal a gap by doubling it.
-  for (const outcome of await checkWrittenRanges()) {
-    log.error(`Repair left duplicate keys or could not check them: ${outcome.detail}`);
-    allClean = false;
-  }
-
-  // The external check, where one exists. Two contracts out of 146 publish a usable ledger, so
-  // this cannot be the only route to a re-read, but it is the only evidence in this system that
-  // does not come from the system itself.
-  //
-  // Release-scoped like every other loop in this file. It was not, and that was inert only while
-  // ORACLES held entries for one chain; it stops being inert the moment a second chain is added.
-  for (const oracle of oraclesFor(releaseScopedNetworks(selectedNetworks(opts.chains)))) {
-    if (oracle.kind !== "ubi_daily") continue;
-    const network = networkByChainId(oracle.network.chainId);
-    if (!network) continue;
-    const result = await reconcileDaily(oracle, opts.days);
-    if (!result) continue;
-    if (!result.clean) {
-      log.error(
-        `Oracle reconciliation on ${oracle.address} is NOT clean after repair: ` +
-        `${result.days.filter((d) => d.verdict !== "exact").length} day(s) disagree with the contract`
-      );
-      allClean = false;
-    } else {
-      log.info(`Oracle reconciliation on ${oracle.address} is exact across ${result.interiorDays} interior day(s)`);
     }
   }
 

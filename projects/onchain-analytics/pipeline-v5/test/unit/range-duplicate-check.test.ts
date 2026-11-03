@@ -145,6 +145,33 @@ describe("the duplicate check after a daily run", () => {
     }
   });
 
+  it("still checks what was written when a later chain throws, and keeps that error", async () => {
+    // XDC (chain 50) runs first and writes a duplicate. CELO runs after it, has no reader for this
+    // test, and recording that fails, which throws out of the capture loop.
+    seedTwinAt("2026-04-15T00:00:00.000Z");
+    const celo = NETWORKS.CELO;
+    const wasEnabled = celo.ingestEnabled;
+    celo.ingestEnabled = false;
+    const real = sim.query.bind(sim);
+    sim.query = async (req) => {
+      if (/INSERT INTO\s+\S*IngestionCoverage/.test(req.query) && JSON.stringify(req.params ?? {}).includes("capability_gap")) {
+        throw new Error("simulated coverage write failure");
+      }
+      return real(req);
+    };
+
+    try {
+      await expect(runPipeline({
+        mode: "daily", chains: ["XDC", "CELO"], addresses: [ADDRESS], fromBlock: 1_000, toBlock: 1_010,
+      })).rejects.toThrow("simulated coverage write failure");
+    } finally {
+      celo.ingestEnabled = wasEnabled;
+    }
+
+    expect(sim.rowsOf(RAW_LOGS_TABLE).filter((r) => r.tx_hash === TX).length).toBe(2);
+    expect(reportsFor(RAW_LOGS_TABLE).length, "XDC's writes must still be checked").toBe(1);
+  });
+
   it("fails the run when the check itself cannot run, rather than reading as clean", async () => {
     const real = sim.query.bind(sim);
     sim.query = async (req) => {
@@ -230,6 +257,27 @@ describe("the duplicate check after a backfill or a repair", () => {
 
       expect(await repair(address)).toBe(false);
       expect(reportsFor(RAW_LOGS_TABLE).length).toBe(1);
+    });
+
+    it("still checks what a re-read wrote when the coverage read after it fails, and keeps that error", async () => {
+      const address = target().address.toLowerCase();
+      seedGap(address);
+      reader(address, [BLOCK_TS]);
+      seedTwinAt("2026-04-15T00:00:00.000Z", ethereum.chainId);
+      // The first coverage read finds the gap; the second, after the re-read has merged rows, fails.
+      const real = sim.query.bind(sim);
+      let coverageReads = 0;
+      sim.query = async (req) => {
+        if (/SELECT capture_id, run_id, from_block/.test(req.query) && ++coverageReads === 2) {
+          throw new Error("simulated coverage read failure");
+        }
+        return real(req);
+      };
+
+      await expect(repair(address)).rejects.toThrow("simulated coverage read failure");
+      expect(coverageReads, "the failure must land after the re-read, or this proves nothing").toBe(2);
+      expect(reportsFor(RAW_LOGS_TABLE).length, "the re-read's keys must still be checked").toBe(1);
+      expect(sim.rowsOf(RAW_LOGS_TABLE).filter((r) => r.tx_hash === TX).length).toBe(2);
     });
 
     it("GREEN: the same repair with no twin reports clean", async () => {
