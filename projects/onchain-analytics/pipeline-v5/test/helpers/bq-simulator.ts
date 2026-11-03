@@ -364,8 +364,13 @@ export class BigQuerySimulator implements BigQueryClientLike {
       const own = BigQuerySimulator.windowOf(sql, "W");
       if (!lookup || !own) throw new Error(`SIM_NO_WINDOW in run-scoped duplicate report:\n${sql}`);
       const rows = this.rowsOf(BigQuerySimulator.baseName(from[1]));
+      // The run's block range, applied only when the statement carries it, so a statement that
+      // dropped it would read more and one that narrowed it wrongly would miss a key.
+      const byBlock = /W\.block_number BETWEEN @fromBlock AND @toBlock/.test(sql);
+      const inBlocks = (r: Record<string, any>) => !byBlock
+        || (Number(r.block_number) >= Number(params.fromBlock) && Number(r.block_number) <= Number(params.toBlock));
       const written = new Set(rows
-        .filter((r) => onChain(r) && r.ingestion_run_id === params.runId && this.inWindow(r, own))
+        .filter((r) => onChain(r) && r.ingestion_run_id === params.runId && this.inWindow(r, own) && inBlocks(r))
         .map(key));
       scoped = rows.filter((r) => onChain(r) && this.inWindow(r, lookup) && written.has(key(r)));
     } else {

@@ -39,7 +39,7 @@
  * one second mid-life, so any such conversion is wrong across that boundary.
  */
 
-import type { MergeWindow } from "./types.js";
+import type { MergeWindow, WrittenMonth } from "./types.js";
 
 /** Start of the UTC month containing `d`. */
 function startOfMonthUtc(d: Date): Date {
@@ -144,6 +144,48 @@ export function twinWindowFor(written: MergeWindow): MergeWindow {
   // A padding of zero would make this the MERGE window itself, which is blind by construction.
   const padding = 2 * Math.max(written.paddingMonths, DEFAULT_PADDING_MONTHS);
   return windowForSpan(new Date(written.sourceMinTs + "Z"), new Date(written.sourceMaxTs + "Z"), padding);
+}
+
+/**
+ * The rows' own span as a window, with no truncation to months and no padding. The upper bound is
+ * the latest row's second plus one, because the window's upper bound is exclusive and block
+ * timestamps are whole seconds.
+ */
+export function writtenSpan(w: MergeWindow): MergeWindow {
+  return {
+    fromTs: w.sourceMinTs,
+    toTs: sqlTs(new Date(Date.parse(w.sourceMaxTs + "Z") + 1000)),
+    sourceMinTs: w.sourceMinTs,
+    sourceMaxTs: w.sourceMaxTs,
+    paddingMonths: 0,
+  };
+}
+
+/**
+ * What the rows cover in each calendar month that holds at least one of them, in month order: the
+ * month's MERGE window and its block range.
+ */
+export function monthsWritten(
+  rows: Record<string, any>[],
+  paddingMonths = DEFAULT_PADDING_MONTHS
+): WrittenMonth[] {
+  return windowsByMonth(rows, paddingMonths).map((window) => {
+    const lo = Date.parse(window.sourceMinTs + "Z");
+    const hi = Date.parse(window.sourceMaxTs + "Z");
+    let fromBlock = Infinity;
+    let toBlock = -Infinity;
+    for (const r of rows) {
+      const t = Date.parse(r.block_timestamp);
+      if (t < lo || t > hi + 999) continue;
+      const b = Number(r.block_number);
+      if (b < fromBlock) fromBlock = b;
+      if (b > toBlock) toBlock = b;
+    }
+    if (!Number.isFinite(fromBlock)) {
+      throw new Error(`L0_9: rows in ${window.sourceMinTs.slice(0, 7)} carry no usable block_number`);
+    }
+    return { window, fromBlock, toBlock };
+  });
 }
 
 /**

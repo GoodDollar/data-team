@@ -19,7 +19,7 @@ import { runRepair } from "../../src/repair.js";
 import { duplicateReport, verifyWrittenRangeUniqueness } from "../../src/bq.js";
 import { NETWORKS, RAW_LOGS_TABLE, TRANSACTIONS_TABLE } from "../../src/config.js";
 import { targetsFor } from "../../src/registry.js";
-import { windowForRows, twinWindowFor, windowsByMonth } from "../../src/window.js";
+import { windowForRows, twinWindowFor, windowsByMonth, monthsWritten, writtenSpan } from "../../src/window.js";
 import { captureExitCodeFor } from "../../src/outcome.js";
 import { setBigQueryClient, setReaderOverride, resetAdapters } from "../../src/adapters.js";
 import { BigQuerySimulator } from "../helpers/bq-simulator.js";
@@ -139,9 +139,14 @@ describe("the duplicate check after a daily run", () => {
       expect(s.sql).toMatch(/T\.block_timestamp >= TIMESTAMP\('[^']+'\) AND T\.block_timestamp < TIMESTAMP\('[^']+'\)/);
       expect(s.sql).toMatch(/W\.block_timestamp >= TIMESTAMP\('[^']+'\) AND W\.block_timestamp < TIMESTAMP\('[^']+'\)/);
       expect(s.sql).not.toMatch(/AllHistory/);
-      // The run's own month for the keys, the wider band for their copies.
-      expect(s.sql).toContain("W.block_timestamp >= TIMESTAMP('2026-06-01 00:00:00')");
+      // Only what the run wrote for the keys (one log at 2026-06-09 10:13:20, block 1000), the
+      // wider band for their copies.
+      expect(s.sql).toContain(
+        "W.block_timestamp >= TIMESTAMP('2026-06-09 10:13:20') AND W.block_timestamp < TIMESTAMP('2026-06-09 10:13:21')"
+      );
+      expect(s.sql).toContain("W.block_number BETWEEN @fromBlock AND @toBlock");
       expect(s.sql).toContain("T.block_timestamp >= TIMESTAMP('2026-04-01 00:00:00')");
+      expect([s.params?.fromBlock, s.params?.toBlock]).toEqual([1_000, 1_000]);
     }
   });
 
@@ -204,8 +209,8 @@ describe("the duplicate check after a backfill or a repair", () => {
     const result = await run("backfill");
 
     const own = reportsFor(RAW_LOGS_TABLE)
-      .map((s) => /W\.block_timestamp >= TIMESTAMP\('([^']+)'\)/.exec(s.sql)![1]);
-    expect(own).toEqual(["2026-06-01 00:00:00", "2026-07-01 00:00:00", "2026-08-01 00:00:00"]);
+      .map((s) => /W\.block_timestamp >= TIMESTAMP\('([^']+)'\)/.exec(s.sql)![1].slice(0, 7));
+    expect(own).toEqual(["2026-06", "2026-07", "2026-08"]);
     // No single statement reaches further than one month's twin window.
     for (const s of reportsFor(RAW_LOGS_TABLE)) {
       const [, from, to] = /T\.block_timestamp >= TIMESTAMP\('([^']+)'\) AND T\.block_timestamp < TIMESTAMP\('([^']+)'\)/.exec(s.sql)!;
@@ -225,9 +230,9 @@ describe("the duplicate check after a backfill or a repair", () => {
     const result = await run("backfill");
 
     const own = reportsFor(RAW_LOGS_TABLE)
-      .map((s) => /W\.block_timestamp >= TIMESTAMP\('([^']+)'\)/.exec(s.sql)![1]);
+      .map((s) => /W\.block_timestamp >= TIMESTAMP\('([^']+)'\)/.exec(s.sql)![1].slice(0, 7));
     expect(own, "one statement per written month, and none for the 16 empty months between")
-      .toEqual(["2025-01-01 00:00:00", "2026-06-01 00:00:00"]);
+      .toEqual(["2025-01", "2026-06"]);
     expect(duplicateUnits(result).length).toBe(1);
     expect(duplicateUnits(result)[0].detail).toContain("1 phantom row(s)");
   });
@@ -333,6 +338,23 @@ describe("the bound of the lookup window", () => {
   });
 });
 
+describe("finding the keys a run wrote", () => {
+  it("records each month's own block range, and reads only the written span, not the month", () => {
+    const months = monthsWritten([
+      { block_timestamp: "2026-06-09T10:13:20Z", block_number: 1_000 },
+      { block_timestamp: "2026-06-09T10:14:00Z", block_number: 1_008 },
+      { block_timestamp: "2026-08-20T00:00:00Z", block_number: 5_000 },
+    ], 1);
+
+    expect(months.map((m) => [m.window.sourceMinTs.slice(0, 7), m.fromBlock, m.toBlock])).toEqual([
+      ["2026-06", 1_000, 1_008],
+      ["2026-08", 5_000, 5_000],
+    ]);
+    const span = writtenSpan(months[0].window);
+    expect([span.fromTs, span.toTs]).toEqual(["2026-06-09 10:13:20", "2026-06-09 10:14:01"]);
+  });
+});
+
 describe("a second writer re-stamping a row before the check", () => {
   it("moves the duplicate to that writer's own check, which finds it", async () => {
     seedTwinAt("2026-04-15T00:00:00.000Z");
@@ -356,7 +378,7 @@ describe("a second writer re-stamping a row before the check", () => {
     // The other writer's check runs after its MERGE, over the month it wrote, and finds it.
     const theirs = await verifyWrittenRangeUniqueness(RAW_LOGS_TABLE, XDC_CHAIN_ID, {
       runId: "a-later-run",
-      months: windowsByMonth([{ block_timestamp: "2026-06-09T10:13:20Z" }], 1),
+      months: monthsWritten([{ block_timestamp: "2026-06-09T10:13:20Z", block_number: 1_000 }], 1),
     });
     expect(theirs.ok).toBe(false);
     expect(theirs.report.phantomRows).toBe(1);

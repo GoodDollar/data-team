@@ -41,7 +41,7 @@ import { confirmEmptyRange } from "./rpc.js";
 import { targetsFor, eraIndexFor, partitionByReleaseScope } from "./registry.js";
 import { rawLogRows, transactionRows, missingTransactionCount } from "./rawrow.js";
 import { projectChunk, projectFetchResult, unionRange } from "./batch.js";
-import { windowForRows, widen, windowsByMonth } from "./window.js";
+import { windowForRows, widen, monthsWritten } from "./window.js";
 import {
   ensureInfraTables, stageAndMerge, recordCoverage, getMaxBlockTimestamp, setCaptureAssurance,
   verifyWrittenRangeUniqueness,
@@ -53,7 +53,7 @@ import { nowIso } from "./adapters.js";
 import { RunSummary, unit, PARENT_GRAIN, type UnitOutcome } from "./outcome.js";
 import type {
   PipelineOpts, PipelineResult, CaptureTarget, CoverageRecord, FetchResult, NetworkConfig,
-  MergeWindow, ChunkResult, EraMapEntry,
+  MergeWindow, ChunkResult, EraMapEntry, WrittenMonth,
 } from "./types.js";
 
 export class IncompleteFetchError extends Error {}
@@ -80,14 +80,21 @@ function captureIdFor(target: CaptureTarget, fromBlock: number, toBlock: number)
  * check covers exactly the months the run wrote and none between them. Cleared when a run starts,
  * for the same reason `captureSeq` is module state: it is per process.
  */
-const writtenThisRun = new Map<string, { tableId: string; chainId: number; months: Map<string, MergeWindow> }>();
+const writtenThisRun = new Map<string, { tableId: string; chainId: number; months: Map<string, WrittenMonth> }>();
 
 function recordWrite(tableId: string, chainId: number, rows: Record<string, any>[]): void {
   const k = `${tableId}|${chainId}`;
-  const entry = writtenThisRun.get(k) ?? { tableId, chainId, months: new Map<string, MergeWindow>() };
-  for (const w of windowsByMonth(rows, CONFIG.MERGE_PADDING_MONTHS)) {
-    const month = w.sourceMinTs.slice(0, 7);
-    entry.months.set(month, widen(entry.months.get(month) ?? null, w));
+  const entry = writtenThisRun.get(k) ?? { tableId, chainId, months: new Map<string, WrittenMonth>() };
+  for (const m of monthsWritten(rows, CONFIG.MERGE_PADDING_MONTHS)) {
+    const month = m.window.sourceMinTs.slice(0, 7);
+    const seen = entry.months.get(month);
+    entry.months.set(month, seen
+      ? {
+        window: widen(seen.window, m.window),
+        fromBlock: Math.min(seen.fromBlock, m.fromBlock),
+        toBlock: Math.max(seen.toBlock, m.toBlock),
+      }
+      : m);
   }
   writtenThisRun.set(k, entry);
 }

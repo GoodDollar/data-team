@@ -33,14 +33,14 @@ import {
   RAW_LOGS_TABLE,
 } from "./config.js";
 import { log } from "./log.js";
-import { windowPredicate, windowForSpan, partitionsSpanned, twinWindowFor } from "./window.js";
+import { windowPredicate, windowForSpan, partitionsSpanned, twinWindowFor, writtenSpan } from "./window.js";
 import {
   getBigQueryClient, setBigQueryFactory, getWriteLock, setWriteLockFactory,
   type BigQueryClientLike,
 } from "./adapters.js";
 import { fileWriteLock } from "./writelock.js";
 import { setDatasetAdminFactory, type DatasetAdmin } from "./sandbox.js";
-import type { SchemaField, PipelineRunRecord, CoverageRecord, MergeWindow } from "./types.js";
+import type { SchemaField, PipelineRunRecord, CoverageRecord, MergeWindow, WrittenMonth } from "./types.js";
 
 // The real client is registered as a FACTORY rather than constructed here. Constructing it at
 // import time resolved credentials as a side effect of importing this module, so any test that
@@ -830,16 +830,15 @@ export interface DuplicateReport {
   maxTs: string | null;
 }
 
-/** The rows one run wrote into one table: the run, and the widest MERGE window it wrote under. */
-export interface WrittenRange {
+/** The rows one run wrote into one month of one table: the run, their MERGE window and block range. */
+export interface WrittenRange extends WrittenMonth {
   runId: string;
-  window: MergeWindow;
 }
 
-/** The same, kept per calendar month: one window for each month the run's rows landed in. */
+/** The same for every month the run's rows landed in. */
 export interface WrittenMonths {
   runId: string;
-  months: MergeWindow[];
+  months: WrittenMonth[];
 }
 
 /**
@@ -853,11 +852,19 @@ export interface WrittenMonths {
  *
  * WITH A WRITTEN RANGE it answers the same question for the keys one run wrote, and reads the
  * TABLE rather than the view, because that question has a natural window. The keys are taken from
- * the months the run's rows sit in, matched on `ingestion_run_id`, which a MERGE rewrites on
- * update as well as on insert. Every copy of those keys is then counted over `twinWindowFor`,
- * which reaches past the MERGE window to where the twin of a MERGE-created duplicate sits. Both
- * references carry a literal partition filter, so the guard accepts it and the engine prunes.
- * Only the key, block_number and block_timestamp columns are read.
+ * the rows the run wrote, matched on `ingestion_run_id`, which a MERGE rewrites on update as well
+ * as on insert. Every copy of those keys is then counted over `twinWindowFor`, which reaches past
+ * the MERGE window to where the twin of a MERGE-created duplicate sits. Both references carry a
+ * literal partition filter, so the guard accepts it and the engine prunes.
+ *
+ * FINDING THE KEYS READS ONLY WHAT THE RUN WROTE, AS FAR AS THE TABLE LETS IT. The filter is the
+ * run's own time span and block range, not its whole months. BigQuery still bills by the monthly
+ * partition unless the clustering lets it skip storage blocks, and block_number is a clustering
+ * column on RawLogs, so there the block range is what can cut the read to about the day a daily
+ * run wrote. Transactions is clustered by tx_hash before block_number, so on that table this step
+ * still reads close to the whole month. Neither is measured yet; the dry run after the trial load
+ * will say. Counting the copies cannot shrink the same way: the twin of a duplicate is by
+ * construction months away.
  */
 export async function duplicateReport(
   tableId: string,
@@ -872,7 +879,6 @@ export async function duplicateReport(
   const params: Record<string, any> = { chainId };
   if (written) {
     const w = written.window;
-    const ownMonths = windowForSpan(new Date(w.sourceMinTs + "Z"), new Date(w.sourceMaxTs + "Z"), 0);
     scope = `
       SELECT ${keyCols.map((k) => `T.${k}`).join(", ")}, T.block_number, T.block_timestamp
       FROM ${fullTableName(tableId)} T
@@ -881,11 +887,14 @@ export async function duplicateReport(
         AND STRUCT(${keyCols.map((k) => `T.${k}`).join(", ")}) IN (
           SELECT AS STRUCT ${keyCols.map((k) => `W.${k}`).join(", ")}
           FROM ${fullTableName(tableId)} W
-          WHERE ${windowPredicate("W", ownMonths)}
+          WHERE ${windowPredicate("W", writtenSpan(w))}
             AND W.chain_id = @chainId
+            AND W.block_number BETWEEN @fromBlock AND @toBlock
             AND W.ingestion_run_id = @runId
         )`;
     params.runId = written.runId;
+    params.fromBlock = written.fromBlock;
+    params.toBlock = written.toBlock;
   }
 
   const rows = await bqQuery(`
@@ -905,7 +914,7 @@ export async function duplicateReport(
       MIN(IF(copies > 1, block_timestamp, NULL)) AS min_dup_ts,
       MAX(IF(copies > 1, block_timestamp, NULL)) AS max_dup_ts
     FROM keyed
-  `, params, written ? { chainId: "INT64", runId: "STRING" } : undefined);
+  `, params, written ? { chainId: "INT64", runId: "STRING", fromBlock: "INT64", toBlock: "INT64" } : undefined);
 
   const r = rows[0] ?? {};
   const stored = Number(r.stored_rows ?? 0);
@@ -1000,7 +1009,7 @@ export async function verifyWrittenRangeUniqueness(
   const lower = <T extends number | string>(a: T | null, b: T | null) => (a === null ? b : b === null ? a : (a < b ? a : b));
   const upper = <T extends number | string>(a: T | null, b: T | null) => (a === null ? b : b === null ? a : (a > b ? a : b));
   for (const slice of slices) {
-    const r = await duplicateReport(tableId, chainId, { runId: written.runId, window: slice });
+    const r = await duplicateReport(tableId, chainId, { runId: written.runId, ...slice });
     report.storedRows += r.storedRows;
     report.distinctKeys += r.distinctKeys;
     report.phantomRows += r.phantomRows;
@@ -1009,12 +1018,12 @@ export async function verifyWrittenRangeUniqueness(
     report.minTs = lower(report.minTs, r.minTs);
     report.maxTs = upper(report.maxTs, r.maxTs);
   }
-  const months = slices.map((s) => s.sourceMinTs.slice(0, 7)).join(", ");
+  const months = slices.map((s) => s.window.sourceMinTs.slice(0, 7)).join(", ");
   const fields = {
     tableId, chainId, runId: written.runId, storedRows: report.storedRows,
     distinctKeys: report.distinctKeys, phantomRows: report.phantomRows,
     months,
-    lookup: slices.map((s) => { const t = twinWindowFor(s); return `${t.fromTs} to ${t.toTs}`; }).join("; "),
+    lookup: slices.map((s) => { const t = twinWindowFor(s.window); return `${t.fromTs} to ${t.toTs}`; }).join("; "),
   };
   if (report.phantomRows > 0) {
     log.error(

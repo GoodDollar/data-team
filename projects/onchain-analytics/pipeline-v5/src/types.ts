@@ -217,6 +217,15 @@ export interface MergeWindow {
   paddingMonths: number;
 }
 
+/** What one run wrote into one calendar month of one table on one chain. */
+export interface WrittenMonth {
+  /** The MERGE window of those rows: their own span, padded the way a MERGE pads it. */
+  window: MergeWindow;
+  /** The lowest and highest block_number among those rows. */
+  fromBlock: number;
+  toBlock: number;
+}
+
 export interface PipelineOpts {
   mode: "daily" | "backfill" | "plan" | "verify" | "dedup" | "repair" | "calibrate" | "coverage";
   /** Limit to these chain names, for example CELO,XDC. */
