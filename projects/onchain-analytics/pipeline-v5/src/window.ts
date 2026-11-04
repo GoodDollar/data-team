@@ -39,7 +39,7 @@
  * one second mid-life, so any such conversion is wrong across that boundary.
  */
 
-import type { MergeWindow } from "./types.js";
+import type { MergeWindow, WrittenMonth } from "./types.js";
 
 /** Start of the UTC month containing `d`. */
 function startOfMonthUtc(d: Date): Date {
@@ -116,6 +116,106 @@ export function windowForSpan(from: Date, to: Date, paddingMonths = DEFAULT_PADD
     sourceMaxTs: sqlTs(to),
     paddingMonths,
   };
+}
+
+/**
+ * Where to look for the twin of a key a run wrote, for the duplicate check that follows a run.
+ *
+ * WHY IT HAS TO REACH PAST THE MERGE WINDOW. Inside its own window a MERGE sees an existing row as
+ * a match and updates it, so the duplicate it can create always has its twin OUTSIDE that window.
+ * A check scoped to the written range, or even to the MERGE window, is the one check guaranteed
+ * not to find it.
+ *
+ * WHY TWICE THE PADDING IS ENOUGH. Two rows under one key carry the timestamps of the blocks their
+ * readers saw the log in, and a final log lives in one block. A reorganisation moves a log by
+ * minutes, well inside the merge padding, so the MERGE matches it. A twin outside the MERGE window
+ * therefore comes from a stored timestamp that was wrong or later corrected, and the nearest such
+ * twin is the one the MERGE only just missed. Doubling the padding looks a full padding band
+ * further on each side. At the default of one month that reaches back to the start of the second
+ * month before the row's own, 59 to 92 days depending where in its month the row sits, so a twin
+ * the MERGE missed in that band is found the day it is created. For a daily run the forward half lies in
+ * the future and reads nothing, so the extra cost is one more monthly partition behind.
+ *
+ * WHAT IT DOES NOT BOUND. A timestamp can be wrong by any amount. A twin further out than this is
+ * left to the full-history scan, `verifyMergeKeyUniqueness`, which is run by hand after a migration
+ * or the first full-history load, the operations that can rewrite old timestamps anywhere.
+ */
+export function twinWindowFor(written: MergeWindow): MergeWindow {
+  // A padding of zero would make this the MERGE window itself, which is blind by construction.
+  const padding = 2 * Math.max(written.paddingMonths, DEFAULT_PADDING_MONTHS);
+  return windowForSpan(new Date(written.sourceMinTs + "Z"), new Date(written.sourceMaxTs + "Z"), padding);
+}
+
+/**
+ * The rows' own span as a window, with no truncation to months and no padding. The upper bound is
+ * the latest row's second plus one, because the window's upper bound is exclusive and block
+ * timestamps are whole seconds.
+ */
+export function writtenSpan(w: MergeWindow): MergeWindow {
+  return {
+    fromTs: w.sourceMinTs,
+    toTs: sqlTs(new Date(Date.parse(w.sourceMaxTs + "Z") + 1000)),
+    sourceMinTs: w.sourceMinTs,
+    sourceMaxTs: w.sourceMaxTs,
+    paddingMonths: 0,
+  };
+}
+
+/**
+ * What the rows cover in each calendar month that holds at least one of them, in month order: the
+ * month's MERGE window and its block range.
+ */
+export function monthsWritten(
+  rows: Record<string, any>[],
+  paddingMonths = DEFAULT_PADDING_MONTHS
+): WrittenMonth[] {
+  return windowsByMonth(rows, paddingMonths).map((window) => {
+    const lo = Date.parse(window.sourceMinTs + "Z");
+    const hi = Date.parse(window.sourceMaxTs + "Z");
+    let fromBlock = Infinity;
+    let toBlock = -Infinity;
+    for (const r of rows) {
+      const t = Date.parse(r.block_timestamp);
+      if (t < lo || t > hi + 999) continue;
+      const b = Number(r.block_number);
+      if (b < fromBlock) fromBlock = b;
+      if (b > toBlock) toBlock = b;
+    }
+    if (!Number.isFinite(fromBlock)) {
+      throw new Error(`L0_9: rows in ${window.sourceMinTs.slice(0, 7)} carry no usable block_number`);
+    }
+    return { window, fromBlock, toBlock };
+  });
+}
+
+/**
+ * One window per calendar month that holds at least one of the rows, in month order.
+ *
+ * WHY A CHECK IS RUN MONTH BY MONTH. BigQuery compares the per-job byte ceiling with its estimate
+ * BEFORE clustering prunes anything, so the estimate is every byte in the partitions a statement
+ * can touch. A duplicate check over a year-long backfill in one statement would be refused. One
+ * month at a time, each statement touches the same handful of partitions a daily run's does, and
+ * the split loses nothing: every written row is in exactly one month, and that month's twin window
+ * is the one `twinWindowFor` would give the row on its own.
+ *
+ * WHY ONLY MONTHS THAT HOLD ROWS. A repair can write January 2020 and June 2026 and nothing in
+ * between. Cutting the span between them into months would check about 78 months the run never
+ * wrote, each one billed for its partitions.
+ */
+export function windowsByMonth(
+  rows: Record<string, any>[],
+  paddingMonths = DEFAULT_PADDING_MONTHS
+): MergeWindow[] {
+  const groups = new Map<string, Record<string, any>[]>();
+  for (const r of rows) {
+    const t = Date.parse(r.block_timestamp);
+    // windowForRows below names the bad value; this only has to not misfile it.
+    const month = Number.isNaN(t) ? "invalid" : sqlTs(startOfMonthUtc(new Date(t)));
+    const group = groups.get(month);
+    if (group) group.push(r);
+    else groups.set(month, [r]);
+  }
+  return [...groups.keys()].sort().map((m) => windowForRows(groups.get(m)!, paddingMonths)!);
 }
 
 /**

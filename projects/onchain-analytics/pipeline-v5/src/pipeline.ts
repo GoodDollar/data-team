@@ -41,9 +41,10 @@ import { confirmEmptyRange } from "./rpc.js";
 import { targetsFor, eraIndexFor, partitionByReleaseScope } from "./registry.js";
 import { rawLogRows, transactionRows, missingTransactionCount } from "./rawrow.js";
 import { projectChunk, projectFetchResult, unionRange } from "./batch.js";
-import { windowForRows, widen } from "./window.js";
+import { windowForRows, widen, monthsWritten } from "./window.js";
 import {
   ensureInfraTables, stageAndMerge, recordCoverage, getMaxBlockTimestamp, setCaptureAssurance,
+  verifyWrittenRangeUniqueness,
 } from "./bq.js";
 import { loadCoverage, computeResumePoint } from "./coverage.js";
 import { checkCaptureSpan, checkRunSize } from "./budget.js";
@@ -52,7 +53,7 @@ import { nowIso } from "./adapters.js";
 import { RunSummary, unit, PARENT_GRAIN, type UnitOutcome } from "./outcome.js";
 import type {
   PipelineOpts, PipelineResult, CaptureTarget, CoverageRecord, FetchResult, NetworkConfig,
-  MergeWindow, ChunkResult, EraMapEntry,
+  MergeWindow, ChunkResult, EraMapEntry, WrittenMonth,
 } from "./types.js";
 
 export class IncompleteFetchError extends Error {}
@@ -71,6 +72,31 @@ let captureSeq = 0;
 function captureIdFor(target: CaptureTarget, fromBlock: number, toBlock: number): string {
   captureSeq += 1;
   return `${RUN_ID}:${captureSeq}:${target.chainId}:${target.address}:${fromBlock}-${toBlock}`;
+}
+
+/**
+ * Every (table, chain) this run merged into, and each calendar month its rows landed in, with the
+ * widest window written in that month. Read by the duplicate check at the end of a run, so the
+ * check covers exactly the months the run wrote and none between them. Cleared when a run starts,
+ * for the same reason `captureSeq` is module state: it is per process.
+ */
+const writtenThisRun = new Map<string, { tableId: string; chainId: number; months: Map<string, WrittenMonth> }>();
+
+function recordWrite(tableId: string, chainId: number, rows: Record<string, any>[]): void {
+  const k = `${tableId}|${chainId}`;
+  const entry = writtenThisRun.get(k) ?? { tableId, chainId, months: new Map<string, WrittenMonth>() };
+  for (const m of monthsWritten(rows, CONFIG.MERGE_PADDING_MONTHS)) {
+    const month = m.window.sourceMinTs.slice(0, 7);
+    const seen = entry.months.get(month);
+    entry.months.set(month, seen
+      ? {
+        window: widen(seen.window, m.window),
+        fromBlock: Math.min(seen.fromBlock, m.fromBlock),
+        toBlock: Math.max(seen.toBlock, m.toBlock),
+      }
+      : m);
+  }
+  writtenThisRun.set(k, entry);
 }
 
 /** The common part of a coverage row, so no call site can forget a field. */
@@ -326,6 +352,8 @@ function makeSink(p: PreparedCapture) {
       const w = windowForRows(logBuffer, CONFIG.MERGE_PADDING_MONTHS);
       if (w === null) throw new Error("L0_9: rows to write but no window could be derived");
       writtenWindow = widen(writtenWindow, w);
+      // Recorded before the MERGE, so a MERGE that throws after writing is still checked.
+      recordWrite(RAW_LOGS_TABLE, target.chainId, logBuffer);
       const r = await stageAndMerge(RAW_LOGS_TABLE, logBuffer, RAW_LOGS_SCHEMA, RUN_ID, w);
       inserted += r.inserted;
       updated += r.updated;
@@ -337,6 +365,7 @@ function makeSink(p: PreparedCapture) {
       const w = windowForRows(txBuffer, CONFIG.MERGE_PADDING_MONTHS);
       if (w === null) throw new Error("L0_9: transactions to write but no window could be derived");
       writtenWindow = widen(writtenWindow, w);
+      recordWrite(TRANSACTIONS_TABLE, target.chainId, txBuffer);
       const r = await stageAndMerge(TRANSACTIONS_TABLE, txBuffer, TRANSACTIONS_SCHEMA, RUN_ID, w);
       txInserted += r.inserted;
       txUpdated += r.updated;
@@ -781,6 +810,53 @@ async function captureChain(
   return outcomes;
 }
 
+/**
+ * After a daily run, a backfill or a repair, check that every merge key it wrote is held by
+ * exactly one row.
+ *
+ * BigQuery does not enforce a unique key, so a duplicate never errors: counts just double, which is
+ * how the old tables collected 43,000 phantom claim rows. This turns a duplicate into a FAILED
+ * unit, so the run exits nonzero and the failure alert carries it to Slack. A check that could
+ * not run is a failed unit too, because a check that silently did not run reads as a clean one.
+ *
+ * It runs whatever else the run did. A run that failed part way may still have written rows, and
+ * those are the rows most worth checking. A clean check adds no unit: counting it as a completion
+ * would let a run whose every capture failed exit as if it had done work.
+ *
+ * Exported for repair, which drives `processTarget` directly rather than through `runPipeline`.
+ * The ledger is emptied once read, so one run's writes are checked once.
+ */
+export async function checkWrittenRanges(): Promise<UnitOutcome[]> {
+  const outcomes: UnitOutcome[] = [];
+  const written = [...writtenThisRun.values()];
+  writtenThisRun.clear();
+  for (const { tableId, chainId, months } of written) {
+    try {
+      const { ok, report } = await verifyWrittenRangeUniqueness(tableId, chainId, {
+        runId: RUN_ID,
+        months: [...months.keys()].sort().map((m) => months.get(m)!),
+      });
+      if (!ok) {
+        outcomes.push(unit(
+          "failed", tableId,
+          `DUPLICATE_KEYS: ${report.phantomRows} phantom row(s) in ${tableId}/chain ${chainId} under keys ` +
+          `this run wrote, ${report.storedRows} rows over ${report.distinctKeys} keys, blocks ` +
+          `${report.minBlock}..${report.maxBlock}`,
+          { chainId, fromBlock: report.minBlock, toBlock: report.maxBlock },
+        ));
+      }
+    } catch (e: any) {
+      log.error(`Duplicate check could not run for ${tableId}/chain ${chainId}: ${e.message}`);
+      outcomes.push(unit(
+        "failed", tableId,
+        `DUPLICATE_CHECK_FAILED: the duplicate check on ${tableId}/chain ${chainId} could not run: ${e.message}`,
+        { chainId },
+      ));
+    }
+  }
+  return outcomes;
+}
+
 /** Alert when a chain's newest captured block is older than the threshold. */
 async function checkFreshness(networks: NetworkConfig[]): Promise<void> {
   const threshold = CONFIG.FRESHNESS_THRESHOLD_HOURS;
@@ -858,6 +934,7 @@ async function recordGlobalRefusal(
  */
 export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
   await ensureInfraTables();
+  writtenThisRun.clear();
 
   const summary = new RunSummary();
   const networks = selectedNetworks(opts.chains);
@@ -916,6 +993,35 @@ export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
   }
 
   let totalRows = 0;
+  try {
+    totalRows = await captureAll(inScope, opts, summary);
+  } finally {
+    // Daily and backfill alike, over what the run wrote. The full-history check stays a manual
+    // step after a migration or the first full-history load, which can rewrite timestamps anywhere.
+    //
+    // In a `finally` because the capture loop can throw after an earlier chain has merged rows,
+    // for instance when recording a later chain's capability gap fails. Those captures are
+    // already recorded complete, so the next run resumes past them and their keys would never be
+    // checked. A thrown error still propagates after this runs; `checkWrittenRanges` turns its own
+    // failures into outcomes rather than throwing, so it cannot replace that error.
+    for (const outcome of await checkWrittenRanges()) summary.add(outcome);
+  }
+  if (opts.mode === "daily") await checkFreshness(networks);
+
+  return resultOf(summary, totalRows);
+}
+
+/**
+ * Capture every in-scope chain into `summary`. Returns the RawLogs rows merged.
+ *
+ * Separate from `runPipeline` so the duplicate check there can run whether or not this throws.
+ */
+async function captureAll(
+  inScope: NetworkConfig[],
+  opts: PipelineOpts,
+  summary: RunSummary,
+): Promise<number> {
+  let totalRows = 0;
 
   for (const network of inScope) {
     const reader = readerFor(network);
@@ -960,9 +1066,7 @@ export async function runPipeline(opts: PipelineOpts): Promise<PipelineResult> {
     }
   }
 
-  if (opts.mode === "daily") await checkFreshness(networks);
-
-  return resultOf(summary, totalRows);
+  return totalRows;
 }
 
 /**
