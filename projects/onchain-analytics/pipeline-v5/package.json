@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "test:known-failures": "vitest run --config vitest.known-failures.config.ts",
     "gate:write-safety": "tsx test/integration/two-process-merge.gate.ts",
+    "gate:dup-check": "tsx test/integration/range-duplicate-check.gate.ts",
     "verify:local": "npm run lint && npm run typecheck && npm run build:check && npm run test:coverage && npm run test:known-failures"
   },
   "dependencies": {
