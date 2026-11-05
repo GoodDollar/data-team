@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /projects/onchain-analytics/pipeline-v5
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /projects/reserve-analysis/scripts/rpc-checks
+    schedule:
+      interval: weekly
