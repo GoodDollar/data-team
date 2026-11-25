@@ -1,6 +1,12 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD — DEV v6.0
+ * GOODDOLLAR DASHBOARD — DEV v6.1
  * =========================================
+ *
+ * CHANGELOG v6.1 (2026-11-25)
+ * - Section 6: xdcSubgraphCorrectionPreview / xdcSubgraphCorrection /
+ *   xdcSubgraphCorrectionRestore. One-off correction of the XDC claimer
+ *   and G$ claimed history after the move to gd_xdc/1.4, and of the XDC
+ *   and AGG USD rows of the last 90 days.
  *
  * Companion file to v6-main.gs. Contains everything that is NOT part
  * of the daily cron path: connection tests, diagnostics, one-shot
@@ -32,6 +38,7 @@
  *  3) Dry-run / preview tools   — safe, no writes
  *  4) Gap and coverage reports  — safe, no writes
  *  5) Facts sheet maintenance   — deleteOldInviteRows, xdcInvitesDedupeRaw
+ *  6) XDC subgraph 1.4 correction — preview (no writes), correction, restore
  *****/
 
 
@@ -689,4 +696,406 @@ function xdcInvitesDedupeRaw() {
   SpreadsheetApp.flush();
   Logger.log('xdcInvitesDedupeRaw: ' + JSON.stringify(summary));
   return summary;
+}
+
+
+/***** =========================================
+ * 6) XDC SUBGRAPH 1.4 CORRECTION
+ * =========================================
+ * gd_xdc/1.2 counted Identity whitelist events as claimers, and its day rows
+ * missed the claims made before the row existed. Daily Facts never rewrites a
+ * stored row, so moving XDC_SUBGRAPH_URL to 1.4 fixes new rows only. These
+ * functions correct the stored rows in place:
+ *
+ *   xdcSubgraphCorrectionPreview()  computes everything and logs what would
+ *                                   change. Writes nothing.
+ *   xdcSubgraphCorrection()         first writes every row it will change or
+ *                                   add, with the old value, to a new tab
+ *                                   "XDC 1.4 corrections <UTC time>", then
+ *                                   corrects Daily Facts. A second run
+ *                                   changes nothing.
+ *   xdcSubgraphCorrectionRestoreLatest()  (or ...Restore(tabName))
+ *                                   puts the old values back from the newest
+ *                                   log tab and removes the rows it added.
+ *
+ * What it recomputes:
+ *   From CONFIG.XDC_GENESIS to the last day the daily run has written (at
+ *   most yesterday), from the 1.4 day rows read at one pinned block: xdc_new_claimers; xdc_lifetime_unique_claimers (running
+ *   total of first-time claimers to the end of each UTC day);
+ *   xdc_returning_claimers (stored xdc_dau minus new claimers, floored at 0);
+ *   xdc_gd_claimed_1d/7d/30d; xdc_daily_gd_minted; agg_gd_claimed_1d/7d/30d.
+ *   For the last XDC_CORRECTION.USD_DAYS days (an XDC price row exists on
+ *   each of them): xdc_usd_claimed_1d/7d/30d, xdc_p2p_usd_amount,
+ *   xdc_lifetime_claimed_usd_amount and their agg_ rows (which, before
+ *   v6.5, were written without XDC).
+ * Run it between scheduled executions. It stops without changing Daily
+ * Facts if a row is appended while it runs.
+ *****/
+
+const XDC_CORRECTION = {
+  USD_DAYS: 90,
+  LOG_PREFIX: 'XDC 1.4 corrections ',
+  LOG_HEADERS: ['date', 'chain', 'metric_key', 'action', 'old_value', 'new_value', 'old_updated_at', 'subgraph_block'],
+  // USD metric base -> the G$ metric base it is priced from
+  USD_SOURCES: {
+    usd_claimed_1d: 'gd_claimed_1d',
+    usd_claimed_7d: 'gd_claimed_7d',
+    usd_claimed_30d: 'gd_claimed_30d',
+    p2p_usd_amount: 'p2p_gd_amount',
+    lifetime_claimed_usd_amount: 'lifetime_claimed_gd_amount',
+  },
+};
+
+function xdcSubgraphCorrectionPreview() {
+  return xdcSubgraphCorrectionRun_(false);
+}
+
+function xdcSubgraphCorrection() {
+  return xdcSubgraphCorrectionRun_(true);
+}
+
+/** Same date parsing as getExistingFactsIndex(). */
+function xdcFactsDate_(value) {
+  if (value instanceof Date) return formatYMD(value);
+  if (value != null && String(value).length >= 10) {
+    const parsed = parseDateLoose(value);
+    return parsed ? formatYMD(parsed) : null;
+  }
+  return null;
+}
+
+/** Every 1.4 day row up to the end of untilYMD, read at one block. */
+function xdcCorrectionFetchDays_(untilYMD) {
+  if (XDC_SUBGRAPH_URL.indexOf('/gd_xdc/1.4/') === -1) {
+    throw new Error('XDC_SUBGRAPH_URL is not gd_xdc/1.4; nothing was changed');
+  }
+  const meta = xdcGqlRequest('query { _meta { block { number timestamp } hasIndexingErrors } }')._meta;
+  if (meta.hasIndexingErrors) throw new Error('XDC subgraph reports indexing errors; nothing was changed');
+  const dayEnd = Date.parse(untilYMD + 'T00:00:00Z') / 1000 + 86400;
+  if (Number(meta.block.timestamp) < dayEnd) {
+    throw new Error('XDC subgraph head (block ' + meta.block.number + ') is before the end of ' + untilYMD + '; nothing was changed');
+  }
+  const block = meta.block.number;
+  var nodes = [];
+  var last = '';
+  for (;;) {
+    const page = xdcGqlRequest('query { dailyUBIs(first: 1000, orderBy: id, orderDirection: asc, block: { number: ' + block +
+      ' }, where: { id_gt: "' + last + '" }) { id newClaimers totalUBIDistributed } }').dailyUBIs || [];
+    nodes = nodes.concat(page);
+    if (page.length < 1000) break;
+    last = page[page.length - 1].id;
+  }
+  const days = nodes.map(function(n) {
+    return {
+      date: xdcDayISOToYmd(n.id),
+      newClaimers: n.newClaimers == null ? null : Number(n.newClaimers),
+      claimed: n.totalUBIDistributed == null ? null : Number(n.totalUBIDistributed) / 1e18,
+    };
+  }).filter(function(day) { return day.date <= untilYMD; });
+  days.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  return { block: block, days: days };
+}
+
+/**
+ * Target values for every corrected row. Pure: days = 1.4 day rows sorted by
+ * date; get(date, chain, metricKey) returns the stored value or null.
+ * Rolling sums treat a missing day as 0 and AGG sums every chain that has a
+ * value, as the daily pipeline does.
+ */
+function xdcCorrectionTargets_(days, get, untilYMD, usdSinceYMD) {
+  const byDay = {};
+  const lifetime = {};
+  var running = 0;
+  for (var i = 0; i < days.length; i++) {
+    byDay[days[i].date] = days[i];
+    running += days[i].newClaimers || 0;
+    lifetime[days[i].date] = running;
+  }
+  function claimedOver(date, windowDays) {
+    var sum = 0;
+    for (var back = 0; back < windowDays; back++) {
+      const day = byDay[addDays(date, -back)];
+      sum += day && day.claimed != null ? day.claimed : 0;
+    }
+    return sum;
+  }
+  function aggOf(date, base, xdcValue) {
+    var sum = xdcValue;
+    Object.keys(CHAINS).forEach(function(chain) {
+      if (chain === 'XDC') return;
+      const value = get(date, chain, chain.toLowerCase() + '_' + base);
+      if (value !== null) sum += value;
+    });
+    return sum;
+  }
+  const targets = [];
+  const noPrice = [];
+  function add(date, chain, metricKey, value, source) {
+    targets.push({ date: date, chain: chain, metric_key: metricKey, value: value, source: source });
+  }
+  for (var d = CONFIG.XDC_GENESIS; d <= untilYMD; d = addDays(d, 1)) {
+    const day = byDay[d];
+    if (!day || day.newClaimers == null || day.claimed == null) continue;
+    const gd = { gd_claimed_1d: day.claimed, gd_claimed_7d: claimedOver(d, 7), gd_claimed_30d: claimedOver(d, 30) };
+    add(d, 'XDC', 'xdc_new_claimers', day.newClaimers, 'XDC_SUBGRAPH');
+    add(d, 'XDC', 'xdc_lifetime_unique_claimers', lifetime[d], 'XDC_SUBGRAPH');
+    const dau = get(d, 'XDC', 'xdc_dau');
+    if (dau !== null) add(d, 'XDC', 'xdc_returning_claimers', Math.max(0, dau - day.newClaimers), 'COMPUTED');
+    add(d, 'XDC', 'xdc_daily_gd_minted', day.claimed, 'COMPUTED');
+    Object.keys(gd).forEach(function(base) {
+      add(d, 'XDC', 'xdc_' + base, gd[base], 'XDC_SUBGRAPH');
+      add(d, 'AGG', 'agg_' + base, aggOf(d, base, gd[base]), 'AGG');
+    });
+    if (d < usdSinceYMD) continue;
+    const price = get(d, 'XDC', 'xdc_gd_price');
+    if (price === null || price === 0) {
+      noPrice.push(d);
+      continue;
+    }
+    Object.keys(XDC_CORRECTION.USD_SOURCES).forEach(function(base) {
+      const sourceBase = XDC_CORRECTION.USD_SOURCES[base];
+      const amount = gd[sourceBase] !== undefined ? gd[sourceBase] : get(d, 'XDC', 'xdc_' + sourceBase);
+      if (amount === null) return;
+      add(d, 'XDC', 'xdc_' + base, amount * price, 'COMPUTED');
+      add(d, 'AGG', 'agg_' + base, aggOf(d, base, amount * price), 'AGG');
+    });
+  }
+  return { targets: targets, noPrice: noPrice };
+}
+
+/**
+ * updated_at as the text the sheet shows ("yyyy-MM-dd HH:mm:ss" in the
+ * spreadsheet's time zone). Written back as text it parses to the same
+ * value; writing the Date object back was silently ignored by Sheets
+ * (seen on the test copy, 2026-11-25).
+ */
+function xdcUpdatedAtText_(value, timeZone) {
+  if (value instanceof Date) return Utilities.formatDate(value, timeZone, 'yyyy-MM-dd HH:mm:ss');
+  return value == null ? '' : String(value);
+}
+
+function xdcCorrectionReadFacts_(facts) {
+  const lastRow = facts.getLastRow();
+  const data = lastRow > 1 ? facts.getRange(2, 1, lastRow - 1, 6).getValues() : [];
+  const rowOf = {};
+  const valueOf = {};
+  const lastDate = {};
+  for (var i = 0; i < data.length; i++) {
+    const ymd = xdcFactsDate_(data[i][0]);
+    if (!ymd || !data[i][1] || !data[i][2]) continue;
+    const key = ymd + '|' + data[i][1] + '|' + data[i][2];
+    rowOf[key] = i;
+    const value = parseFloat(String(data[i][3]).replace(/,/g, ''));
+    if (isFinite(value)) valueOf[key] = value;
+    const series = data[i][1] + '|' + data[i][2];
+    if (!lastDate[series] || ymd > lastDate[series]) lastDate[series] = ymd;
+  }
+  return { lastRow: lastRow, data: data, rowOf: rowOf, valueOf: valueOf, lastDate: lastDate };
+}
+
+/**
+ * Write value (D) and updated_at (F) for every row in one call each. Cells
+ * that hold a formula get the same formula back; a change that would
+ * replace a formula stops the run before anything is written.
+ */
+function xdcCorrectionWriteColumns_(facts, data, changes) {
+  if (!data.length) return;
+  const formulas = facts.getRange(2, 4, data.length, 3).getFormulas();
+  changes.forEach(function(c) {
+    if (formulas[c.idx][0] || formulas[c.idx][2]) {
+      throw new Error('Daily Facts row ' + (c.idx + 2) + ' needs a change but holds a formula; nothing was changed');
+    }
+  });
+  const colD = data.map(function(r, i) { return [formulas[i][0] || r[3]]; });
+  const colF = data.map(function(r, i) { return [formulas[i][2] || r[5]]; });
+  changes.forEach(function(c) {
+    colD[c.idx][0] = c.value;
+    colF[c.idx][0] = c.updatedAt;
+  });
+  facts.getRange(2, 4, colD.length, 1).setValues(colD);
+  facts.getRange(2, 6, colF.length, 1).setValues(colF);
+}
+
+function xdcCorrectionAppend_(facts, rows) {
+  const start = facts.getLastRow() + 1;
+  facts.getRange(start, 1, rows.length, 6).setValues(rows);
+  const byDecimals = {};
+  rows.forEach(function(row, i) {
+    const spec = METRICS[row[2]];
+    const dp = spec && typeof spec.decimals === 'number' ? spec.decimals : 2;
+    (byDecimals[dp] = byDecimals[dp] || []).push('D' + (start + i));
+  });
+  Object.keys(byDecimals).forEach(function(dp) {
+    facts.getRangeList(byDecimals[dp]).setNumberFormat(dp == 0 ? '#,##0' : '#,##0.' + '0'.repeat(Number(dp)));
+  });
+}
+
+function xdcSubgraphCorrectionRun_(write) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Another run holds the script lock; nothing was changed');
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+    const facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+    if (!facts) throw new Error('Daily Facts not found');
+    const stored = xdcCorrectionReadFacts_(facts);
+    // Stop at the last day the daily run has written (its Celo and XDC rows
+    // are needed for AGG and returning claimers), and never past yesterday.
+    var untilYMD = getYesterdayYMD();
+    ['CELO|celo_gd_claimed_1d', 'XDC|xdc_dau', 'XDC|xdc_gd_price'].forEach(function(k) {
+      const last = stored.lastDate[k];
+      if (!last) throw new Error('No ' + k + ' rows in Daily Facts; nothing was changed');
+      if (last < untilYMD) untilYMD = last;
+    });
+    const usdSinceYMD = addDays(untilYMD, -(XDC_CORRECTION.USD_DAYS - 1));
+    const fetched = xdcCorrectionFetchDays_(untilYMD);
+    const computed = xdcCorrectionTargets_(fetched.days, function(date, chain, metricKey) {
+      const value = stored.valueOf[date + '|' + chain + '|' + metricKey];
+      return value === undefined ? null : value;
+    }, untilYMD, usdSinceYMD);
+
+    const updates = [];
+    const adds = [];
+    const perKey = {};
+    computed.targets.forEach(function(t) {
+      const spec = METRICS[t.metric_key];
+      const dp = spec && typeof spec.decimals === 'number' ? spec.decimals : 2;
+      const value = Number(Number(t.value).toFixed(dp));
+      const key = t.date + '|' + t.chain + '|' + t.metric_key;
+      const stat = perKey[t.metric_key] || (perKey[t.metric_key] = { unchanged: 0, updated: 0, added: 0, largest: null });
+      const idx = stored.rowOf[key];
+      if (idx === undefined) {
+        adds.push({ t: t, value: value });
+        stat.added++;
+        return;
+      }
+      const old = stored.valueOf[key];
+      if (old !== undefined && Math.abs(old - value) < 1e-6) {
+        stat.unchanged++;
+        return;
+      }
+      updates.push({ idx: idx, t: t, value: value, old: stored.data[idx][3], oldUpdated: stored.data[idx][5] });
+      stat.updated++;
+      const change = old === undefined ? null : value - old;
+      if (!stat.largest || (change !== null && Math.abs(change) > Math.abs(stat.largest.change || 0))) {
+        stat.largest = { date: t.date, old: old === undefined ? null : old, value: value };
+        stat.largest.change = change;
+      }
+    });
+
+    // Formula cells in value / source / updated_at: kept as they are (see
+    // xdcCorrectionWriteColumns_), listed here so they can be checked.
+    const formulas = stored.data.length ? facts.getRange(2, 4, stored.data.length, 3).getFormulas() : [];
+    const formulaCells = [];
+    formulas.forEach(function(r, i) {
+      r.forEach(function(formula, c) {
+        if (formula) formulaCells.push({ row: i + 2, date: xdcFactsDate_(stored.data[i][0]), chain: stored.data[i][1],
+          metric_key: stored.data[i][2], column: 'DEF'.charAt(c), formula: String(formula).slice(0, 120) });
+      });
+    });
+    updates.forEach(function(u) {
+      if (formulas[u.idx][0] || formulas[u.idx][2]) {
+        throw new Error('Daily Facts row ' + (u.idx + 2) + ' needs a change but holds a formula; nothing was changed');
+      }
+    });
+
+    const summary = {
+      write: write, subgraphBlock: fetched.block, until: untilYMD, usdSince: usdSinceYMD,
+      updated: updates.length, added: adds.length, noPriceDates: computed.noPrice, perKey: perKey,
+      formulaCellCount: formulaCells.length, formulaCells: formulaCells.slice(0, 20), logSheet: null,
+    };
+    if (!write || (!updates.length && !adds.length)) {
+      Logger.log('xdcSubgraphCorrection (' + (write ? 'nothing to change' : 'preview, no writes') + '): ' + JSON.stringify(summary));
+      return summary;
+    }
+
+    summary.logSheet = XDC_CORRECTION.LOG_PREFIX + Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd HH:mm:ss');
+    const timeZone = ss.getSpreadsheetTimeZone();
+    const logRows = updates.map(function(u) {
+      return [u.t.date, u.t.chain, u.t.metric_key, 'updated', u.old, u.value, xdcUpdatedAtText_(u.oldUpdated, timeZone), fetched.block];
+    }).concat(adds.map(function(a) {
+      return [a.t.date, a.t.chain, a.t.metric_key, 'added', '', a.value, '', fetched.block];
+    }));
+    const log = ss.insertSheet(summary.logSheet);
+    // date and old_updated_at stay text so they read back exactly as written
+    log.getRange(1, 1, logRows.length + 1, 1).setNumberFormat('@');
+    log.getRange(1, 7, logRows.length + 1, 1).setNumberFormat('@');
+    log.getRange(1, 1, 1, XDC_CORRECTION.LOG_HEADERS.length).setValues([XDC_CORRECTION.LOG_HEADERS]);
+    log.getRange(2, 1, logRows.length, XDC_CORRECTION.LOG_HEADERS.length).setValues(logRows);
+    SpreadsheetApp.flush();
+
+    if (facts.getLastRow() !== stored.lastRow) {
+      throw new Error('Daily Facts changed during the run, so it was not touched. Delete tab "' + summary.logSheet +
+        '" and run again between scheduled executions');
+    }
+    const now = nowIso();
+    xdcCorrectionWriteColumns_(facts, stored.data, updates.map(function(u) {
+      return { idx: u.idx, value: u.value, updatedAt: now };
+    }));
+    if (adds.length) {
+      xdcCorrectionAppend_(facts, adds.map(function(a) {
+        return [a.t.date, a.t.chain, a.t.metric_key, a.value, a.t.source, now];
+      }));
+    }
+    SpreadsheetApp.flush();
+    Logger.log('xdcSubgraphCorrection: ' + JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Editor entry point: restore the newest log tab not restored yet. */
+function xdcSubgraphCorrectionRestoreLatest() {
+  const names = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID).getSheets()
+    .map(function(s) { return s.getName(); })
+    .filter(function(n) { return n.indexOf(XDC_CORRECTION.LOG_PREFIX) === 0 && !/\(restored\)$/.test(n); })
+    .sort();
+  if (!names.length) throw new Error('No "' + XDC_CORRECTION.LOG_PREFIX + '..." tab to restore');
+  return xdcSubgraphCorrectionRestore(names[names.length - 1]);
+}
+
+/**
+ * Undo xdcSubgraphCorrection(): restores the old values listed in the log
+ * tab and deletes the rows it added. Renames the tab "... (restored)".
+ */
+function xdcSubgraphCorrectionRestore(logSheetName) {
+  if (!logSheetName) throw new Error('Pass the log tab name, for example "XDC 1.4 corrections 2026-11-25 03:10:00"');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Another run holds the script lock; nothing was changed');
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+    const log = ss.getSheetByName(logSheetName);
+    if (!log) throw new Error('Tab not found: ' + logSheetName);
+    const facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+    const width = XDC_CORRECTION.LOG_HEADERS.length;
+    const logRows = log.getLastRow() > 1 ? log.getRange(2, 1, log.getLastRow() - 1, width).getValues() : [];
+    const stored = xdcCorrectionReadFacts_(facts);
+    const changes = [];
+    const toDelete = [];
+    var notFound = 0;
+    logRows.forEach(function(r) {
+      const idx = stored.rowOf[xdcFactsDate_(r[0]) + '|' + r[1] + '|' + r[2]];
+      if (idx === undefined) { notFound++; return; }
+      if (r[3] === 'updated') changes.push({ idx: idx, value: r[4], updatedAt: xdcUpdatedAtText_(r[6], ss.getSpreadsheetTimeZone()) });
+      else if (r[3] === 'added') toDelete.push(idx + 2);
+    });
+    if (facts.getLastRow() !== stored.lastRow) throw new Error('Daily Facts changed during the run; nothing was changed');
+    xdcCorrectionWriteColumns_(facts, stored.data, changes);
+    toDelete.sort(function(a, b) { return a - b; });
+    var j = toDelete.length - 1;
+    while (j >= 0) {
+      const end = toDelete[j];
+      var start = end;
+      while (j - 1 >= 0 && toDelete[j - 1] === start - 1) { start--; j--; }
+      j--;
+      facts.deleteRows(start, end - start + 1);
+    }
+    log.setName(logSheetName + ' (restored)');
+    SpreadsheetApp.flush();
+    const summary = { restored: changes.length, deleted: toDelete.length, notFound: notFound };
+    Logger.log('xdcSubgraphCorrectionRestore: ' + JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
 }
