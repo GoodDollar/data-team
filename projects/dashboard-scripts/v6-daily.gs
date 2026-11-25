@@ -1,6 +1,18 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD v6.4
+ * GOODDOLLAR DASHBOARD v6.5
  * =========================================
+ *
+ * CHANGELOG v6.5 (2026-11-25)
+ * - XDC subgraph moved from gd_xdc/1.2 to gd_xdc/1.4. On 1.2,
+ *   uniqueClaimers and newClaimers counted Identity whitelist events, and the
+ *   day rows missed claims made before the row existed. On 1.4 they count
+ *   wallets that claimed and every claim lands in its UTC day. Changes
+ *   xdc_lifetime_unique_claimers, xdc_new_claimers, xdc_returning_claimers,
+ *   xdc_gd_claimed_1d/7d/30d and everything computed from them. History
+ *   was corrected with xdcSubgraphCorrection() in v6-dev.gs.
+ * - Computed (USD) metrics now run after XdcReserve, so XDC USD rows are
+ *   written the same night with that day's price, and AGG USD rows include
+ *   XDC. Before, every nightly run logged 5 "price not available" warnings.
  *
  * CHANGELOG v6.4 (2026-11-02)
  * - XDC invites ingest: rpc.xdcrpc.com froze at block 108914237
@@ -73,8 +85,8 @@
  *   5) ADAPTERS
  *      - Adapter objects that map metric specs to the right fetch function.
  *      - Each adapter has a .fetch() method that returns [{date, value, source}].
- *      - Processing order matters: Dune → Subgraph → Reserve → Computed →
- *        Supply → SupplyComputed → XdcReserve → XdcReserveComputed.
+ *      - Processing order matters: Dune → Subgraph → Reserve → Supply →
+ *        SupplyComputed → XdcReserve → Computed → XdcReserveComputed.
  *        Later adapters can depend on rows produced by earlier ones.
  *
  *   6) buildRows()
@@ -194,7 +206,9 @@ function notifySlack(message) {
 }
 
 /** Goldsky subgraph endpoints */
-const XDC_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/gd_xdc/1.2/gn';
+// gd_xdc/1.4 counts claimers from claims (1.2 counted whitelist events) and keeps
+// every claim in its UTC day row. Checked against the chain 2026-11-16.
+const XDC_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/gd_xdc/1.4/gn';
 const RESERVE_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/reserve_celo/1.0/gn';
 const XDC_RESERVE_SUBGRAPH_URL = 'https://api.goldsky.com/api/public/project_cmizuamdtfouu01x4csuk5dk1/subgraphs/reserve_xdc/v1.0.0/gn';
 
@@ -346,6 +360,7 @@ const METRICS = {
     decimals: 0,
     dune: { type: 'timeseries', queryId: DUNE_IDS.NEW_VS_RETURN, dateCol: 0, valueCol: 2 },
   },
+  // Wallets whose first ever XDC UBI claim falls on this UTC calendar day.
   xdc_new_claimers: {
     adapter: 'Subgraph',
     chains: ['XDC'],
@@ -360,6 +375,11 @@ const METRICS = {
     decimals: 0,
     dune: { type: 'timeseries', queryId: DUNE_IDS.NEW_VS_RETURN, dateCol: 0, valueCol: 3 },
   },
+  // xdc_dau minus xdc_new_claimers, floored at 0. The two use different days:
+  // xdc_dau is the contract's count for the UBI day that runs 12:00-12:00 UTC
+  // (stored on the date it ends), xdc_new_claimers is the UTC calendar day.
+  // So this is an approximation; the subgraph has no calendar-day count of
+  // distinct claimers to subtract from.
   xdc_returning_claimers: {
     adapter: 'Subgraph',
     chains: ['XDC'],
@@ -510,6 +530,7 @@ const METRICS = {
     decimals: 0,
     dune: { type: 'timeseries', queryId: DUNE_IDS.LIFETIMES, dateCol: 0, valueCol: 6 },
   },
+  // Wallets that have claimed XDC UBI at least once (read at run time).
   xdc_lifetime_unique_claimers: {
     adapter: 'Subgraph',
     chains: ['XDC'],
@@ -2859,50 +2880,6 @@ function buildRows(sinceYMD, untilYMD, indexResult, scriptStartMs) {
     }
   }
   
-  if (checkBudget('COMPUTED')) return { rows: rows, health: health, runId: runIdStr, batchByKey: batchByKey };
-  // Process Computed metrics (must be after all other metrics are fetched)
-  for (var i = 0; i < computedMetrics.length; i++) {
-    var item = computedMetrics[i];
-    var metricKey = item.metricKey;
-    var spec = item.spec;
-    var chain = item.chain;
-    var t0 = Date.now();
-    
-    try {
-      var result = Adapters.Computed.fetch(
-        metricKey, chain, sinceYMD, untilYMD, spec.computed, ctx
-      );
-      
-      var computedRows = result.rows || [];
-      var warning = result.warning;
-      
-      var count = 0;
-      for (var j = 0; j < computedRows.length; j++) {
-        var r = computedRows[j];
-        if (r.warn) {
-          addHealth('COMPUTED', chain, metricKey, 'warn', 0, 0, r.message, Date.now() - t0);
-          continue;
-        }
-        var factKey = r.date + '|' + chain + '|' + metricKey;
-        if (existingIndex[factKey]) continue;
-        
-        pushRow(r.date, chain, metricKey, r.value, r.source);
-        count++;
-      }
-      
-      addHealth('COMPUTED', chain, metricKey, 'ok', count, 0, warning || '', Date.now() - t0);
-      if (CONFIG.VERBOSE) {
-        var msg = 'ok  ' + metricKey + '/' + chain + ': ' + count + ' row(s)';
-        if (warning) msg += ' [' + warning + ']';
-        Logger.log(msg);
-      }
-      
-    } catch (e) {
-      addHealth('COMPUTED', chain, metricKey, 'error', 0, 0, e.message, Date.now() - t0);
-      Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
-    }
-  }
-  
   if (checkBudget('SUPPLY')) return { rows: rows, health: health, runId: runIdStr, batchByKey: batchByKey };
   // Process Supply metrics
   for (var i = 0; i < supplyMetrics.length; i++) {
@@ -3005,7 +2982,55 @@ function buildRows(sinceYMD, untilYMD, indexResult, scriptStartMs) {
       Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
     }
   }
-  
+
+  if (checkBudget('COMPUTED')) return { rows: rows, health: health, runId: runIdStr, batchByKey: batchByKey };
+  // Process Computed metrics (USD = G$ x price). Runs after XdcReserve so the
+  // XDC USD rows for a day use that day's xdc_gd_price from this same run.
+  // Before v6.5 it ran earlier: the XDC USD rows were skipped every night
+  // ("price not available"), written one night late, and the AGG USD rows
+  // for each day were written without XDC.
+  for (var i = 0; i < computedMetrics.length; i++) {
+    var item = computedMetrics[i];
+    var metricKey = item.metricKey;
+    var spec = item.spec;
+    var chain = item.chain;
+    var t0 = Date.now();
+
+    try {
+      var result = Adapters.Computed.fetch(
+        metricKey, chain, sinceYMD, untilYMD, spec.computed, ctx
+      );
+
+      var computedRows = result.rows || [];
+      var warning = result.warning;
+
+      var count = 0;
+      for (var j = 0; j < computedRows.length; j++) {
+        var r = computedRows[j];
+        if (r.warn) {
+          addHealth('COMPUTED', chain, metricKey, 'warn', 0, 0, r.message, Date.now() - t0);
+          continue;
+        }
+        var factKey = r.date + '|' + chain + '|' + metricKey;
+        if (existingIndex[factKey]) continue;
+
+        pushRow(r.date, chain, metricKey, r.value, r.source);
+        count++;
+      }
+
+      addHealth('COMPUTED', chain, metricKey, 'ok', count, 0, warning || '', Date.now() - t0);
+      if (CONFIG.VERBOSE) {
+        var msg = 'ok  ' + metricKey + '/' + chain + ': ' + count + ' row(s)';
+        if (warning) msg += ' [' + warning + ']';
+        Logger.log(msg);
+      }
+
+    } catch (e) {
+      addHealth('COMPUTED', chain, metricKey, 'error', 0, 0, e.message, Date.now() - t0);
+      Logger.log('ERROR [' + metricKey + '/' + chain + ']: ' + e.message);
+    }
+  }
+
   if (checkBudget('XDC_RESERVE_COMPUTED')) return { rows: rows, health: health, runId: runIdStr, batchByKey: batchByKey };
   // Process XdcReserveComputed metrics (must be after XdcReserve + Subgraph + Supply)
   for (var i = 0; i < xdcReserveComputedMetrics.length; i++) {
