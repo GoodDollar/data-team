@@ -1,6 +1,7 @@
 https://dune.com/queries/5710738?sidebar=none
 
 -- UBI daily summary (UTC) for the last {{Last_X_Days}} days
+-- G$/user/day, /7d and /30d = the contract's daily UBI amount, and its sum over 7 and 30 days.
 
 WITH params AS (
   SELECT
@@ -64,26 +65,22 @@ daily_filled AS (
   LEFT JOIN price_day   p  ON p.day_utc  = a.day_utc
 ),
 
-median_by_day AS (
-  SELECT day_utc, approx_percentile(claimed_gd, 0.5) AS gd_user_median
-  FROM per_user_day
-  WHERE day_utc BETWEEN (SELECT window_start_utc FROM params) AND (SELECT end_utc FROM params)
+-- The daily amount the UBI contract sets (one event per day, at the first claim after 12:00 UTC)
+quota_by_day AS (
+  SELECT CAST(evt_block_date AS DATE) AS day_utc, MAX(dailyUbi) * 1e-18 AS quota_gd
+  FROM gooddollar_celo.ubischemev2_evt_ubicalculated
+  WHERE contract_address = (SELECT UBI_CONTRACT FROM params)
   GROUP BY 1
 ),
 
-unique_7d AS (
-  SELECT a.day_utc, COUNT(DISTINCT pud.claimer) AS uniq_7d
+quota_roll AS (
+  SELECT
+    a.day_utc,
+    COALESCE(q.quota_gd, 0) AS quota_1d,
+    SUM(COALESCE(q.quota_gd, 0)) OVER (ORDER BY a.day_utc ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)  AS quota_7d,
+    SUM(COALESCE(q.quota_gd, 0)) OVER (ORDER BY a.day_utc ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS quota_30d
   FROM all_days a
-  LEFT JOIN per_user_day pud
-    ON pud.day_utc BETWEEN a.day_utc - INTERVAL '6' DAY AND a.day_utc
-  GROUP BY 1
-),
-unique_30d AS (
-  SELECT a.day_utc, COUNT(DISTINCT pud.claimer) AS uniq_30d
-  FROM all_days a
-  LEFT JOIN per_user_day pud
-    ON pud.day_utc BETWEEN a.day_utc - INTERVAL '29' DAY AND a.day_utc
-  GROUP BY 1
+  LEFT JOIN quota_by_day q ON q.day_utc = a.day_utc
 ),
 
 metrics AS (
@@ -103,13 +100,11 @@ metrics AS (
     SUM(f.gd_day * f.gd_usd) OVER (ORDER BY f.day_utc ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)  AS usd_claimed_last_7d,
 
     f.gd_day AS gd_claimed_last_1d,
-    f.gd_day * f.gd_usd AS usd_claimed_last_1d,
-
-    COALESCE(m.gd_user_median, 0.0) AS gd_per_user_day
+    f.gd_day * f.gd_usd AS usd_claimed_last_1d
   FROM daily_filled f
-  LEFT JOIN median_by_day m ON m.day_utc = f.day_utc
 )
 
+-- Column order is unchanged: the nightly script reads these columns by position.
 SELECT
   me.date                                                     AS "Date",
   me.total_gd_claimed_all_time                                AS "Total G$ claimed (all time)",
@@ -117,18 +112,16 @@ SELECT
 
   me.gd_claimed_last_30d                                      AS "total G$ claimed last 30d (by all users)",
   me.usd_claimed_last_30d                                     AS "total G$ claimed USD last 30d (by all users)",
-  (me.gd_claimed_last_30d / NULLIF(u30.uniq_30d, 0))          AS "G$/user/30d",
+  qr.quota_30d                                                AS "G$/user/30d",
 
   me.gd_claimed_last_7d                                       AS "total G$ claimed last 7d (by all users)",
   me.usd_claimed_last_7d                                      AS "total G$ claimed USD last 7d (by all users)",
-  (me.gd_claimed_last_7d / NULLIF(u7.uniq_7d, 0))             AS "G$/user/7d",
+  qr.quota_7d                                                 AS "G$/user/7d",
 
   me.gd_claimed_last_1d                                       AS "total G$ claimed last 1d (by all users)",
   me.usd_claimed_last_1d                                      AS "total G$ claimed USD last 1d (by all users)",
-  me.gd_per_user_day                                          AS "G$/user/day"
+  qr.quota_1d                                                 AS "G$/user/day"
 FROM metrics me
-JOIN all_days d       ON d.day_utc = me.date
-LEFT JOIN unique_7d  u7  ON u7.day_utc  = me.date
-LEFT JOIN unique_30d u30 ON u30.day_utc = me.date
+LEFT JOIN quota_roll qr ON qr.day_utc = me.date
 WHERE me.date BETWEEN (SELECT start_utc FROM params) AND (SELECT end_utc FROM params)
 ORDER BY me.date DESC;

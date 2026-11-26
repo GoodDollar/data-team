@@ -1,6 +1,12 @@
 /***** =========================================
- * GOODDOLLAR DASHBOARD — DEV v6.1
+ * GOODDOLLAR DASHBOARD — DEV v6.2
  * =========================================
+ *
+ * CHANGELOG v6.2 (2026-11-26)
+ * - Section 7: celoDuneCorrectionPreview / celoDuneCorrection /
+ *   celoDuneCorrectionRestoreLatest. Rewrites the stored Celo transfer rows
+ *   (Dune 5521377) and Celo G$ per user rows (Dune 5710738) from what those
+ *   queries return now, for use after a query is changed.
  *
  * CHANGELOG v6.1 (2026-11-25)
  * - Section 6: xdcSubgraphCorrectionPreview / xdcSubgraphCorrection /
@@ -39,6 +45,7 @@
  *  4) Gap and coverage reports  — safe, no writes
  *  5) Facts sheet maintenance   — deleteOldInviteRows, xdcInvitesDedupeRaw
  *  6) XDC subgraph 1.4 correction — preview (no writes), correction, restore
+ *  7) Celo Dune history correction — preview (no writes), correction, restore
  *****/
 
 
@@ -1098,4 +1105,196 @@ function xdcSubgraphCorrectionRestore(logSheetName) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+/***** =========================================
+ * 7) CELO DUNE HISTORY CORRECTION
+ * =========================================
+ * Daily Facts never rewrites a stored row, so changing a Dune query fixes new
+ * rows only. These functions rewrite the stored Celo rows from what the
+ * queries return now:
+ *
+ *   celoDuneCorrectionPreview()        logs what would change. Writes nothing.
+ *   celoDuneCorrection()               first writes every row it will change,
+ *                                      with the old value, to a new tab
+ *                                      "Celo Dune corrections <UTC time>",
+ *                                      then updates Daily Facts. A second run
+ *                                      changes nothing.
+ *   celoDuneCorrectionRestoreLatest()  puts the old values back from the
+ *                                      newest log tab.
+ *
+ * What it rewrites:
+ *   every metric read from the transfers query (DUNE_IDS.P2P_TRANSFERS) and
+ *   celo_gd_per_user_1d/7d/30d (DUNE_IDS.UBI_SUMMARIES), for the days the
+ *   saved Dune results cover. Where a Celo row changes and has an agg_ row,
+ *   the agg_ row is summed again from the stored chains. It never adds rows.
+ * Run the changed query on Dune first, and run this between scheduled
+ * executions.
+ *****/
+
+const CELO_CORRECTION = {
+  LOG_PREFIX: 'Celo Dune corrections ',
+  LOG_HEADERS: ['date', 'chain', 'metric_key', 'action', 'old_value', 'new_value', 'old_updated_at', 'dune_query'],
+  PER_USER_KEYS: ['celo_gd_per_user_1d', 'celo_gd_per_user_7d', 'celo_gd_per_user_30d'],
+  // Nov 19 held 25.5M G$ while the transfers query counted newly minted G$,
+  // and about 2.3M once it stopped. A larger value means old results.
+  STALE_CHECK: { date: '2026-11-19', metricKey: 'celo_p2p_gd_amount', max: 10000000 },
+};
+
+function celoDuneCorrectionPreview() {
+  return celoDuneCorrectionRun_(false);
+}
+
+function celoDuneCorrection() {
+  return celoDuneCorrectionRun_(true);
+}
+
+/** Metric keys this correction owns. */
+function celoDuneCorrectionKeys_() {
+  return Object.keys(METRICS).filter(function(key) {
+    const dune = METRICS[key].dune;
+    if (!dune) return false;
+    return dune.queryId === DUNE_IDS.P2P_TRANSFERS || CELO_CORRECTION.PER_USER_KEYS.indexOf(key) !== -1;
+  });
+}
+
+/**
+ * Changed rows. Pure: tables = { queryId: result rows }; get(date, chain,
+ * metricKey) returns the stored number, NaN for a stored non-number, or null
+ * when there is no row.
+ */
+function celoDuneCorrectionTargets_(tables, get) {
+  const changes = [];
+  const perKey = {};
+  function consider(date, chain, metricKey, value, queryId) {
+    const old = get(date, chain, metricKey);
+    if (old === null) return false;
+    const stat = perKey[metricKey] || (perKey[metricKey] = { unchanged: 0, updated: 0, largest: null });
+    if (Math.abs(old - value) < 1e-6) {
+      stat.unchanged++;
+      return false;
+    }
+    stat.updated++;
+    if (!stat.largest || Math.abs(value - old) > Math.abs(stat.largest.value - stat.largest.old)) {
+      stat.largest = { date: date, old: old, value: value };
+    }
+    changes.push({ date: date, chain: chain, metric_key: metricKey, value: value, queryId: queryId });
+    return true;
+  }
+  celoDuneCorrectionKeys_().forEach(function(key) {
+    const spec = METRICS[key];
+    const dp = typeof spec.decimals === 'number' ? spec.decimals : 2;
+    (tables[spec.dune.queryId] || []).forEach(function(row) {
+      const date = xdcFactsDate_(row[spec.dune.dateCol]);
+      const raw = row[spec.dune.valueCol];
+      if (!date || raw === null || raw === undefined || raw === '') return;
+      const number = Number(String(raw).replace(/,/g, ''));
+      if (!isFinite(number)) return;
+      const value = Number(number.toFixed(dp));
+      // The transfers query returns 0 USD for a day with no price: keep the stored amount.
+      if (value === 0 && /_usd_amount/.test(key) && get(date, 'CELO', key) > 0) return;
+      const changed = consider(date, 'CELO', key, value, spec.dune.queryId);
+      if (!changed || spec.aggregate !== true) return;
+      const base = key.replace(/^celo_/, '');
+      var sum = value;
+      Object.keys(CHAINS).forEach(function(chain) {
+        if (chain === 'CELO') return;
+        const other = get(date, chain, chain.toLowerCase() + '_' + base);
+        if (other !== null && isFinite(other)) sum += other;
+      });
+      consider(date, 'AGG', 'agg_' + base, Number(sum.toFixed(dp)), spec.dune.queryId);
+    });
+  });
+  return { changes: changes, perKey: perKey };
+}
+
+function celoDuneCorrectionRun_(write) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Another run holds the script lock; nothing was changed');
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID);
+    const facts = ss.getSheetByName(CONFIG.SHEET_FACTS);
+    if (!facts) throw new Error('Daily Facts not found');
+    Logger.log('celoDuneCorrection target spreadsheet: "' + ss.getName() + '" (' + CONFIG.DEST_SPREADSHEET_ID + ')');
+
+    const tables = {};
+    [DUNE_IDS.P2P_TRANSFERS, DUNE_IDS.UBI_SUMMARIES].forEach(function(queryId) {
+      tables[queryId] = duneFetchTable(queryId, 1000).rows;
+      if (!tables[queryId].length) throw new Error('Dune query ' + queryId + ' returned no rows; nothing was changed');
+    });
+    const check = CELO_CORRECTION.STALE_CHECK;
+    const checkSpec = METRICS[check.metricKey].dune;
+    tables[checkSpec.queryId].forEach(function(row) {
+      if (xdcFactsDate_(row[checkSpec.dateCol]) === check.date && Number(row[checkSpec.valueCol]) > check.max) {
+        throw new Error('Dune query ' + checkSpec.queryId + ' still returns the old results; run it on Dune first. Nothing was changed');
+      }
+    });
+
+    const stored = xdcCorrectionReadFacts_(facts);
+    const computed = celoDuneCorrectionTargets_(tables, function(date, chain, metricKey) {
+      const key = date + '|' + chain + '|' + metricKey;
+      if (stored.rowOf[key] === undefined) return null;
+      return stored.valueOf[key] === undefined ? NaN : stored.valueOf[key];
+    });
+    const updates = computed.changes.map(function(c) {
+      const idx = stored.rowOf[c.date + '|' + c.chain + '|' + c.metric_key];
+      return { idx: idx, c: c, old: stored.data[idx][3], oldUpdated: stored.data[idx][5] };
+    });
+
+    const formulas = stored.data.length ? facts.getRange(2, 4, stored.data.length, 3).getFormulas() : [];
+    updates.forEach(function(u) {
+      if (formulas[u.idx][0] || formulas[u.idx][2]) {
+        throw new Error('Daily Facts row ' + (u.idx + 2) + ' needs a change but holds a formula; nothing was changed');
+      }
+    });
+
+    const dates = updates.map(function(u) { return u.c.date; }).sort();
+    const summary = {
+      write: write, spreadsheet: ss.getName(), updated: updates.length,
+      from: dates[0] || null, to: dates[dates.length - 1] || null, perKey: computed.perKey, logSheet: null,
+    };
+    if (!write || !updates.length) {
+      Logger.log('celoDuneCorrection (' + (write ? 'nothing to change' : 'preview, no writes') + '): ' + JSON.stringify(summary));
+      return summary;
+    }
+
+    summary.logSheet = CELO_CORRECTION.LOG_PREFIX + Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd HH:mm:ss');
+    const timeZone = ss.getSpreadsheetTimeZone();
+    const logRows = updates.map(function(u) {
+      return [u.c.date, u.c.chain, u.c.metric_key, 'updated', u.old, u.c.value, xdcUpdatedAtText_(u.oldUpdated, timeZone), u.c.queryId];
+    });
+    const log = ss.insertSheet(summary.logSheet);
+    // date and old_updated_at stay text so they read back exactly as written
+    log.getRange(1, 1, logRows.length + 1, 1).setNumberFormat('@');
+    log.getRange(1, 7, logRows.length + 1, 1).setNumberFormat('@');
+    log.getRange(1, 1, 1, CELO_CORRECTION.LOG_HEADERS.length).setValues([CELO_CORRECTION.LOG_HEADERS]);
+    log.getRange(2, 1, logRows.length, CELO_CORRECTION.LOG_HEADERS.length).setValues(logRows);
+    SpreadsheetApp.flush();
+
+    if (facts.getLastRow() !== stored.lastRow) {
+      throw new Error('Daily Facts changed during the run, so it was not touched. Delete tab "' + summary.logSheet +
+        '" and run again between scheduled executions');
+    }
+    const now = nowIso();
+    xdcCorrectionWriteColumns_(facts, stored.data, updates.map(function(u) {
+      return { idx: u.idx, value: u.c.value, updatedAt: now };
+    }));
+    SpreadsheetApp.flush();
+    Logger.log('celoDuneCorrection: ' + JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Editor entry point: restore the newest Celo log tab not restored yet. */
+function celoDuneCorrectionRestoreLatest() {
+  const names = SpreadsheetApp.openById(CONFIG.DEST_SPREADSHEET_ID).getSheets()
+    .map(function(s) { return s.getName(); })
+    .filter(function(n) { return n.indexOf(CELO_CORRECTION.LOG_PREFIX) === 0 && !/\(restored\)$/.test(n); })
+    .sort();
+  if (!names.length) throw new Error('No "' + CELO_CORRECTION.LOG_PREFIX + '..." tab to restore');
+  // Same log layout as section 6, so the same restore applies.
+  return xdcSubgraphCorrectionRestore(names[names.length - 1]);
 }

@@ -1,6 +1,7 @@
 https://dune.com/queries/5521377?sidebar=none
 
 -- P2P transfers (EOA↔EOA) + OTP, de-duplicated, with daily USD conversion
+-- Plus 7-day and 30-day rolling windows (calendar-day safe)
 -- Param: {{days_lookback}} (INTEGER)
 WITH params AS (
   SELECT
@@ -11,7 +12,8 @@ contracts AS (
   SELECT DISTINCT address AS contract_address FROM celo.creation_traces
 ),
 
--- Direct EOA<->EOA (exclude OTP txs), windowed and excluding today
+-- Direct EOA<->EOA (exclude OTP txs)
+-- Fetch extra 30 days for rolling window calculations
 direct_p2p AS (
   SELECT
     t.evt_block_date AS date,
@@ -26,7 +28,10 @@ direct_p2p AS (
   WHERE c_from.contract_address IS NULL
     AND c_to.contract_address   IS NULL
     AND t."from" <> t."to"
-    AND t.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * p.days_lookback
+    AND t."from" <> 0x0000000000000000000000000000000000000000
+    AND t."to"   <> 0x0000000000000000000000000000000000000000
+    AND t.value > 0
+    AND t.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29)  -- Extra 29 days for 30-day window
     AND t.evt_block_date <  CURRENT_DATE
     AND NOT EXISTS (
       SELECT 1
@@ -37,6 +42,7 @@ direct_p2p AS (
 ),
 
 -- OTP aggregates (amount/tx count)
+-- Fetch extra 30 days for rolling window calculations
 otp_p2p AS (
   SELECT
     w.evt_block_date AS date,
@@ -44,7 +50,7 @@ otp_p2p AS (
     SUM(w.amount) * 1e-18 AS amount_gd
   FROM gooddollar_celo.onetimepayments_evt_paymentwithdraw w
   CROSS JOIN params p
-  WHERE w.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * p.days_lookback
+  WHERE w.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29)  -- Extra 29 days
     AND w.evt_block_date <  CURRENT_DATE
   GROUP BY w.evt_block_date
 ),
@@ -58,7 +64,7 @@ otp_receivers AS (
   JOIN gooddollar_celo.supergooddollar_evt_transfer t
     ON t.evt_tx_hash = w.evt_tx_hash
   CROSS JOIN params p
-  WHERE w.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * p.days_lookback
+  WHERE w.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29)  -- Extra 29 days
     AND w.evt_block_date <  CURRENT_DATE
   GROUP BY w.evt_block_date
 ),
@@ -74,7 +80,7 @@ daily_users AS (
     WHERE c_from.contract_address IS NULL
       AND c_to.contract_address   IS NULL
       AND t."from" <> t."to"
-      AND t.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * p.days_lookback
+      AND t.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29)  -- Extra 29 days
       AND t.evt_block_date <  CURRENT_DATE
       AND NOT EXISTS (SELECT 1 FROM gooddollar_celo.onetimepayments_evt_paymentwithdraw w WHERE w.evt_tx_hash = t.evt_tx_hash)
 
@@ -87,7 +93,7 @@ daily_users AS (
     WHERE c_from.contract_address IS NULL
       AND c_to.contract_address   IS NULL
       AND t."from" <> t."to"
-      AND t.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * p.days_lookback
+      AND t.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29)  -- Extra 29 days
       AND t.evt_block_date <  CURRENT_DATE
       AND NOT EXISTS (SELECT 1 FROM gooddollar_celo.onetimepayments_evt_paymentwithdraw w WHERE w.evt_tx_hash = t.evt_tx_hash)
 
@@ -97,7 +103,7 @@ daily_users AS (
     JOIN gooddollar_celo.supergooddollar_evt_transfer t
       ON t.evt_tx_hash = w.evt_tx_hash
     CROSS JOIN params p
-    WHERE w.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * p.days_lookback
+    WHERE w.evt_block_date >= CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29)  -- Extra 29 days
       AND w.evt_block_date <  CURRENT_DATE
   )
 ),
@@ -115,24 +121,18 @@ raw_price AS (
   WHERE d.blockchain = 'celo'
     AND d.contract_address = p.g_token
 ),
-bounds AS (
-  SELECT
-    LEAST(COALESCE((SELECT MIN(date) FROM direct_p2p), DATE '2099-12-31'),
-          COALESCE((SELECT MIN(date) FROM otp_p2p),    DATE '2099-12-31')) AS min_day,
-    GREATEST(COALESCE((SELECT MAX(date) FROM direct_p2p), DATE '1970-01-01'),
-             COALESCE((SELECT MAX(date) FROM otp_p2p),    DATE '1970-01-01')) AS max_day
-),
-windowed AS (
-  SELECT
-    GREATEST(min_day, CURRENT_DATE - INTERVAL '1' DAY * (SELECT days_lookback FROM params)) AS win_min,
-    LEAST  (max_day, CURRENT_DATE - INTERVAL '1' DAY)                                       AS win_max
-  FROM bounds
-),
+
+-- Generate all days including the extra 29 days for rolling calculations
 all_days AS (
   SELECT day
-  FROM windowed w
-  CROSS JOIN UNNEST(sequence(w.win_min, w.win_max, INTERVAL '1' day)) AS t(day)
+  FROM params p
+  CROSS JOIN UNNEST(sequence(
+    CURRENT_DATE - INTERVAL '1' DAY * (p.days_lookback + 29),
+    CURRENT_DATE - INTERVAL '1' DAY,
+    INTERVAL '1' day
+  )) AS t(day)
 ),
+
 price_ff AS (
   SELECT
     a.day AS date,
@@ -144,21 +144,101 @@ price_ff AS (
 daily_price AS (
   SELECT date, COALESCE(back_price, fwd_price) AS daily_price_usd
   FROM price_ff
+),
+
+-- Combine daily totals (before filling gaps)
+raw_daily_totals AS (
+  SELECT
+    COALESCE(d.date, o.date)                                          AS date,
+    p.daily_price_usd,
+    COALESCE(d.tx_count, 0) + COALESCE(o.tx_count, 0)                 AS total_tx_count,
+    COALESCE(d.amount_gd, 0) + COALESCE(o.amount_gd, 0)               AS total_amount_gd,
+    (COALESCE(d.amount_gd, 0) + COALESCE(o.amount_gd, 0)) * p.daily_price_usd AS total_amount_usd,
+    COALESCE(d.unique_senders, 0)                                     AS unique_senders,
+    COALESCE(d.unique_receivers, 0) + COALESCE(orx.unique_receivers, 0) AS unique_receivers,
+    COALESCE(u.unique_users, 0)                                       AS unique_users
+  FROM direct_p2p d
+  FULL OUTER JOIN otp_p2p o        ON d.date = o.date
+  LEFT JOIN otp_receivers orx      ON COALESCE(d.date, o.date) = orx.date
+  LEFT JOIN distinct_daily_users u ON COALESCE(d.date, o.date) = u.date
+  LEFT JOIN daily_price p          ON COALESCE(d.date, o.date) = p.date
+),
+
+-- Fill in any missing dates with zeros to ensure continuous date series
+daily_totals AS (
+  SELECT
+    a.day AS date,
+    COALESCE(r.daily_price_usd, p.daily_price_usd) AS daily_price_usd,
+    COALESCE(r.total_tx_count, 0) AS total_tx_count,
+    COALESCE(r.total_amount_gd, 0) AS total_amount_gd,
+    COALESCE(r.total_amount_usd, 0) AS total_amount_usd,
+    COALESCE(r.unique_senders, 0) AS unique_senders,
+    COALESCE(r.unique_receivers, 0) AS unique_receivers,
+    COALESCE(r.unique_users, 0) AS unique_users
+  FROM all_days a
+  LEFT JOIN raw_daily_totals r ON a.day = r.date
+  LEFT JOIN daily_price p ON a.day = p.date
+),
+
+-- Calculate rolling windows on the full dataset (including extra historical days)
+with_rolling AS (
+  SELECT
+    date,
+    daily_price_usd,
+    total_tx_count,
+    total_amount_gd,
+    total_amount_usd,
+    
+    -- 7-day rolling windows
+    SUM(total_tx_count) OVER (
+      ORDER BY date 
+      ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS tx_count_7d,
+    SUM(total_amount_gd) OVER (
+      ORDER BY date 
+      ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS amount_gd_7d,
+    SUM(total_amount_usd) OVER (
+      ORDER BY date 
+      ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS amount_usd_7d,
+    
+    -- 30-day rolling windows
+    SUM(total_tx_count) OVER (
+      ORDER BY date 
+      ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS tx_count_30d,
+    SUM(total_amount_gd) OVER (
+      ORDER BY date 
+      ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS amount_gd_30d,
+    SUM(total_amount_usd) OVER (
+      ORDER BY date 
+      ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS amount_usd_30d,
+    
+    unique_senders,
+    unique_receivers,
+    unique_users
+  FROM daily_totals
 )
 
--- FINAL
+-- FINAL: Filter to only show the requested days_lookback range
 SELECT
-  COALESCE(d.date, o.date)                                          AS date,
-  p.daily_price_usd,
-  COALESCE(d.tx_count, 0) + COALESCE(o.tx_count, 0)                 AS total_tx_count,
-  COALESCE(d.amount_gd, 0) + COALESCE(o.amount_gd, 0)               AS total_amount_gd,
-  (COALESCE(d.amount_gd, 0) + COALESCE(o.amount_gd, 0)) * p.daily_price_usd AS total_amount_usd,
-  COALESCE(d.unique_senders, 0)                                     AS unique_senders,
-  COALESCE(d.unique_receivers, 0) + COALESCE(orx.unique_receivers, 0) AS unique_receivers,
-  COALESCE(u.unique_users, 0)                                       AS unique_users
-FROM direct_p2p d
-FULL OUTER JOIN otp_p2p o        ON d.date = o.date
-LEFT JOIN otp_receivers orx      ON COALESCE(d.date, o.date) = orx.date
-LEFT JOIN distinct_daily_users u ON COALESCE(d.date, o.date) = u.date
-LEFT JOIN daily_price p          ON COALESCE(d.date, o.date) = p.date
+  date,
+  daily_price_usd,
+  total_tx_count,
+  total_amount_gd,
+  total_amount_usd,
+  tx_count_7d,
+  amount_gd_7d,
+  amount_usd_7d,
+  tx_count_30d,
+  amount_gd_30d,
+  amount_usd_30d,
+  unique_senders,
+  unique_receivers,
+  unique_users
+FROM with_rolling
+WHERE date >= CURRENT_DATE - INTERVAL '1' DAY * (SELECT days_lookback FROM params)
 ORDER BY date ASC;
