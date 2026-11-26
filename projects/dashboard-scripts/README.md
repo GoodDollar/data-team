@@ -65,7 +65,7 @@ The nightly run only adds rows, so a changed Dune query fixes new days only. Sec
 
 It was added on 2026-11-26 after two query changes:
 
-- [5521377](https://dune.com/queries/5521377) (transfers) stopped counting minted and burned G$, and zero-value transfers, as transfers between wallets.
+- [5521377](https://dune.com/queries/5521377) (transfers) stopped counting minted and burned G$, and zero-value transfers, as transfers between wallets. This covers counts, amounts, senders and receivers; the `unique_users` column (`celo_p2p_users`, not on the dashboard) still uses the old filter.
 - [5710738](https://dune.com/queries/5710738) (UBI summary) now takes `celo_gd_per_user_1d/7d/30d` from the UBI contract's daily amount (`UBICalculated`), summed over 7 and 30 days, as XDC does.
 
 What gets rewritten:
