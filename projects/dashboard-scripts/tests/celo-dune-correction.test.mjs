@@ -13,7 +13,7 @@ const toRow = (columns, values) => Object.fromEntries(columns.map((c, i) => [c, 
 const D = '2026-11-19';
 const NO_ROW = '2026-11-18'; // in the Dune results, not in the sheet
 
-function harness({ facts, gd = 2277975.5, formulas = {}, onFlush } = {}) {
+function harness({ facts, gd = 2277975.5, usd = 261.9, formulas = {}, onFlush } = {}) {
   const sheets = {};
   function makeSheet(name, rows) {
     const data = rows;
@@ -47,7 +47,7 @@ function harness({ facts, gd = 2277975.5, formulas = {}, onFlush } = {}) {
   const tables = {
     5521377: [P2P_COLUMNS, [
       [NO_ROW, 0.0001, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-      [`${D} 00:00:00.000 UTC`, 0.0001, 143, gd, 261.9, 4477, 10190000, 1170.25, 17128, 75270000, 8596.32, 136, 56, 188],
+      [`${D} 00:00:00.000 UTC`, 0.0001, 143, gd, usd, 4477, 10190000, 1170.25, 17128, 75270000, 8596.32, 136, 56, 188],
     ]],
     5710738: [UBI_COLUMNS, [[D, 1, 1, 1, 1, 3637.434, 1, 1, 866.214, 1, 1, 120.796]]],
   };
@@ -132,6 +132,13 @@ test('restore puts every old value back', () => {
   assert.deepEqual(h.facts(), before);
   assert.ok(h.sheets[summary.logSheet + ' (restored)']);
   assert.throws(() => h.context.celoDuneCorrectionRestoreLatest(), /No "Celo Dune corrections/);
+});
+
+test('keeps a stored USD amount when the query has no price for the day', () => {
+  const h = harness({ facts: [...baseFacts(), [D, 'CELO', 'celo_p2p_usd_amount', 2900.5, 'DUNE', OLD_AT], [D, 'AGG', 'agg_p2p_usd_amount', 2941.5, 'AGG', OLD_AT]], usd: 0 });
+  h.context.celoDuneCorrection();
+  assert.equal(valueOf(h.facts(), D, 'CELO', 'celo_p2p_usd_amount'), 2900.5);
+  assert.equal(valueOf(h.facts(), D, 'AGG', 'agg_p2p_usd_amount'), 2941.5);
 });
 
 test('refuses old transfer results', () => {

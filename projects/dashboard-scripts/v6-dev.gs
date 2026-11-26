@@ -1192,6 +1192,8 @@ function celoDuneCorrectionTargets_(tables, get) {
       const number = Number(String(raw).replace(/,/g, ''));
       if (!isFinite(number)) return;
       const value = Number(number.toFixed(dp));
+      // The transfers query returns 0 USD for a day with no price: keep the stored amount.
+      if (value === 0 && /_usd_amount/.test(key) && get(date, 'CELO', key) > 0) return;
       const changed = consider(date, 'CELO', key, value, spec.dune.queryId);
       if (!changed || spec.aggregate !== true) return;
       const base = key.replace(/^celo_/, '');
